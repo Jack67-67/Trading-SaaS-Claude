@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useCallback } from "react";
 import Link from "next/link";
-import { Save, Trash2, Play, ArrowLeft } from "lucide-react";
+import { Save, Trash2, Play, ArrowLeft, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,6 +38,13 @@ export function StrategyForm({ mode, strategyId, initialData }: StrategyFormProp
     markChanged();
   };
 
+  const handleDiscard = () => {
+    setName(initialData?.name ?? "");
+    setDescription(initialData?.description ?? "");
+    setCode(initialData?.code ?? STRATEGY_TEMPLATES.blank.code);
+    setHasChanges(false);
+  };
+
   const handleSave = () => {
     startTransition(async () => {
       const formData = new FormData();
@@ -66,43 +73,82 @@ export function StrategyForm({ mode, strategyId, initialData }: StrategyFormProp
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Top bar */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          <Link href="/dashboard/strategies" className="w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-2 transition-colors">
+          <Link
+            href="/dashboard/strategies"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-2 transition-colors"
+          >
             <ArrowLeft size={18} />
           </Link>
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-text-primary">
               {mode === "create" ? "New Strategy" : name || "Edit Strategy"}
             </h1>
-            {hasChanges && <p className="text-2xs text-amber-400 mt-0.5">Unsaved changes</p>}
+            {mode === "edit" && (
+              <p className={cn(
+                "text-2xs mt-0.5 transition-colors",
+                hasChanges ? "text-amber-400" : "text-text-muted"
+              )}>
+                {hasChanges ? "Unsaved changes" : "All changes saved"}
+              </p>
+            )}
           </div>
         </div>
+
         <div className="flex items-center gap-2">
           {mode === "edit" && (
             <>
               <Link href={`/dashboard/backtests?strategy=${strategyId}`}>
-                <Button variant="secondary" size="sm"><Play size={14} />Run Backtest</Button>
+                <Button variant="secondary" size="sm">
+                  <Play size={14} />Run Backtest
+                </Button>
               </Link>
+
+              {hasChanges && (
+                <Button variant="ghost" size="sm" onClick={handleDiscard} disabled={isPending}>
+                  <RotateCcw size={14} />Discard
+                </Button>
+              )}
+
               {showDeleteConfirm ? (
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-loss">Delete?</span>
-                  <Button variant="danger" size="sm" onClick={handleDelete} disabled={isPending}>Confirm</Button>
-                  <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+                  <Button variant="danger" size="sm" onClick={handleDelete} disabled={isPending}>
+                    Confirm
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(false)}>
+                    Cancel
+                  </Button>
                 </div>
               ) : (
-                <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(true)} className="text-text-muted hover:text-loss">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="text-text-muted hover:text-loss"
+                >
                   <Trash2 size={14} />
                 </Button>
               )}
             </>
           )}
-          <Button size="sm" onClick={handleSave} loading={isPending} disabled={!name.trim()}>
-            <Save size={14} />{mode === "create" ? "Create" : "Save"}
+
+          <Button
+            size="sm"
+            onClick={handleSave}
+            loading={isPending}
+            disabled={!name.trim()}
+            className={cn(hasChanges && mode === "edit" && "ring-1 ring-amber-400/40")}
+          >
+            <Save size={14} />
+            {mode === "create" ? "Create Strategy" : "Save"}
           </Button>
         </div>
       </div>
 
+      {/* Templates (create mode only) */}
       {mode === "create" && (
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-text-muted mr-1">Start from:</span>
@@ -123,19 +169,35 @@ export function StrategyForm({ mode, strategyId, initialData }: StrategyFormProp
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Input label="Strategy Name" placeholder="My Alpha Strategy" value={name}
-          onChange={(e) => { setName(e.target.value); markChanged(); }} required />
-        <div className="lg:col-span-2">
-          <Textarea label="Description (optional)" placeholder="Describe what this strategy does..."
-            value={description} onChange={(e) => { setDescription(e.target.value); markChanged(); }}
-            rows={2} className="min-h-[40px]" />
-        </div>
+      {/* Name + Description — side by side on lg */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Input
+          label="Strategy Name"
+          placeholder="My Alpha Strategy"
+          value={name}
+          onChange={(e) => { setName(e.target.value); markChanged(); }}
+          required
+        />
+        <Textarea
+          label="Description (optional)"
+          placeholder="What does this strategy do? What signals does it use?"
+          value={description}
+          onChange={(e) => { setDescription(e.target.value); markChanged(); }}
+          rows={1}
+        />
       </div>
 
+      {/* Code editor */}
       <div>
-        <label className="block text-sm font-medium text-text-secondary mb-1.5">Strategy Code</label>
-        <CodeEditor value={code} onChange={(v) => { setCode(v); markChanged(); }} language="python" minHeight={480} />
+        <label className="block text-sm font-medium text-text-secondary mb-1.5">
+          Strategy Code
+        </label>
+        <CodeEditor
+          value={code}
+          onChange={(v) => { setCode(v); markChanged(); }}
+          language="python"
+          minHeight={480}
+        />
       </div>
     </div>
   );

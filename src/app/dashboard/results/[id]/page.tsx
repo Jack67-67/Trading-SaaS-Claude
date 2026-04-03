@@ -1,13 +1,19 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Sparkles, CheckCircle2, Info, AlertTriangle, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatDateTime, formatPercent, pnlColor } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import type { BacktestStatus } from "@/types";
+import {
+  computeConfidence,
+  generateSummary,
+  generateRecommendations,
+} from "@/lib/ai-strategy";
+import type { RiskLevel, TimeframeHorizon } from "@/lib/ai-strategy";
+import type { BacktestStatus, BacktestMetrics, EquityCurvePoint } from "@/types";
 
 interface PageProps {
   params: { id: string };
@@ -28,21 +34,19 @@ export default async function ResultDetailPage({ params }: PageProps) {
     .eq("user_id", user!.id)
     .single();
 
-  if (error || !run) {
-    notFound();
-  }
+  if (error || !run) notFound();
 
   const config = run.config as Record<string, unknown>;
   const strategyRef = run.strategies as Record<string, unknown> | null;
   const strategyName = (strategyRef?.name as string) || "—";
 
-  // Read results from Supabase JSONB column (written by FastAPI backend)
   const resultsData = run.results as Record<string, unknown> | null;
-  const metrics =
+  const metrics: BacktestMetrics | null =
     run.status === "completed" && resultsData
-      ? (resultsData.metrics as Record<string, number>) ??
-        (resultsData as Record<string, number>)
+      ? ((resultsData.metrics as BacktestMetrics) ?? null)
       : null;
+  const equityCurve: EquityCurvePoint[] =
+    (resultsData?.equity_curve as EquityCurvePoint[]) ?? [];
 
   const elapsed =
     run.started_at && run.completed_at
@@ -52,132 +56,494 @@ export default async function ResultDetailPage({ params }: PageProps) {
       : null;
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard/results"
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-2 transition-colors">
+    <div className="space-y-5 animate-fade-in max-w-5xl">
+
+      {/* ── Header ─────────────────────────────────────────────── */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex items-start gap-3">
+          <Link
+            href="/dashboard/results"
+            className="w-8 h-8 mt-0.5 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-2 transition-colors shrink-0"
+          >
             <ArrowLeft size={18} />
           </Link>
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-text-primary flex items-center gap-2.5">
-              <span className="font-mono">{(config.symbol as string) || "—"}</span>
-              Results
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-2xl font-bold tracking-tight text-text-primary font-mono">
+                {(config.symbol as string) || "—"}
+              </h1>
+              <span className="text-text-muted font-normal text-lg">·</span>
+              <span className="text-lg font-medium text-text-secondary">
+                {(config.name as string) || "Backtest Run"}
+              </span>
               <StatusBadge status={run.status as BacktestStatus} />
-            </h1>
-            <p className="text-2xs text-text-muted mt-0.5">
-              {strategyName} · {formatDateTime(run.created_at)}
-              {elapsed !== null && ` · ${elapsed}s runtime`}
-            </p>
+            </div>
+            <div className="flex items-center gap-3 mt-1.5 text-xs text-text-muted">
+              <span>{strategyName}</span>
+              <span className="w-1 h-1 rounded-full bg-border-hover" />
+              <span className="font-mono">{(config.interval as string) || "—"}</span>
+              {elapsed !== null && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-border-hover" />
+                  <span>{elapsed}s runtime</span>
+                </>
+              )}
+              <span className="w-1 h-1 rounded-full bg-border-hover" />
+              <span>{formatDateTime(run.created_at)}</span>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {strategyRef?.id && (
             <Link href={`/dashboard/strategies/${strategyRef.id}`}>
               <Button variant="ghost" size="sm">View Strategy</Button>
             </Link>
           )}
+          <Link href={`/dashboard/backtests/${run.id}`}>
+            <Button variant="ghost" size="sm">
+              <RefreshCw size={14} />Run Status
+            </Button>
+          </Link>
         </div>
       </div>
 
-      {/* Not completed yet */}
+      {/* ── Not yet completed ─────────────────────────────────── */}
       {run.status !== "completed" && (
         <Card className="text-center py-12">
           <StatusBadge status={run.status as BacktestStatus} />
-          <p className="text-sm text-text-secondary mt-4">
+          <p className="text-sm text-text-secondary mt-4 mb-4">
             {run.status === "running"
               ? "This backtest is still running. Results will appear here when it finishes."
               : run.status === "failed"
                 ? `Backtest failed: ${run.error_message || "Unknown error"}`
-                : "Waiting for results..."}
+                : "Waiting for the backtest to start…"}
           </p>
           <Link href={`/dashboard/backtests/${run.id}`}>
-            <Button variant="secondary" size="sm" className="mt-4">
-              <RefreshCw size={14} />View Run Status
+            <Button variant="secondary" size="sm">
+              <RefreshCw size={14} />View Live Status
             </Button>
           </Link>
         </Card>
       )}
 
-      {/* Metrics grid */}
-      {run.status === "completed" && metrics && (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-            <MetricCard label="Total Return" value={formatPercent(metrics.total_return_pct)} colorize={metrics.total_return_pct} />
-            <MetricCard label="Annualized Return" value={formatPercent(metrics.annualized_return_pct)} colorize={metrics.annualized_return_pct} />
-            <MetricCard label="Sharpe Ratio" value={metrics.sharpe_ratio?.toFixed(2)} colorize={metrics.sharpe_ratio} />
-            <MetricCard label="Sortino Ratio" value={metrics.sortino_ratio?.toFixed(2)} colorize={metrics.sortino_ratio} />
-            <MetricCard label="Max Drawdown" value={formatPercent(-Math.abs(metrics.max_drawdown_pct))} colorize={-Math.abs(metrics.max_drawdown_pct)} />
-            <MetricCard label="Win Rate" value={`${metrics.win_rate_pct?.toFixed(1)}%`} />
-            <MetricCard label="Profit Factor" value={metrics.profit_factor?.toFixed(2)} colorize={metrics.profit_factor - 1} />
-            <MetricCard label="Total Trades" value={String(metrics.total_trades)} />
-            <MetricCard label="Avg Trade Return" value={formatPercent(metrics.avg_trade_return_pct)} colorize={metrics.avg_trade_return_pct} />
-            <MetricCard label="Calmar Ratio" value={metrics.calmar_ratio?.toFixed(2)} />
-            <MetricCard label="Volatility" value={`${metrics.volatility_pct?.toFixed(1)}%`} />
-            <MetricCard label="Max Consec. Wins" value={String(metrics.max_consecutive_wins)} />
-          </div>
-
-          <Card>
-            <CardHeader><CardTitle>Equity Curve</CardTitle></CardHeader>
-            <div className="h-64 flex items-center justify-center border border-dashed border-border rounded-lg bg-surface-0">
-              <p className="text-sm text-text-muted">
-                Equity curve chart — integrate Recharts with equity_curve data from the results column.
-              </p>
-            </div>
-          </Card>
-        </>
-      )}
-
-      {/* Completed but no metrics */}
+      {/* ── Completed but no metrics ──────────────────────────── */}
       {run.status === "completed" && !metrics && (
         <Card className="text-center py-12">
-          <p className="text-sm text-text-secondary mb-2">
-            Backtest completed but no metrics found in results.
+          <p className="text-sm text-text-secondary mb-1">
+            Backtest completed but no metrics were returned.
           </p>
           <p className="text-xs text-text-muted">
-            The backend may store results in a different shape. Check the results JSONB column.
+            Check that your backend writes a <code className="font-mono">metrics</code> object into the results column.
           </p>
         </Card>
       )}
 
-      {/* Config */}
-      <Card>
-        <CardHeader><CardTitle>Run Configuration</CardTitle></CardHeader>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-          <div>
-            <p className="text-2xs text-text-muted uppercase tracking-wider mb-0.5">Symbol</p>
-            <p className="font-mono text-text-primary">{config.symbol as string}</p>
+      {/* ── Results ─────────────────────────────────────────────── */}
+      {metrics && (
+        <>
+          {/* KPI hero — unified card */}
+          <KpiHero metrics={metrics} />
+
+          {/* AI Analysis panel */}
+          <AiAnalysisPanel
+            metrics={metrics}
+            risk={(config.ai_risk as RiskLevel) || undefined}
+            timeframe={(config.ai_timeframe as TimeframeHorizon) || undefined}
+            symbol={(config.symbol as string) || undefined}
+          />
+
+          {/* Equity curve */}
+          {equityCurve.length >= 2 && (
+            <EquityChartCard data={equityCurve} periods={equityCurve.length} />
+          )}
+
+          {/* Metric groups */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <MetricGroup
+              title="Performance"
+              accent="bg-accent"
+              rows={[
+                { label: "Total Return", value: formatPercent(metrics.total_return_pct), numeric: metrics.total_return_pct },
+                { label: "Annualized Return", value: formatPercent(metrics.annualized_return_pct), numeric: metrics.annualized_return_pct },
+                { label: "Sharpe Ratio", value: metrics.sharpe_ratio.toFixed(2), numeric: metrics.sharpe_ratio - 1, tag: sharpeLabel(metrics.sharpe_ratio) },
+                { label: "Sortino Ratio", value: metrics.sortino_ratio.toFixed(2), numeric: metrics.sortino_ratio - 1 },
+                { label: "Calmar Ratio", value: metrics.calmar_ratio.toFixed(2), numeric: metrics.calmar_ratio - 1 },
+              ]}
+            />
+            <MetricGroup
+              title="Risk"
+              accent="bg-yellow-500"
+              rows={[
+                {
+                  label: "Max Drawdown",
+                  value: formatPercent(-Math.abs(metrics.max_drawdown_pct)),
+                  numeric: -Math.abs(metrics.max_drawdown_pct),
+                  bar: { fill: Math.min(Math.abs(metrics.max_drawdown_pct) / 50, 1), color: "loss" },
+                },
+                { label: "Volatility (ann.)", value: `${metrics.volatility_pct.toFixed(1)}%` },
+                { label: "Profit Factor", value: metrics.profit_factor.toFixed(2), numeric: metrics.profit_factor - 1 },
+                { label: "Avg Trade Return", value: formatPercent(metrics.avg_trade_return_pct), numeric: metrics.avg_trade_return_pct },
+              ]}
+            />
+            <MetricGroup
+              title="Trades"
+              accent="bg-violet-500"
+              rows={[
+                { label: "Total Trades", value: String(metrics.total_trades) },
+                {
+                  label: "Win Rate",
+                  value: `${metrics.win_rate_pct.toFixed(1)}%`,
+                  numeric: metrics.win_rate_pct - 50,
+                  bar: { fill: metrics.win_rate_pct / 100, color: metrics.win_rate_pct >= 50 ? "profit" : "loss" },
+                },
+                { label: "Max Consec. Wins", value: String(metrics.max_consecutive_wins) },
+                { label: "Max Consec. Losses", value: String(metrics.max_consecutive_losses) },
+              ]}
+            />
           </div>
-          <div>
-            <p className="text-2xs text-text-muted uppercase tracking-wider mb-0.5">Interval</p>
-            <p className="font-mono text-text-primary">{config.interval as string}</p>
-          </div>
-          <div>
-            <p className="text-2xs text-text-muted uppercase tracking-wider mb-0.5">Period</p>
-            <p className="text-text-primary">
-              {(config.start as string) || "Auto"} → {(config.end as string) || "Auto"}
+
+          {/* Run Configuration — compact metadata footer */}
+          <div className="rounded-xl bg-surface-1 border border-border px-5 py-4">
+            <p className="text-2xs font-semibold text-text-muted uppercase tracking-widest mb-3">
+              Run Configuration
             </p>
+            <div className="flex flex-wrap gap-x-8 gap-y-2.5">
+              <ConfigItem label="Symbol" value={(config.symbol as string) || "—"} mono />
+              <ConfigItem label="Interval" value={(config.interval as string) || "—"} mono />
+              <ConfigItem
+                label="Period"
+                value={`${(config.start as string) || "Auto"} → ${(config.end as string) || "Auto"}`}
+              />
+              <ConfigItem label="Name" value={(config.name as string) || "—"} />
+              <ConfigItem label="Run ID" value={run.id.slice(0, 8) + "…"} mono />
+            </div>
           </div>
-          <div>
-            <p className="text-2xs text-text-muted uppercase tracking-wider mb-0.5">Name</p>
-            <p className="text-text-primary">{(config.name as string) || "—"}</p>
-          </div>
-        </div>
-      </Card>
+        </>
+      )}
     </div>
   );
 }
 
-function MetricCard({ label, value, colorize }: { label: string; value: string | undefined; colorize?: number }) {
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function sharpeLabel(v: number): { text: string; cls: string } {
+  if (v >= 2)   return { text: "Excellent", cls: "text-profit" };
+  if (v >= 1.5) return { text: "Very Good", cls: "text-profit" };
+  if (v >= 1)   return { text: "Good",      cls: "text-accent" };
+  if (v >= 0.5) return { text: "Fair",      cls: "text-yellow-400" };
+  return           { text: "Poor",      cls: "text-loss" };
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function KpiHero({ metrics }: { metrics: BacktestMetrics }) {
+  const isUp = metrics.total_return_pct >= 0;
+  const { text: sText, cls: sCls } = sharpeLabel(metrics.sharpe_ratio);
+  const TrendIcon = isUp ? TrendingUp : TrendingDown;
+
   return (
-    <Card padding="sm">
-      <p className="text-2xs text-text-muted uppercase tracking-wider mb-1">{label}</p>
-      <p className={cn("text-lg font-semibold font-mono tabular-nums",
-        colorize !== undefined ? pnlColor(colorize) : "text-text-primary"
-      )}>
-        {value ?? "—"}
-      </p>
-    </Card>
+    <div className={cn(
+      "rounded-2xl border overflow-hidden",
+      isUp
+        ? "border-profit/20 shadow-[0_0_80px_-20px_rgba(34,197,94,0.18)]"
+        : "border-loss/20 shadow-[0_0_80px_-20px_rgba(239,68,68,0.18)]"
+    )}>
+      <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr] divide-y sm:divide-y-0 sm:divide-x divide-border">
+
+        {/* Total Return — the hero number */}
+        <div className={cn(
+          "px-7 py-6 relative overflow-hidden",
+          isUp ? "bg-gradient-to-br from-profit/[0.06] via-surface-1 to-surface-1"
+               : "bg-gradient-to-br from-loss/[0.06] via-surface-1 to-surface-1"
+        )}>
+          <p className="text-2xs font-semibold text-text-muted uppercase tracking-widest mb-4">
+            Total Return
+          </p>
+          <div className="flex items-end gap-3">
+            <p className={cn(
+              "text-5xl font-bold font-mono tabular-nums tracking-tight leading-none",
+              pnlColor(metrics.total_return_pct)
+            )}>
+              {formatPercent(metrics.total_return_pct)}
+            </p>
+            <TrendIcon size={20} className={cn("mb-1.5 shrink-0", pnlColor(metrics.total_return_pct))} />
+          </div>
+          <p className="text-xs text-text-muted font-mono mt-3">
+            {formatPercent(metrics.annualized_return_pct)} annualized
+          </p>
+        </div>
+
+        {/* Sharpe Ratio */}
+        <div className="px-6 py-6 bg-surface-1">
+          <p className="text-2xs font-semibold text-text-muted uppercase tracking-widest mb-4">
+            Sharpe Ratio
+          </p>
+          <p className={cn(
+            "text-4xl font-bold font-mono tabular-nums tracking-tight leading-none",
+            pnlColor(metrics.sharpe_ratio - 1)
+          )}>
+            {metrics.sharpe_ratio.toFixed(2)}
+          </p>
+          <p className={cn("text-xs mt-3 font-semibold flex items-center gap-1.5", sCls)}>
+            <span className="w-1.5 h-1.5 rounded-full bg-current" />
+            {sText}
+          </p>
+        </div>
+
+        {/* Win Rate */}
+        <div className="px-6 py-6 bg-surface-1">
+          <p className="text-2xs font-semibold text-text-muted uppercase tracking-widest mb-4">
+            Win Rate
+          </p>
+          <p className={cn(
+            "text-4xl font-bold font-mono tabular-nums tracking-tight leading-none",
+            pnlColor(metrics.win_rate_pct - 50)
+          )}>
+            {metrics.win_rate_pct.toFixed(1)}%
+          </p>
+          <div className="mt-3.5 space-y-1">
+            <div className="flex justify-between text-2xs text-text-muted font-mono">
+              <span>{metrics.total_trades} trades</span>
+              <span>{Math.round(metrics.total_trades * metrics.win_rate_pct / 100)} wins</span>
+            </div>
+            <div className="h-1.5 bg-surface-3 rounded-full overflow-hidden">
+              <div
+                className={cn("h-full rounded-full", metrics.win_rate_pct >= 50 ? "bg-profit" : "bg-loss")}
+                style={{ width: `${metrics.win_rate_pct}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+function EquityChartCard({ data, periods }: { data: EquityCurvePoint[]; periods: number }) {
+  const equities = data.map((d) => d.equity);
+  const first = equities[0];
+  const last = equities[equities.length - 1];
+  const isUp = last >= first;
+
+  return (
+    <div className="rounded-2xl border border-border overflow-hidden bg-surface-1">
+      <div className="flex items-center justify-between px-6 pt-5 pb-3">
+        <div>
+          <h3 className="text-sm font-semibold text-text-primary">Equity Curve</h3>
+          <p className="text-xs text-text-muted mt-0.5">{periods} periods simulated</p>
+        </div>
+        <div className="flex items-center gap-4 text-xs font-mono">
+          <span className="text-text-muted">
+            ${first.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+          </span>
+          <span className="text-text-muted">→</span>
+          <span className={cn("font-semibold", pnlColor(last - first))}>
+            ${last.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+          </span>
+          <span className={cn("font-semibold", pnlColor(last - first))}>
+            ({formatPercent((last / first - 1) * 100)})
+          </span>
+        </div>
+      </div>
+      <EquityChart data={data} />
+    </div>
+  );
+}
+
+function MetricGroup({
+  title, accent, rows,
+}: {
+  title: string;
+  accent: string;
+  rows: {
+    label: string;
+    value: string | undefined;
+    numeric?: number;
+    tag?: { text: string; cls: string };
+    bar?: { fill: number; color: "profit" | "loss" | "neutral" };
+  }[];
+}) {
+  return (
+    <div className="rounded-xl bg-surface-1 border border-border p-5">
+      <div className="flex items-center gap-2.5 mb-5">
+        <div className={cn("w-1 h-4 rounded-full shrink-0", accent)} />
+        <p className="text-xs font-semibold text-text-primary uppercase tracking-wider">{title}</p>
+      </div>
+      <div className="space-y-4">
+        {rows.map(({ label, value, numeric, tag, bar }) => (
+          <div key={label}>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-sm text-text-muted shrink-0">{label}</span>
+              <div className="flex items-baseline gap-2 min-w-0">
+                {tag && (
+                  <span className={cn("text-2xs font-semibold shrink-0", tag.cls)}>{tag.text}</span>
+                )}
+                <span className={cn(
+                  "text-sm font-mono font-semibold tabular-nums",
+                  numeric !== undefined ? pnlColor(numeric) : "text-text-primary"
+                )}>
+                  {value ?? "—"}
+                </span>
+              </div>
+            </div>
+            {bar && (
+              <div className="mt-2 h-1 bg-surface-3 rounded-full overflow-hidden">
+                <div
+                  className={cn(
+                    "h-full rounded-full",
+                    bar.color === "profit" ? "bg-profit/60"
+                    : bar.color === "loss" ? "bg-loss/60"
+                    : "bg-accent/60"
+                  )}
+                  style={{ width: `${Math.round(bar.fill * 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ConfigItem({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div>
+      <p className="text-2xs text-text-muted mb-0.5">{label}</p>
+      <p className={cn("text-xs text-text-secondary", mono && "font-mono")}>{value}</p>
+    </div>
+  );
+}
+
+function AiAnalysisPanel({
+  metrics,
+  risk,
+  timeframe,
+  symbol,
+}: {
+  metrics: BacktestMetrics;
+  risk?: RiskLevel;
+  timeframe?: TimeframeHorizon;
+  symbol?: string;
+}) {
+  const confidence = computeConfidence(metrics);
+  const summary = generateSummary(metrics, { risk, timeframe, symbol });
+  const recommendations = generateRecommendations(metrics, risk, timeframe);
+
+  const confidenceStyles = {
+    good:    { card: "border-profit/20 bg-profit/[0.03]",    badge: "bg-profit/10 text-profit border-profit/20",    icon: <CheckCircle2 size={13} className="shrink-0" /> },
+    neutral: { card: "border-accent/20 bg-accent/[0.03]",    badge: "bg-accent/10 text-accent border-accent/20",    icon: <Info size={13} className="shrink-0" /> },
+    risky:   { card: "border-yellow-400/20 bg-yellow-400/[0.03]", badge: "bg-yellow-400/10 text-yellow-400 border-yellow-400/20", icon: <AlertTriangle size={13} className="shrink-0" /> },
+  }[confidence.level];
+
+  return (
+    <div className={cn("rounded-2xl border px-6 py-5 space-y-4", confidenceStyles.card)}>
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Sparkles size={14} className="text-accent" />
+          <p className="text-sm font-semibold text-text-primary">AI Analysis</p>
+        </div>
+        <div className={cn("flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border", confidenceStyles.badge)}>
+          {confidenceStyles.icon}
+          {confidence.label}
+        </div>
+      </div>
+
+      {/* Summary */}
+      <p className="text-sm text-text-secondary leading-relaxed">{summary}</p>
+
+      {/* Divider */}
+      <div className="border-t border-border" />
+
+      {/* Recommendations */}
+      <div className="space-y-2.5">
+        <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider">Recommendations</p>
+        {recommendations.map((rec, i) => (
+          <div key={i} className="flex items-start gap-2.5">
+            <ChevronRight size={13} className="text-accent mt-0.5 shrink-0" />
+            <p className="text-sm text-text-secondary leading-relaxed">{rec}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EquityChart({ data }: { data: EquityCurvePoint[] }) {
+  const W = 1000, H = 200, PY = 14;
+  const equities = data.map((d) => d.equity);
+  const min = Math.min(...equities);
+  const max = Math.max(...equities);
+  const range = max - min || 1;
+
+  const px = (i: number) => (i / (data.length - 1)) * W;
+  const py = (v: number) => H - PY - ((v - min) / range) * (H - PY * 2);
+
+  const pts = data.map((d, i) => `${px(i).toFixed(1)},${py(d.equity).toFixed(1)}`);
+  const linePts = pts.join(" ");
+  const areaPts = `0,${H} ${linePts} ${W},${H}`;
+
+  const isUp = equities[equities.length - 1] >= equities[0];
+  const stroke = isUp ? "#22c55e" : "#ef4444";
+
+  // Grid lines at 25 / 50 / 75 %
+  const gridYs = [0.25, 0.5, 0.75].map((t) => py(min + t * range));
+
+  // Break-even line (starting equity level)
+  const breakEvenY = py(equities[0]);
+
+  const x0 = px(0), y0 = py(equities[0]);
+  const xN = px(data.length - 1), yN = py(equities[data.length - 1]);
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      className="w-full"
+      style={{ height: 200 }}
+      preserveAspectRatio="none"
+    >
+      <defs>
+        <linearGradient id="equity-area-gradient" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={stroke} stopOpacity="0.3" />
+          <stop offset="80%" stopColor={stroke} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+
+      {/* Subtle grid lines */}
+      {gridYs.map((y, i) => (
+        <line key={i}
+          x1={0} y1={y.toFixed(1)} x2={W} y2={y.toFixed(1)}
+          stroke="rgba(255,255,255,0.04)" strokeWidth="1"
+        />
+      ))}
+
+      {/* Break-even dashed line */}
+      <line
+        x1={0} y1={breakEvenY.toFixed(1)} x2={W} y2={breakEvenY.toFixed(1)}
+        stroke="rgba(255,255,255,0.10)" strokeWidth="1" strokeDasharray="6 5"
+      />
+
+      {/* Gradient area fill */}
+      <polygon points={areaPts} fill="url(#equity-area-gradient)" />
+
+      {/* Main price line */}
+      <polyline
+        points={linePts}
+        fill="none"
+        stroke={stroke}
+        strokeWidth="2"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+
+      {/* Start dot */}
+      <circle cx={x0.toFixed(1)} cy={y0.toFixed(1)} r="3" fill="rgba(255,255,255,0.3)" />
+
+      {/* End dot — outer glow ring + solid center */}
+      <circle cx={xN.toFixed(1)} cy={yN.toFixed(1)} r="7" fill={stroke} fillOpacity="0.15" />
+      <circle cx={xN.toFixed(1)} cy={yN.toFixed(1)} r="4" fill={stroke} />
+    </svg>
   );
 }

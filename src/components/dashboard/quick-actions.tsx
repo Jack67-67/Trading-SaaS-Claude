@@ -1,78 +1,97 @@
 import Link from "next/link";
-import { Plus, Play, BookOpen } from "lucide-react";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Plus, Play, BarChart3, Sparkles, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const actions = [
   {
-    label: "New Strategy",
-    description: "Write a Python trading strategy",
-    href: "/dashboard/strategies?new=1",
-    icon: Plus,
+    label: "AI Strategy",
+    description: "Generate & test in seconds",
+    href: "/dashboard/ai-strategy",
+    icon: Sparkles,
     color: "text-accent",
-    bg: "bg-accent/10 hover:bg-accent/15",
+    bg: "bg-accent/10",
+    border: "border-accent/20",
+    featured: true,
+  },
+  {
+    label: "New Strategy",
+    description: "Write a Python strategy",
+    href: "/dashboard/strategies/new",
+    icon: Plus,
+    color: "text-violet-400",
+    bg: "bg-violet-400/10",
+    border: "border-transparent",
+    featured: false,
   },
   {
     label: "Run Backtest",
     description: "Test against historical data",
-    href: "/dashboard/backtests?new=1",
+    href: "/dashboard/backtests",
     icon: Play,
     color: "text-profit",
-    bg: "bg-profit/10 hover:bg-profit/15",
+    bg: "bg-profit/10",
+    border: "border-transparent",
+    featured: false,
   },
   {
-    label: "Documentation",
-    description: "Strategy API reference",
-    href: "https://docs.example.com",
-    icon: BookOpen,
+    label: "View Results",
+    description: "Browse completed runs",
+    href: "/dashboard/results",
+    icon: BarChart3,
     color: "text-amber-400",
-    bg: "bg-amber-400/10 hover:bg-amber-400/15",
-    external: true,
+    bg: "bg-amber-400/10",
+    border: "border-transparent",
+    featured: false,
   },
 ];
 
 export function QuickActions() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Quick Actions</CardTitle>
-      </CardHeader>
-      <div className="space-y-2">
+    <div className="rounded-2xl border border-border overflow-hidden">
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-border bg-surface-1">
+        <h2 className="text-sm font-semibold text-text-primary">Quick Actions</h2>
+        <p className="text-xs text-text-muted mt-0.5">Jump to common tasks</p>
+      </div>
+
+      {/* Actions */}
+      <div className="divide-y divide-border bg-surface-0">
         {actions.map((action) => {
           const Icon = action.icon;
-          const Wrapper = action.external ? "a" : Link;
-          const extraProps = action.external
-            ? { target: "_blank", rel: "noopener noreferrer" }
-            : {};
-
           return (
-            <Wrapper
+            <Link
               key={action.label}
               href={action.href}
               className={cn(
-                "flex items-center gap-3 p-3 rounded-lg transition-colors",
-                action.bg
+                "flex items-center gap-3.5 px-5 py-3.5 transition-colors group",
+                action.featured
+                  ? "bg-gradient-to-r from-accent/[0.06] to-transparent hover:from-accent/[0.1]"
+                  : "hover:bg-surface-1"
               )}
-              {...(extraProps as Record<string, string>)}
             >
-              <div
-                className={cn(
-                  "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
-                  action.color
-                )}
-              >
-                <Icon size={18} />
+              <div className={cn(
+                "w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-transform group-hover:scale-105",
+                action.bg
+              )}>
+                <Icon size={15} className={action.color} />
               </div>
-              <div>
-                <p className="text-sm font-medium text-text-primary">
+              <div className="flex-1 min-w-0">
+                <p className={cn(
+                  "text-sm font-semibold",
+                  action.featured ? "text-accent" : "text-text-primary group-hover:text-accent transition-colors"
+                )}>
                   {action.label}
                 </p>
-                <p className="text-2xs text-text-muted">{action.description}</p>
+                <p className="text-xs text-text-muted truncate">{action.description}</p>
               </div>
-            </Wrapper>
+              <ArrowRight
+                size={14}
+                className="text-text-muted group-hover:text-text-secondary group-hover:translate-x-0.5 transition-all shrink-0"
+              />
+            </Link>
           );
         })}
       </div>
-    </Card>
+    </div>
   );
 }

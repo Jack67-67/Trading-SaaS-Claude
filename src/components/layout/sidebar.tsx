@@ -7,8 +7,8 @@ import {
   Code2,
   FlaskConical,
   BarChart3,
+  Sparkles,
   Settings,
-  HelpCircle,
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
@@ -21,21 +21,15 @@ const iconMap = {
   Code2,
   FlaskConical,
   BarChart3,
+  Sparkles,
 } as const;
 
 const navItems = [
-  { label: "Overview", href: "/dashboard", icon: "LayoutDashboard" as const },
-  {
-    label: "Strategies",
-    href: "/dashboard/strategies",
-    icon: "Code2" as const,
-  },
-  {
-    label: "Backtests",
-    href: "/dashboard/backtests",
-    icon: "FlaskConical" as const,
-  },
-  { label: "Results", href: "/dashboard/results", icon: "BarChart3" as const },
+  { label: "Overview",      href: "/dashboard",             icon: "LayoutDashboard" as const, badge: null },
+  { label: "Strategies",    href: "/dashboard/strategies",  icon: "Code2" as const,           badge: null },
+  { label: "Backtests",     href: "/dashboard/backtests",   icon: "FlaskConical" as const,    badge: null },
+  { label: "Results",       href: "/dashboard/results",     icon: "BarChart3" as const,       badge: null },
+  { label: "AI Strategy",   href: "/dashboard/ai-strategy", icon: "Sparkles" as const,        badge: "New" },
 ];
 
 export function Sidebar() {
@@ -79,7 +73,16 @@ export function Sidebar() {
               title={collapsed ? item.label : undefined}
             >
               <Icon className="w-4.5 h-4.5 shrink-0" size={18} />
-              {!collapsed && <span>{item.label}</span>}
+              {!collapsed && (
+                <>
+                  <span className="flex-1">{item.label}</span>
+                  {item.badge && (
+                    <span className="text-2xs font-semibold px-1 py-0.5 rounded bg-accent/20 text-accent leading-none">
+                      {item.badge}
+                    </span>
+                  )}
+                </>
+              )}
             </Link>
           );
         })}
@@ -97,19 +100,6 @@ export function Sidebar() {
           <Settings size={18} />
           {!collapsed && <span>Settings</span>}
         </Link>
-        <a
-          href="https://docs.example.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className={cn(
-            "flex items-center gap-3 h-9 rounded-lg text-sm text-text-muted hover:text-text-secondary hover:bg-surface-2 transition-colors",
-            collapsed ? "justify-center px-0" : "px-3"
-          )}
-        >
-          <HelpCircle size={18} />
-          {!collapsed && <span>Docs</span>}
-        </a>
-
         {/* Collapse toggle */}
         <button
           onClick={() => setCollapsed(!collapsed)}

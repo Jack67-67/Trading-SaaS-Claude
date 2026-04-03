@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { AlertCircle, CheckCircle2, Mail } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,12 +26,10 @@ export default function RegisterPage() {
     e.preventDefault();
     setError(null);
 
-    // Client-side validation
     if (password.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
     }
-
     if (password !== confirmPassword) {
       setError("Passwords do not match.");
       return;
@@ -42,9 +41,7 @@ export default function RegisterPage() {
       email,
       password,
       options: {
-        data: {
-          full_name: fullName,
-        },
+        data: { full_name: fullName },
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
@@ -55,67 +52,64 @@ export default function RegisterPage() {
       return;
     }
 
-    // Supabase may require email confirmation depending on project settings.
-    // Show success state so user knows to check email.
     setSuccess(true);
     setLoading(false);
   }
 
+  // ── Success state ─────────────────────────────────────────────────────────
+
   if (success) {
     return (
-      <div className="animate-fade-in text-center">
-        <div className="w-14 h-14 mx-auto mb-5 rounded-full bg-profit/10 flex items-center justify-center">
-          <svg
-            className="w-7 h-7 text-profit"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M5 13l4 4L19 7"
-            />
-          </svg>
+      <div className="animate-fade-in text-center space-y-5">
+        <div className="w-14 h-14 mx-auto rounded-2xl bg-profit/10 flex items-center justify-center">
+          <CheckCircle2 size={26} className="text-profit" />
         </div>
-        <h2 className="text-xl font-semibold text-text-primary mb-2">
-          Check your email
-        </h2>
-        <p className="text-sm text-text-secondary leading-relaxed mb-6">
-          We sent a confirmation link to{" "}
-          <span className="text-text-primary font-medium">{email}</span>.
-          <br />
-          Click it to activate your account.
-        </p>
+        <div>
+          <h2 className="text-xl font-bold text-text-primary mb-2">Check your email</h2>
+          <p className="text-sm text-text-secondary leading-relaxed">
+            We sent a confirmation link to{" "}
+            <span className="text-text-primary font-medium">{email}</span>.
+            <br />
+            Click it to activate your account.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-4 py-3 text-sm text-text-muted">
+          <Mail size={14} className="text-accent shrink-0" />
+          Didn&apos;t receive it? Check your spam folder.
+        </div>
         <Link
           href="/auth/login"
-          className="text-sm text-accent hover:text-accent-hover font-medium"
+          className="block text-sm text-accent hover:text-accent-hover font-medium transition-colors"
         >
-          Back to sign in
+          ← Back to sign in
         </Link>
       </div>
     );
   }
 
+  // ── Register form ─────────────────────────────────────────────────────────
+
   return (
     <div className="animate-fade-in">
-      <div className="mb-8">
-        <h2 className="text-2xl font-semibold tracking-tight text-text-primary">
+      {/* Heading */}
+      <div className="mb-7">
+        <h2 className="text-2xl font-bold tracking-tight text-text-primary">
           Create your account
         </h2>
-        <p className="text-sm text-text-secondary mt-1.5">
+        <p className="text-sm text-text-muted mt-1.5">
           Start backtesting with {APP_NAME} for free
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {error && (
-          <div className="p-3 rounded-lg bg-loss/10 border border-loss/20 text-sm text-loss">
-            {error}
-          </div>
-        )}
+      {/* Error */}
+      {error && (
+        <div className="flex items-start gap-2 p-3 mb-4 rounded-lg bg-loss/10 border border-loss/20 text-sm text-loss">
+          <AlertCircle size={15} className="mt-0.5 shrink-0" />
+          {error}
+        </div>
+      )}
 
+      <form onSubmit={handleSubmit} className="space-y-4">
         <Input
           label="Full Name"
           type="text"
@@ -126,7 +120,6 @@ export default function RegisterPage() {
           autoComplete="name"
           autoFocus
         />
-
         <Input
           label="Email"
           type="email"
@@ -136,7 +129,6 @@ export default function RegisterPage() {
           required
           autoComplete="email"
         />
-
         <Input
           label="Password"
           type="password"
@@ -147,7 +139,6 @@ export default function RegisterPage() {
           autoComplete="new-password"
           hint="Minimum 8 characters"
         />
-
         <Input
           label="Confirm Password"
           type="password"
@@ -157,12 +148,12 @@ export default function RegisterPage() {
           required
           autoComplete="new-password"
         />
-
-        <Button type="submit" loading={loading} className="w-full">
+        <Button type="submit" loading={loading} className="w-full mt-1">
           Create Account
         </Button>
       </form>
 
+      {/* Footer */}
       <p className="mt-6 text-center text-sm text-text-muted">
         Already have an account?{" "}
         <Link
