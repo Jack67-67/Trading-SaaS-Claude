@@ -5,6 +5,7 @@ import { DashboardStats } from "@/components/dashboard/dashboard-stats";
 import { RecentBacktests } from "@/components/dashboard/recent-backtests";
 import { QuickActions } from "@/components/dashboard/quick-actions";
 import { AiPortfolioOverview } from "@/components/dashboard/ai-portfolio-overview";
+import { AiStatusBar } from "@/components/dashboard/ai-status-bar";
 import { AiAlerts } from "@/components/dashboard/ai-alerts";
 import { generateAlerts } from "@/lib/alerts";
 import { pnlColor, formatPercent } from "@/lib/utils";
@@ -135,6 +136,13 @@ export default async function DashboardPage() {
   });
   const dashboardAlerts = generateAlerts(alertRunInputs);
 
+  // Last completed run time for AI status bar
+  const lastRunAt = (completedRuns ?? [])
+    .map((r) => r.completed_at as string | null)
+    .filter(Boolean)
+    .sort()
+    .at(-1) ?? null;
+
   const displayName =
     user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Trader";
 
@@ -168,6 +176,9 @@ export default async function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* ── AI status bar ─────────────────────────────────────── */}
+      <AiStatusBar strategyCount={strategyCount ?? 0} lastRunAt={lastRunAt} />
 
       {/* ── Stats strip ───────────────────────────────────────── */}
       <DashboardStats

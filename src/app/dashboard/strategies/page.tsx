@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Plus, Code2, Clock, Sparkles, ChevronRight } from "lucide-react";
+import { Plus, Code2, Clock, Sparkles, ChevronRight, FlaskConical, BarChart3, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+
+const LIFECYCLE_STEPS = [
+  { icon: Code2,       label: "Define",  desc: "Write your strategy" },
+  { icon: FlaskConical, label: "Run",     desc: "Backtest on historical data" },
+  { icon: BarChart3,   label: "Analyze", desc: "Review AI insights" },
+  { icon: ShieldCheck, label: "Monitor", desc: "Track performance over time" },
+];
 
 export const metadata: Metadata = {
   title: "Strategies",
@@ -16,7 +23,7 @@ export default async function StrategiesPage() {
 
   const { data: strategies } = await supabase
     .from("strategies")
-    .select("*")
+    .select("*, backtest_runs(id, status)")
     .eq("user_id", user!.id)
     .order("updated_at", { ascending: false });
 
@@ -48,6 +55,24 @@ export default async function StrategiesPage() {
         </div>
       </div>
 
+      {/* ── Lifecycle flow ─────────────────────────────────────── */}
+      <div className="flex items-center gap-0 rounded-xl border border-border bg-surface-1 overflow-hidden">
+        {LIFECYCLE_STEPS.map(({ icon: Icon, label, desc }, i) => (
+          <div key={label} className="flex items-center flex-1 min-w-0">
+            <div className="flex items-center gap-2.5 px-4 py-3 flex-1 min-w-0">
+              <Icon size={13} className="text-accent/60 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-text-primary leading-none">{label}</p>
+                <p className="text-2xs text-text-muted mt-0.5 leading-none truncate">{desc}</p>
+              </div>
+            </div>
+            {i < LIFECYCLE_STEPS.length - 1 && (
+              <ChevronRight size={12} className="text-border shrink-0 mr-1" />
+            )}
+          </div>
+        ))}
+      </div>
+
       {/* ── Empty state ────────────────────────────────────────── */}
       {items.length === 0 && (
         <div className="rounded-2xl bg-surface-1 border border-border flex flex-col items-center justify-center py-20 text-center">
@@ -74,6 +99,16 @@ export default async function StrategiesPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {items.map((strategy) => {
             const lineCount = strategy.code.split("\n").length;
+            const runs = (strategy as Record<string, unknown> & { backtest_runs?: { id: string; status: string }[] }).backtest_runs ?? [];
+            const runCount = runs.length;
+            const hasCompleted = runs.some((r) => r.status === "completed");
+            const hasMultiple = runs.filter((r) => r.status === "completed").length >= 2;
+
+            const stage =
+              hasMultiple  ? { label: "Monitoring",  color: "text-profit",      bg: "bg-profit/10" } :
+              hasCompleted ? { label: "Analyzed",     color: "text-accent",      bg: "bg-accent/10" } :
+              runCount > 0 ? { label: "Running",      color: "text-amber-400",   bg: "bg-amber-400/10" } :
+                             { label: "Not yet run",  color: "text-text-muted",  bg: "bg-surface-3" };
 
             return (
               <Link key={strategy.id} href={`/dashboard/strategies/${strategy.id}`} className="group">
@@ -92,9 +127,14 @@ export default async function StrategiesPage() {
                         <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
                           <Code2 size={15} className="text-accent" />
                         </div>
-                        <h3 className="text-sm font-semibold text-text-primary group-hover:text-accent transition-colors truncate leading-snug">
-                          {strategy.name}
-                        </h3>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-semibold text-text-primary group-hover:text-accent transition-colors truncate leading-snug">
+                            {strategy.name}
+                          </h3>
+                          <span className={cn("text-2xs font-medium px-1.5 py-0.5 rounded mt-0.5 inline-block", stage.bg, stage.color)}>
+                            {stage.label}
+                          </span>
+                        </div>
                       </div>
                       <ChevronRight
                         size={14}
