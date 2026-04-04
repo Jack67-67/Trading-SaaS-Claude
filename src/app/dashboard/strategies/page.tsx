@@ -81,7 +81,8 @@ export default async function StrategiesPage() {
           </div>
           <p className="text-sm font-semibold text-text-secondary mb-1">No strategies yet</p>
           <p className="text-xs text-text-muted max-w-xs mb-5 leading-relaxed">
-            Write your first Python strategy, or let the AI generate and test one for you.
+            A strategy is a set of rules that decide when to buy and sell.
+            Let AI write one for you, or code it yourself in Python.
           </p>
           <div className="flex items-center gap-3 flex-wrap justify-center">
             <Link href="/dashboard/strategies/new">

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { LogOut, User, ChevronDown, ChevronRight } from "lucide-react";
+import { LogOut, User, ChevronDown, ChevronRight, Bell } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 
@@ -79,6 +79,22 @@ export function TopBar() {
             <span className="text-text-primary font-medium">{detail}</span>
           </>
         )}
+      </div>
+
+      {/* AI notification bell */}
+      <div className="flex items-center gap-2 mr-1">
+        <a
+          href="/dashboard"
+          title="AI Activity"
+          className="relative w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-secondary hover:bg-surface-2 transition-colors"
+        >
+          <Bell size={16} />
+          {/* Pulsing dot — indicates AI monitoring is active */}
+          <span className="absolute top-1.5 right-1.5 flex h-1.5 w-1.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-profit opacity-60" />
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-profit" />
+          </span>
+        </a>
       </div>
 
       {/* User menu */}

@@ -7,6 +7,9 @@ import { QuickActions } from "@/components/dashboard/quick-actions";
 import { AiPortfolioOverview } from "@/components/dashboard/ai-portfolio-overview";
 import { AiStatusBar } from "@/components/dashboard/ai-status-bar";
 import { AiAlerts } from "@/components/dashboard/ai-alerts";
+import { WelcomePanel } from "@/components/dashboard/welcome-panel";
+import { AiActivityFeed } from "@/components/dashboard/ai-activity-feed";
+import type { ActivityEvent } from "@/components/dashboard/ai-activity-feed";
 import { generateAlerts } from "@/lib/alerts";
 import { pnlColor, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -136,6 +139,63 @@ export default async function DashboardPage() {
   });
   const dashboardAlerts = generateAlerts(alertRunInputs);
 
+  // Build activity feed events from completed runs + alerts
+  const activityEvents: ActivityEvent[] = [];
+
+  // One "analysis completed" event per completed run (most recent 6)
+  const sortedCompleted = [...(completedRuns ?? [])]
+    .sort((a, b) => {
+      const ta = new Date((a.completed_at as string | null) ?? 0).getTime();
+      const tb = new Date((b.completed_at as string | null) ?? 0).getTime();
+      return tb - ta;
+    })
+    .slice(0, 6);
+
+  for (const r of sortedCompleted) {
+    const cfg = r.config as Record<string, unknown> | null;
+    const symbol = (cfg?.symbol as string) || "—";
+    const ts = (r.completed_at as string | null) || (r.started_at as string | null);
+    if (ts) {
+      activityEvents.push({
+        id: `analysis-${r.id as string}`,
+        type: "analysis",
+        title: `Backtest analyzed · ${symbol}`,
+        subtitle: "AI insights generated",
+        timestamp: ts,
+        runId: r.id as string,
+      });
+    }
+  }
+
+  // Alert-derived events (distinct from run events)
+  for (const alert of dashboardAlerts.slice(0, 5)) {
+    const type: ActivityEvent["type"] =
+      alert.title.toLowerCase().includes("improv") ? "improvement" :
+      alert.severity === "critical"                ? "decline" :
+      alert.severity === "warning"                 ? "warning" :
+      "insight";
+    activityEvents.push({
+      id: `alert-${alert.id}`,
+      type,
+      title: alert.title,
+      subtitle: alert.strategyName !== alert.symbol ? alert.strategyName : undefined,
+      timestamp: alert.completedAt,
+      runId: alert.runId,
+    });
+  }
+
+  // Merge, de-duplicate by runId (keep most informative), sort desc
+  const seen = new Set<string>();
+  const feedEvents = activityEvents
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .filter((e) => {
+      const key = e.runId ?? e.id;
+      if (seen.has(key) && e.type === "analysis") return false; // prefer alert version over plain analysis for same run
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 8);
+
   // Last completed run time for AI status bar
   const lastRunAt = (completedRuns ?? [])
     .map((r) => r.completed_at as string | null)
@@ -177,64 +237,73 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* ── AI status bar ─────────────────────────────────────── */}
-      <AiStatusBar strategyCount={strategyCount ?? 0} lastRunAt={lastRunAt} />
-
-      {/* ── Stats strip ───────────────────────────────────────── */}
-      <DashboardStats
-        strategyCount={strategyCount ?? 0}
-        backtestCount={backtestCount ?? 0}
-        bestSharpe={bestSharpe}
-        avgRunTime={avgRunTime}
-      />
-
-      {/* ── AI Portfolio Overview ─────────────────────────────── */}
-      {aiRunSummaries.length > 0 && (
-        <AiPortfolioOverview runs={aiRunSummaries} />
-      )}
-
-      {/* ── AI Alerts ─────────────────────────────────────────── */}
-      {dashboardAlerts.length > 0 && (
-        <AiAlerts alerts={dashboardAlerts} variant="full" />
-      )}
-
-      {/* ── Main content ──────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-
-        {/* Recent backtests */}
-        <div className="lg:col-span-2">
-          <RecentBacktests runs={recentRuns ?? []} />
-        </div>
-
-        {/* Right column */}
-        <div className="flex flex-col gap-4">
-          <QuickActions />
-
-          {/* Best performer spotlight */}
-          {bestRun && (
-            <Link
-              href={`/dashboard/results/${bestRun.id}`}
-              className="group rounded-2xl border border-profit/20 bg-gradient-to-br from-profit/[0.05] via-surface-1 to-surface-1 p-5 hover:border-profit/40 transition-colors"
-            >
-              <p className="text-2xs font-semibold text-text-muted uppercase tracking-widest mb-3">
-                Best Performer
-              </p>
-              <p className={cn("text-4xl font-bold font-mono tabular-nums tracking-tight leading-none", pnlColor(bestRun.returnPct))}>
-                {formatPercent(bestRun.returnPct)}
-              </p>
-              <p className="text-sm text-text-secondary mt-2 truncate">{bestRun.name}</p>
-              <div className="flex items-center justify-between mt-3">
-                <span className="text-2xs font-mono text-text-muted bg-surface-3 px-2 py-0.5 rounded">
-                  {bestRun.symbol}
-                </span>
-                <span className="text-xs text-accent group-hover:text-accent-hover transition-colors flex items-center gap-1">
-                  View results <ArrowRight size={12} />
-                </span>
-              </div>
-            </Link>
+      {/* ── New user: welcome panel ────────────────────────────── */}
+      {(strategyCount ?? 0) === 0 && (backtestCount ?? 0) === 0 ? (
+        <WelcomePanel name={displayName} />
+      ) : (
+        <>
+          {/* ── Portfolio Health (leads the page) ────────────────── */}
+          {aiRunSummaries.length > 0 ? (
+            <AiPortfolioOverview runs={aiRunSummaries} lastRunAt={lastRunAt} />
+          ) : (
+            <AiStatusBar strategyCount={strategyCount ?? 0} lastRunAt={lastRunAt} />
           )}
-        </div>
-      </div>
+
+          {/* ── AI Alerts ─────────────────────────────────────── */}
+          {dashboardAlerts.length > 0 && (
+            <AiAlerts alerts={dashboardAlerts} variant="full" />
+          )}
+
+          {/* ── Stats strip ───────────────────────────────────── */}
+          <DashboardStats
+            strategyCount={strategyCount ?? 0}
+            backtestCount={backtestCount ?? 0}
+            bestSharpe={bestSharpe}
+            avgRunTime={avgRunTime}
+          />
+
+          {/* ── AI Activity Feed ──────────────────────────────── */}
+          <AiActivityFeed events={feedEvents} />
+
+          {/* ── Main content ──────────────────────────────────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+            {/* Recent backtests */}
+            <div className="lg:col-span-2">
+              <RecentBacktests runs={recentRuns ?? []} />
+            </div>
+
+            {/* Right column */}
+            <div className="flex flex-col gap-4">
+              <QuickActions />
+
+              {/* Best performer spotlight */}
+              {bestRun && (
+                <Link
+                  href={`/dashboard/results/${bestRun.id}`}
+                  className="group rounded-2xl border border-profit/20 bg-gradient-to-br from-profit/[0.05] via-surface-1 to-surface-1 p-5 hover:border-profit/40 transition-colors"
+                >
+                  <p className="text-2xs font-semibold text-text-muted uppercase tracking-widest mb-3">
+                    Best Performer
+                  </p>
+                  <p className={cn("text-4xl font-bold font-mono tabular-nums tracking-tight leading-none", pnlColor(bestRun.returnPct))}>
+                    {formatPercent(bestRun.returnPct)}
+                  </p>
+                  <p className="text-sm text-text-secondary mt-2 truncate">{bestRun.name}</p>
+                  <div className="flex items-center justify-between mt-3">
+                    <span className="text-2xs font-mono text-text-muted bg-surface-3 px-2 py-0.5 rounded">
+                      {bestRun.symbol}
+                    </span>
+                    <span className="text-xs text-accent group-hover:text-accent-hover transition-colors flex items-center gap-1">
+                      View results <ArrowRight size={12} />
+                    </span>
+                  </div>
+                </Link>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

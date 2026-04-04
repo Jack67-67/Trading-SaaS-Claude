@@ -10,7 +10,13 @@
       "Bash(.venv/bin/python3 -c \"\nimport traceback\nfrom supabase import create_client\nimport os\nfrom dotenv import load_dotenv\nload_dotenv\\(\\)\ntry:\n    c = create_client\\(os.environ['SUPABASE_URL'], os.environ['SUPABASE_ANON_KEY']\\)\n    print\\('create_client: OK'\\)\n    c.postgrest.auth\\('faketoken'\\)\n    print\\('postgrest.auth: OK'\\)\nexcept Exception as e:\n    traceback.print_exc\\(\\)\n\")",
       "Bash(.venv/bin/python3 -c \"\nimport os\nfrom dotenv import load_dotenv\nimport httpx\nload_dotenv\\(\\)\n\nurl = os.environ['SUPABASE_URL'].rstrip\\('/'\\) + '/rest/v1/backtest_runs?limit=1'\nheaders = {\n    'apikey': os.environ['SUPABASE_ANON_KEY'],\n    'Authorization': 'Bearer ' + os.environ['SUPABASE_ANON_KEY'],\n}\nr = httpx.get\\(url, headers=headers, timeout=10\\)\nprint\\('Status:', r.status_code\\)\nprint\\('Body[:120]:', r.text[:120]\\)\n\")",
       "Bash(.venv/bin/python3 -c \"import main; print\\('import OK'\\)\")",
-      "Bash(pkill -f \"uvicorn main:app\")"
+      "Bash(pkill -f \"uvicorn main:app\")",
+      "Bash(npx tsc:*)",
+      "Bash(grep -v \"^$\")",
+      "Bash(npx next:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(Last analysis: Xm ago\" bar on the dashboard:*)"
     ]
   }
 }

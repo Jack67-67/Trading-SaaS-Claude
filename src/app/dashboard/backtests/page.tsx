@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import Link from "next/link";
-import { FlaskConical, TrendingUp, TrendingDown } from "lucide-react";
+import { FlaskConical, TrendingUp, TrendingDown, Code2, Sparkles, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { BacktestForm } from "@/components/dashboard/backtest-form";
@@ -70,7 +70,36 @@ export default async function BacktestsPage() {
         )}
       </div>
 
+      {/* ── No strategies: guide user to create one first ─────── */}
+      {strategyList.length === 0 && (
+        <div className="rounded-2xl border border-border bg-surface-1 flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto w-full">
+          <div className="w-12 h-12 rounded-2xl bg-surface-3 flex items-center justify-center mb-4">
+            <FlaskConical size={20} className="text-text-muted" />
+          </div>
+          <h2 className="text-base font-bold text-text-primary mb-2">You need a strategy first</h2>
+          <p className="text-sm text-text-secondary leading-relaxed mb-6 max-w-xs">
+            A backtest runs a strategy against historical market data. Create a
+            strategy to get started — AI can write one for you in seconds.
+          </p>
+          <div className="flex items-center gap-3 flex-wrap justify-center">
+            <Link
+              href="/dashboard/ai-strategy"
+              className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:bg-accent-hover transition-colors"
+            >
+              <Sparkles size={14} />Generate with AI
+            </Link>
+            <Link
+              href="/dashboard/strategies/new"
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm font-medium text-text-primary hover:bg-surface-3 transition-colors"
+            >
+              <Code2 size={14} />Write my own
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* ── Two-column layout ─────────────────────────────────── */}
+      {strategyList.length > 0 && (
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
 
         {/* Form — 3 cols */}
@@ -224,6 +253,7 @@ export default async function BacktestsPage() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

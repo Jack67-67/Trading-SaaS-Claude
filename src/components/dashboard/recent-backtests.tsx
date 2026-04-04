@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Sparkles } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatDateTime, formatPercent, pnlColor } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -34,19 +34,16 @@ export function RecentBacktests({ runs }: RecentBacktestsProps) {
 
       {/* Empty state */}
       {runs.length === 0 && (
-        <div className="bg-surface-0 px-5 py-14 flex flex-col items-center justify-center text-center">
-          <div className="w-10 h-10 rounded-full bg-surface-3 flex items-center justify-center mb-3">
-            <span className="text-lg">⚗️</span>
-          </div>
-          <p className="text-sm font-medium text-text-secondary mb-1">No backtests yet</p>
-          <p className="text-xs text-text-muted mb-4 max-w-xs">
-            Create a strategy and run your first backtest to see results here.
+        <div className="bg-surface-0 px-5 py-12 flex flex-col items-center justify-center text-center">
+          <p className="text-sm font-semibold text-text-secondary mb-1">No runs yet</p>
+          <p className="text-xs text-text-muted mb-5 max-w-[220px] leading-relaxed">
+            Run your first backtest and results will appear here.
           </p>
           <Link
-            href="/dashboard/strategies/new"
-            className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors"
+            href="/dashboard/ai-strategy"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:text-accent-hover transition-colors"
           >
-            Create a strategy →
+            <Sparkles size={12} />Generate a strategy with AI
           </Link>
         </div>
       )}
