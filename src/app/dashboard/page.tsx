@@ -5,6 +5,8 @@ import { DashboardStats } from "@/components/dashboard/dashboard-stats";
 import { RecentBacktests } from "@/components/dashboard/recent-backtests";
 import { QuickActions } from "@/components/dashboard/quick-actions";
 import { AiPortfolioOverview } from "@/components/dashboard/ai-portfolio-overview";
+import { AiAlerts } from "@/components/dashboard/ai-alerts";
+import { generateAlerts } from "@/lib/alerts";
 import { pnlColor, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { BacktestMetrics } from "@/types";
@@ -35,7 +37,7 @@ export default async function DashboardPage() {
       .limit(6),
     supabase
       .from("backtest_runs")
-      .select("id, results, started_at, completed_at, config")
+      .select("id, strategy_id, results, started_at, completed_at, config, strategies(name)")
       .eq("user_id", user!.id)
       .eq("status", "completed"),
   ]);
@@ -109,6 +111,30 @@ export default async function DashboardPage() {
     }
   }
 
+  // Build alert inputs from completed runs with full metrics
+  const alertRunInputs = (completedRuns ?? []).flatMap((r) => {
+    const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
+    const cfg = r.config as Record<string, unknown> | null;
+    if (!m || m.total_return_pct === undefined || m.sharpe_ratio === undefined) return [];
+    const stratName = (r as Record<string, unknown> & { strategies?: { name?: string } }).strategies?.name
+      || (cfg?.name as string)
+      || (cfg?.symbol as string)
+      || "—";
+    return [{
+      id: r.id as string,
+      strategyId: (r.strategy_id as string) || r.id as string,
+      strategyName: stratName,
+      symbol: (cfg?.symbol as string) || "—",
+      completedAt: (r.completed_at as string) || (r.started_at as string) || new Date().toISOString(),
+      returnPct: m.total_return_pct,
+      sharpe: m.sharpe_ratio,
+      drawdown: Math.abs(m.max_drawdown_pct ?? 0),
+      trades: m.total_trades ?? 0,
+      winRate: m.win_rate_pct ?? 0,
+    }];
+  });
+  const dashboardAlerts = generateAlerts(alertRunInputs);
+
   const displayName =
     user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Trader";
 
@@ -154,6 +180,11 @@ export default async function DashboardPage() {
       {/* ── AI Portfolio Overview ─────────────────────────────── */}
       {aiRunSummaries.length > 0 && (
         <AiPortfolioOverview runs={aiRunSummaries} />
+      )}
+
+      {/* ── AI Alerts ─────────────────────────────────────────── */}
+      {dashboardAlerts.length > 0 && (
+        <AiAlerts alerts={dashboardAlerts} variant="full" />
       )}
 
       {/* ── Main content ──────────────────────────────────────── */}
