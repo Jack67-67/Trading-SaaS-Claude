@@ -12,6 +12,8 @@ import {
   generateSummary,
   generateRecommendations,
 } from "@/lib/ai-strategy";
+import { compareTwoRuns } from "@/lib/trends";
+import { RunComparisonPanel } from "@/components/dashboard/run-comparison";
 import type { RiskLevel, TimeframeHorizon } from "@/lib/ai-strategy";
 import type { BacktestStatus, BacktestMetrics, EquityCurvePoint } from "@/types";
 
@@ -35,6 +37,22 @@ export default async function ResultDetailPage({ params }: PageProps) {
     .single();
 
   if (error || !run) notFound();
+
+  // Fetch the previous completed run for the same strategy (for comparison)
+  const strategyRef0 = run.strategies as Record<string, unknown> | null;
+  let prevRun: { id: string; results: unknown } | null = null;
+  if (strategyRef0?.id && run.completed_at) {
+    const { data: prev } = await supabase
+      .from("backtest_runs")
+      .select("id, results")
+      .eq("strategy_id", strategyRef0.id as string)
+      .eq("status", "completed")
+      .lt("completed_at", run.completed_at as string)
+      .order("completed_at", { ascending: false })
+      .limit(1)
+      .single();
+    if (prev) prevRun = prev as { id: string; results: unknown };
+  }
 
   const config = run.config as Record<string, unknown>;
   const strategyRef = run.strategies as Record<string, unknown> | null;
@@ -94,8 +112,8 @@ export default async function ResultDetailPage({ params }: PageProps) {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {strategyRef?.id && (
-            <Link href={`/dashboard/strategies/${strategyRef.id}`}>
+          {!!strategyRef?.id && (
+            <Link href={`/dashboard/strategies/${strategyRef.id as string}`}>
               <Button variant="ghost" size="sm">View Strategy</Button>
             </Link>
           )}
@@ -139,10 +157,27 @@ export default async function ResultDetailPage({ params }: PageProps) {
       )}
 
       {/* ── Results ─────────────────────────────────────────────── */}
-      {metrics && (
+      {metrics && (() => {
+        // Compute comparison with previous run
+        const prevMetrics = prevRun
+          ? ((prevRun.results as Record<string, unknown> | null)?.metrics as BacktestMetrics | null) ?? null
+          : null;
+        const comparison = prevMetrics
+          ? compareTwoRuns(
+              { returnPct: metrics.total_return_pct, sharpe: metrics.sharpe_ratio, drawdown: Math.abs(metrics.max_drawdown_pct), winRate: metrics.win_rate_pct, trades: metrics.total_trades },
+              { returnPct: prevMetrics.total_return_pct, sharpe: prevMetrics.sharpe_ratio, drawdown: Math.abs(prevMetrics.max_drawdown_pct), winRate: prevMetrics.win_rate_pct, trades: prevMetrics.total_trades }
+            )
+          : null;
+
+        return (
         <>
           {/* KPI hero — unified card */}
           <KpiHero metrics={metrics} />
+
+          {/* Comparison vs previous run */}
+          {comparison && (
+            <RunComparisonPanel comparison={comparison} prevRunId={prevRun?.id} />
+          )}
 
           {/* AI Analysis panel */}
           <AiAnalysisPanel
@@ -219,7 +254,8 @@ export default async function ResultDetailPage({ params }: PageProps) {
             </div>
           </div>
         </>
-      )}
+        );
+      })()}
     </div>
   );
 }

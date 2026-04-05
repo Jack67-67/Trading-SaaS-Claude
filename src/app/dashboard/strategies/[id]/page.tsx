@@ -2,7 +2,9 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { StrategyForm } from "@/components/dashboard/strategy-form";
 import { AiAlerts } from "@/components/dashboard/ai-alerts";
+import { TrendBadge } from "@/components/dashboard/run-comparison";
 import { generateAlerts } from "@/lib/alerts";
+import { computeStrategyTrend } from "@/lib/trends";
 
 interface PageProps {
   params: { id: string };
@@ -61,8 +63,29 @@ export default async function StrategyEditorPage({ params }: PageProps) {
   });
   const strategyAlerts = generateAlerts(alertRunInputs);
 
+  const trendSnapshots = alertRunInputs.map((r) => ({
+    returnPct: r.returnPct, sharpe: r.sharpe, drawdown: r.drawdown,
+    winRate: r.winRate, trades: r.trades,
+  }));
+  const trend = computeStrategyTrend(trendSnapshots);
+
   return (
     <div className="space-y-5">
+      {/* Strategy header with trend */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-text-primary">
+            {(strategy as Record<string, unknown> & { name?: string }).name ?? "Strategy"}
+          </h1>
+          <p className="text-sm text-text-muted mt-0.5">
+            {alertRunInputs.length > 0
+              ? `${alertRunInputs.length} completed ${alertRunInputs.length === 1 ? "run" : "runs"}`
+              : "No completed runs yet"}
+          </p>
+        </div>
+        {trend && <TrendBadge trend={trend} />}
+      </div>
+
       {strategyAlerts.length > 0 && (
         <AiAlerts alerts={strategyAlerts} variant="compact" />
       )}

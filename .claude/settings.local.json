@@ -16,7 +16,10 @@
       "Bash(npx next:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(Last analysis: Xm ago\" bar on the dashboard:*)"
+      "Bash(Last analysis: Xm ago\" bar on the dashboard:*)",
+      "Bash(git push:*)",
+      "Bash(gh repo:*)",
+      "Bash(grep -r export.*Logo /Users/idatedsjo/Downloads/trading-backtest-saas/src/components/ui/logo.tsx)"
     ]
   }
 }

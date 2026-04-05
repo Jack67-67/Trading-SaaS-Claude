@@ -11,6 +11,8 @@ import { WelcomePanel } from "@/components/dashboard/welcome-panel";
 import { AiActivityFeed } from "@/components/dashboard/ai-activity-feed";
 import type { ActivityEvent } from "@/components/dashboard/ai-activity-feed";
 import { generateAlerts } from "@/lib/alerts";
+import { computeStrategyTrend } from "@/lib/trends";
+import type { TrendLabel } from "@/lib/trends";
 import { pnlColor, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { BacktestMetrics } from "@/types";
@@ -112,6 +114,26 @@ export default async function DashboardPage() {
           metrics: m as unknown as BacktestMetrics,
         });
       }
+    }
+  }
+
+  // Compute per-strategy trends (run id → trend label)
+  const strategyRunMap = new Map<string, { id: string; completedAt: string; returnPct: number; sharpe: number; drawdown: number; winRate: number; trades: number }[]>();
+  for (const r of completedRuns ?? []) {
+    const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
+    const sid = r.strategy_id as string | undefined;
+    if (!m || !sid || m.total_return_pct === undefined) continue;
+    const entry = strategyRunMap.get(sid) ?? [];
+    entry.push({ id: r.id as string, completedAt: (r.completed_at as string) ?? "", returnPct: m.total_return_pct, sharpe: m.sharpe_ratio ?? 0, drawdown: Math.abs(m.max_drawdown_pct ?? 0), winRate: m.win_rate_pct ?? 0, trades: m.total_trades ?? 0 });
+    strategyRunMap.set(sid, entry);
+  }
+  // Map from latest run id → trend label (for portfolio overview chips)
+  const runTrends: Record<string, TrendLabel> = {};
+  for (const [, sRuns] of strategyRunMap) {
+    const sorted = [...sRuns].sort((a, b) => a.completedAt.localeCompare(b.completedAt));
+    const trend = computeStrategyTrend(sorted.map((r) => ({ returnPct: r.returnPct, sharpe: r.sharpe, drawdown: r.drawdown, winRate: r.winRate, trades: r.trades })));
+    if (trend && sorted.length > 0) {
+      runTrends[sorted[sorted.length - 1].id] = trend;
     }
   }
 
@@ -244,7 +266,7 @@ export default async function DashboardPage() {
         <>
           {/* ── Portfolio Health (leads the page) ────────────────── */}
           {aiRunSummaries.length > 0 ? (
-            <AiPortfolioOverview runs={aiRunSummaries} lastRunAt={lastRunAt} />
+            <AiPortfolioOverview runs={aiRunSummaries} lastRunAt={lastRunAt} trends={runTrends} />
           ) : (
             <AiStatusBar strategyCount={strategyCount ?? 0} lastRunAt={lastRunAt} />
           )}

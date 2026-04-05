@@ -64,8 +64,8 @@ export function AiActivityFeed({ events }: AiActivityFeedProps) {
             <Activity size={14} className="text-accent" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-text-primary leading-snug">Recent Activity</p>
-            <p className="text-xs text-text-muted">What your AI has been doing</p>
+            <p className="text-sm font-semibold text-text-primary leading-snug">AI Activity Log</p>
+            <p className="text-xs text-text-muted">Insights and events from your backtests</p>
           </div>
         </div>
 

@@ -6,7 +6,9 @@ import {
 import { cn } from "@/lib/utils";
 import { formatPercent, pnlColor } from "@/lib/utils";
 import { computeConfidence } from "@/lib/ai-strategy";
+import { TrendBadge } from "@/components/dashboard/run-comparison";
 import type { BacktestMetrics } from "@/types";
+import type { TrendLabel } from "@/lib/trends";
 
 interface RunSummary {
   id: string;
@@ -22,6 +24,7 @@ interface RunSummary {
 interface AiPortfolioOverviewProps {
   runs: RunSummary[];
   lastRunAt?: string | null;
+  trends?: Record<string, TrendLabel>; // strategyId → trend
 }
 
 function timeAgo(iso: string): string {
@@ -73,7 +76,7 @@ const STATUS = {
   },
 } as const;
 
-export function AiPortfolioOverview({ runs, lastRunAt }: AiPortfolioOverviewProps) {
+export function AiPortfolioOverview({ runs, lastRunAt, trends = {} }: AiPortfolioOverviewProps) {
   if (runs.length === 0) return null;
 
   const sorted = [...runs].sort((a, b) => b.returnPct - a.returnPct);
@@ -84,6 +87,21 @@ export function AiPortfolioOverview({ runs, lastRunAt }: AiPortfolioOverviewProp
   const level = avgScore >= 65 ? "good" : avgScore >= 40 ? "neutral" : "risky";
   const status = STATUS[level];
   const StatusIcon = status.icon;
+
+  // Trend direction synthesis
+  const trendValues = Object.values(trends);
+  const improvingCount  = trendValues.filter((t) => t === "improving").length;
+  const decliningCount  = trendValues.filter((t) => t === "declining" || t === "at-risk").length;
+  let trendDirectionLine: string | null = null;
+  if (trendValues.length > 0) {
+    if (improvingCount > 0 && decliningCount === 0) {
+      trendDirectionLine = improvingCount === 1 ? "Your strategy is trending upward." : `${improvingCount} strategies are trending upward.`;
+    } else if (decliningCount > 0 && improvingCount === 0) {
+      trendDirectionLine = decliningCount === 1 ? "One strategy needs attention — performance has declined." : `${decliningCount} strategies need attention.`;
+    } else if (improvingCount > 0 && decliningCount > 0) {
+      trendDirectionLine = `Mixed direction — ${improvingCount} improving, ${decliningCount} need review.`;
+    }
+  }
 
   // Human-readable risk flags
   const flags: string[] = [];
@@ -112,7 +130,10 @@ export function AiPortfolioOverview({ runs, lastRunAt }: AiPortfolioOverviewProp
           <span className="text-text-muted/30">·</span>
           <div className="flex items-center gap-1 text-xs text-text-muted">
             <Sparkles size={11} className="text-accent/60" />
-            AI is monitoring your {runs.length} {runs.length === 1 ? "strategy" : "strategies"}
+            {trendValues.length > 0
+              ? `Tracking trends across ${runs.length} ${runs.length === 1 ? "strategy" : "strategies"}`
+              : `AI is monitoring your ${runs.length} ${runs.length === 1 ? "strategy" : "strategies"}`
+            }
           </div>
         </div>
 
@@ -135,10 +156,17 @@ export function AiPortfolioOverview({ runs, lastRunAt }: AiPortfolioOverviewProp
 
       {/* Body */}
       <div className="px-5 py-4 space-y-4">
-        {/* Observation */}
-        <p className="text-sm text-text-secondary leading-relaxed">
-          {status.observation(runs.length)}
-        </p>
+        {/* Observation + optional trend direction */}
+        <div>
+          <p className="text-sm text-text-secondary leading-relaxed">
+            {status.observation(runs.length)}
+          </p>
+          {trendDirectionLine && (
+            <p className="text-sm text-text-primary font-medium mt-1">
+              {trendDirectionLine}
+            </p>
+          )}
+        </div>
 
         {/* Performers + flags */}
         <div className="flex flex-wrap gap-2.5">
@@ -155,6 +183,7 @@ export function AiPortfolioOverview({ runs, lastRunAt }: AiPortfolioOverviewProp
             <span className={cn("text-sm font-mono font-bold tabular-nums ml-1 shrink-0", pnlColor(best.returnPct))}>
               {formatPercent(best.returnPct)}
             </span>
+            {trends[best.id] && <TrendBadge trend={trends[best.id]} size="sm" />}
             <ArrowRight size={11} className="text-text-muted group-hover:text-text-secondary transition-colors shrink-0" />
           </Link>
 
@@ -172,6 +201,7 @@ export function AiPortfolioOverview({ runs, lastRunAt }: AiPortfolioOverviewProp
               <span className={cn("text-sm font-mono font-bold tabular-nums ml-1 shrink-0", pnlColor(worst.returnPct))}>
                 {formatPercent(worst.returnPct)}
               </span>
+              {trends[worst.id] && <TrendBadge trend={trends[worst.id]} size="sm" />}
               <ArrowRight size={11} className="text-text-muted group-hover:text-text-secondary transition-colors shrink-0" />
             </Link>
           )}

@@ -1,8 +1,8 @@
 import Link from "next/link";
 import {
   Sparkles, Code2, BarChart3, Activity,
-  ArrowRight, CheckCircle2, TrendingUp,
-  ChevronRight, Zap, ShieldCheck,
+  ArrowRight, CheckCircle2, TrendingUp, BellRing,
+  Zap, ShieldCheck, ChevronRight, LineChart,
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { APP_NAME } from "@/lib/constants";
@@ -12,14 +12,12 @@ export const metadata = {
   title: `${APP_NAME} — AI-powered backtesting for systematic traders`,
 };
 
-// ── Page ────────────────────────────────────────────────────────────────────
-
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-surface-0 text-text-primary overflow-x-hidden">
       <Navbar />
       <Hero />
-      <Features />
+      <Benefits />
       <HowItWorks />
       <CtaBanner />
       <Footer />
@@ -27,35 +25,36 @@ export default function LandingPage() {
   );
 }
 
-// ── Navbar ──────────────────────────────────────────────────────────────────
+// ── Navbar ───────────────────────────────────────────────────────────────────
 
 function Navbar() {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 h-14 flex items-center justify-between px-6 lg:px-10 border-b border-border bg-surface-0/80 backdrop-blur-xl">
       <Logo size="sm" />
       <nav className="hidden sm:flex items-center gap-6 text-sm text-text-muted">
-        <a href="#features" className="hover:text-text-primary transition-colors">Features</a>
+        <a href="#benefits" className="hover:text-text-primary transition-colors">Features</a>
         <a href="#how-it-works" className="hover:text-text-primary transition-colors">How it works</a>
+        <Link href="/pricing" className="hover:text-text-primary transition-colors">Pricing</Link>
       </nav>
       <div className="flex items-center gap-2.5">
         <Link
           href="/auth/login"
           className="h-8 px-3.5 rounded-lg text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors flex items-center"
         >
-          Sign In
+          Sign in
         </Link>
         <Link
           href="/auth/register"
           className="h-8 px-3.5 rounded-lg text-sm font-semibold bg-accent hover:bg-accent-hover text-white transition-colors flex items-center gap-1.5"
         >
-          Get Started <ArrowRight size={13} />
+          Get started <ArrowRight size={13} />
         </Link>
       </div>
     </header>
   );
 }
 
-// ── Hero ────────────────────────────────────────────────────────────────────
+// ── Hero ─────────────────────────────────────────────────────────────────────
 
 function Hero() {
   return (
@@ -72,43 +71,47 @@ function Hero() {
             {/* Badge */}
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-accent/30 bg-accent/8 text-xs font-semibold text-accent">
               <Sparkles size={11} />
-              Powered by AI · Python-native
+              AI-powered · Python-native
             </div>
 
             {/* Headline */}
-            <div className="space-y-3">
-              <h1 className="text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1]">
-                Strategy research
-                <br />
-                at the speed of
-                <br />
-                <span className="text-accent">machine intelligence.</span>
+            <div className="space-y-4">
+              <h1 className="text-4xl lg:text-5xl font-bold tracking-tight leading-[1.15]">
+                AI that builds, tests and monitors{" "}
+                <span className="text-accent">trading strategies</span>{" "}
+                for you.
               </h1>
               <p className="text-lg text-text-secondary leading-relaxed max-w-lg">
-                Define your edge in Python, let the AI generate and test it,
-                and get institutional-grade analytics — in seconds.
+                Describe your idea or let the AI generate a complete strategy.
+                Run a backtest in seconds, then get ongoing performance monitoring
+                and alerts — all in one place.
               </p>
             </div>
 
-            {/* CTAs */}
-            <div className="flex items-center gap-3 flex-wrap">
+            {/* 2 main paths */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
               <Link
                 href="/auth/register"
-                className="h-11 px-6 rounded-xl text-sm font-semibold bg-accent hover:bg-accent-hover text-white transition-colors flex items-center gap-2"
+                className="group h-11 px-6 rounded-xl text-sm font-semibold bg-accent hover:bg-accent-hover text-white transition-colors flex items-center gap-2"
               >
-                Start for free <ArrowRight size={14} />
+                <Sparkles size={14} />
+                Use AI strategy
+                <span className="text-2xs font-bold bg-white/20 rounded px-1.5 py-0.5 leading-none">
+                  Recommended
+                </span>
               </Link>
               <Link
-                href="/auth/login"
+                href="/auth/register"
                 className="h-11 px-6 rounded-xl text-sm font-semibold border border-border bg-surface-1 text-text-primary hover:bg-surface-2 hover:border-border-hover transition-colors flex items-center gap-2"
               >
-                Sign in
+                <Code2 size={14} />
+                Build your own
               </Link>
             </div>
 
             {/* Trust pills */}
             <div className="flex items-center gap-4 flex-wrap pt-1">
-              {["No credit card required", "Free to start", "Open Python API"].map((t) => (
+              {["Free to start", "No credit card required", "Results in seconds"].map((t) => (
                 <span key={t} className="flex items-center gap-1.5 text-xs text-text-muted">
                   <CheckCircle2 size={12} className="text-profit/70 shrink-0" />
                   {t}
@@ -117,7 +120,7 @@ function Hero() {
             </div>
           </div>
 
-          {/* Right — product preview mockup */}
+          {/* Right — product mockup */}
           <div className="relative">
             <ProductMockup />
           </div>
@@ -127,10 +130,9 @@ function Hero() {
   );
 }
 
-// ── Product mockup ──────────────────────────────────────────────────────────
+// ── Product mockup ────────────────────────────────────────────────────────────
 
 function ProductMockup() {
-  // Equity curve points (SVG 800×160 space)
   const pts = [
     [0, 118], [60, 110], [120, 122], [190, 102], [260, 114],
     [340, 88], [420, 96], [500, 72], [580, 80], [660, 56],
@@ -140,7 +142,6 @@ function ProductMockup() {
   const areaPts = `0,160 ${linePts} 800,160`;
   const breakEvenY = 118;
   const [xN, yN] = pts[pts.length - 1];
-  const retPct = "+34.2%";
 
   return (
     <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden shadow-2xl shadow-black/40 ring-1 ring-white/5">
@@ -165,23 +166,16 @@ function ProductMockup() {
       </div>
 
       {/* SVG equity chart */}
-      <svg
-        viewBox="0 0 800 160"
-        className="w-full"
-        style={{ height: 160 }}
-        preserveAspectRatio="none"
-      >
+      <svg viewBox="0 0 800 160" className="w-full" style={{ height: 160 }} preserveAspectRatio="none">
         <defs>
           <linearGradient id="lp-chart-gradient" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#22c55e" stopOpacity="0.28" />
             <stop offset="85%" stopColor="#22c55e" stopOpacity="0" />
           </linearGradient>
         </defs>
-        {/* Grid lines */}
         {[40, 80, 120].map((y) => (
           <line key={y} x1="0" y1={y} x2="800" y2={y} stroke="rgba(255,255,255,0.03)" strokeWidth="1" />
         ))}
-        {/* Break-even */}
         <line x1="0" y1={breakEvenY} x2="800" y2={breakEvenY}
           stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="6 5" />
         <polygon points={areaPts} fill="url(#lp-chart-gradient)" />
@@ -195,9 +189,8 @@ function ProductMockup() {
       <div className="px-5 py-3.5 border-t border-border flex items-center gap-2.5 bg-accent/[0.03]">
         <Sparkles size={12} className="text-accent shrink-0" />
         <p className="text-xs text-text-secondary leading-relaxed">
-          <span className="text-accent font-semibold">AI Summary: </span>
-          Strong risk-adjusted returns. Drawdown well-controlled at 12.4%.
-          Sharpe of 1.84 indicates meaningful edge beyond market exposure.
+          <span className="text-accent font-semibold">AI: </span>
+          Strong risk-adjusted returns. Drawdown well-controlled at 12.4%. Sharpe of 1.84 indicates a meaningful edge.
         </p>
       </div>
     </div>
@@ -215,76 +208,63 @@ function KpiCell({ label, value, positive }: { label: string; value: string; pos
   );
 }
 
-// ── Features ────────────────────────────────────────────────────────────────
+// ── Benefits ──────────────────────────────────────────────────────────────────
 
-const FEATURES = [
+const BENEFITS = [
   {
     icon: Sparkles,
-    title: "AI Strategy Generator",
-    desc: "Describe your risk profile and time horizon. The AI designs, codes, and backtests a complete Python strategy in seconds — no prior coding required.",
+    title: "AI insights on every backtest",
+    desc: "After each run, the AI explains what worked, what didn't, and why — in plain language. No manual interpretation required.",
     accent: "text-accent",
     bg: "bg-accent/10",
-    topLine: "bg-accent",
     border: "border-accent/20",
   },
   {
-    icon: BarChart3,
-    title: "Deep Performance Analytics",
-    desc: "Sharpe, Sortino, Calmar, max drawdown, win rate, profit factor, and more. Every backtest produces a full institutional-grade report.",
-    accent: "text-violet-400",
-    bg: "bg-violet-400/10",
-    topLine: "bg-violet-400",
-    border: "border-violet-400/20",
-  },
-  {
-    icon: Activity,
-    title: "Real-time Execution",
-    desc: "Watch your backtest run live. Status updates stream in sub-second via Supabase Realtime — no polling, no page refresh.",
+    icon: LineChart,
+    title: "Performance monitoring",
+    desc: "Compare results across runs automatically. See whether your strategy is improving, stable, or declining over time.",
     accent: "text-profit",
     bg: "bg-profit/10",
-    topLine: "bg-profit",
     border: "border-profit/20",
   },
   {
-    icon: Code2,
-    title: "Python-native Strategies",
-    desc: "Write any strategy in Python with full library access. Use NumPy, Pandas, TA-Lib, or your own custom signals — we run it as-is.",
+    icon: BellRing,
+    title: "Intelligent alerts",
+    desc: "Get notified when drawdown spikes, returns drop, or your strategy shows signs of stress — before you go live.",
     accent: "text-amber-400",
     bg: "bg-amber-400/10",
-    topLine: "bg-amber-400",
     border: "border-amber-400/20",
+  },
+  {
+    icon: TrendingUp,
+    title: "Strategy improvement suggestions",
+    desc: "The AI identifies weak areas in your strategy — thin trade counts, poor Sharpe, elevated risk — and tells you what to review.",
+    accent: "text-violet-400",
+    bg: "bg-violet-400/10",
+    border: "border-violet-400/20",
   },
 ];
 
-function Features() {
+function Benefits() {
   return (
-    <section id="features" className="py-24 px-6 lg:px-10">
+    <section id="benefits" className="py-24 px-6 lg:px-10">
       <div className="max-w-7xl mx-auto space-y-12">
-        {/* Header */}
         <div className="text-center space-y-3 max-w-2xl mx-auto">
-          <p className="text-xs font-semibold text-accent uppercase tracking-widest">Features</p>
+          <p className="text-xs font-semibold text-accent uppercase tracking-widest">Why {APP_NAME}</p>
           <h2 className="text-3xl lg:text-4xl font-bold tracking-tight">
-            Everything you need to find your edge
+            More than a backtest runner
           </h2>
           <p className="text-text-secondary leading-relaxed">
-            From AI-generated strategies to deep analytics — all the tools systematic
-            traders need, without the infrastructure overhead.
+            Most tools just run the numbers. {APP_NAME} explains them, tracks them over time, and tells you when to pay attention.
           </p>
         </div>
 
-        {/* Feature grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {FEATURES.map(({ icon: Icon, title, desc, accent, bg, topLine, border }) => (
+          {BENEFITS.map(({ icon: Icon, title, desc, accent, bg, border }) => (
             <div
               key={title}
-              className={cn(
-                "relative rounded-2xl border bg-surface-1 p-6 overflow-hidden",
-                border
-              )}
+              className={cn("rounded-2xl border bg-surface-1 p-6", border)}
             >
-              {/* Top accent line */}
-              <div className={cn("absolute top-0 left-6 right-6 h-px opacity-50", topLine)} />
-
               <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center mb-4", bg)}>
                 <Icon size={18} className={accent} />
               </div>
@@ -298,26 +278,32 @@ function Features() {
   );
 }
 
-// ── How it works ────────────────────────────────────────────────────────────
+// ── How it works ──────────────────────────────────────────────────────────────
 
 const STEPS = [
   {
     n: "01",
-    icon: Code2,
-    title: "Define your strategy",
-    desc: "Write a Python strategy class, pick from templates, or let the AI generate one based on your risk profile and time horizon.",
+    icon: Sparkles,
+    title: "Define or generate a strategy",
+    desc: "Write a Python strategy class, pick from templates, or describe your idea and let the AI generate one for you.",
   },
   {
     n: "02",
     icon: Zap,
     title: "Run the backtest",
-    desc: "Select a symbol, interval, and date range. We simulate live trading conditions against years of historical market data in seconds.",
+    desc: "Pick a symbol, timeframe, and date range. Results come back in seconds with a full analytics report.",
   },
   {
     n: "03",
     icon: BarChart3,
-    title: "Analyze and refine",
-    desc: "Get a full analytics report — equity curve, Sharpe, drawdown, win rate — plus AI-generated insights and recommendations.",
+    title: "Get AI analysis",
+    desc: "The AI reads your results and gives you a plain-language summary: what's working, what to watch, and what to improve.",
+  },
+  {
+    n: "04",
+    icon: Activity,
+    title: "Monitor over time",
+    desc: "Run again after tweaking your strategy. Track whether performance is improving, stable, or declining across runs.",
   },
 ];
 
@@ -325,25 +311,21 @@ function HowItWorks() {
   return (
     <section id="how-it-works" className="py-24 px-6 lg:px-10 bg-surface-1/40 border-y border-border">
       <div className="max-w-7xl mx-auto space-y-12">
-        {/* Header */}
         <div className="text-center space-y-3 max-w-2xl mx-auto">
           <p className="text-xs font-semibold text-accent uppercase tracking-widest">How it works</p>
           <h2 className="text-3xl lg:text-4xl font-bold tracking-tight">
             From idea to insight in minutes
           </h2>
           <p className="text-text-secondary leading-relaxed">
-            Three steps from strategy concept to production-quality backtest results.
+            Four steps from strategy concept to ongoing performance monitoring.
           </p>
         </div>
 
-        {/* Steps */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
-          {/* Connector line */}
-          <div className="hidden md:block absolute top-10 left-[calc(33%+1rem)] right-[calc(33%+1rem)] h-px bg-border" />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 relative">
+          <div className="hidden md:block absolute top-5 left-[calc(12.5%+1rem)] right-[calc(12.5%+1rem)] h-px bg-border" />
 
           {STEPS.map(({ n, icon: Icon, title, desc }) => (
             <div key={n} className="relative flex flex-col gap-4">
-              {/* Step indicator */}
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center shrink-0">
                   <Icon size={17} className="text-accent" />
@@ -351,7 +333,7 @@ function HowItWorks() {
                 <span className="text-2xs font-mono font-bold text-text-muted tracking-widest">{n}</span>
               </div>
               <div className="space-y-1.5">
-                <h3 className="text-base font-semibold text-text-primary">{title}</h3>
+                <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
                 <p className="text-sm text-text-secondary leading-relaxed">{desc}</p>
               </div>
             </div>
@@ -362,12 +344,11 @@ function HowItWorks() {
   );
 }
 
-// ── CTA banner ──────────────────────────────────────────────────────────────
+// ── CTA banner ────────────────────────────────────────────────────────────────
 
 function CtaBanner() {
   return (
     <section className="py-24 px-6 lg:px-10 relative overflow-hidden">
-      {/* Orbs */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div className="w-[600px] h-[300px] bg-accent/8 rounded-full blur-3xl" />
       </div>
@@ -375,11 +356,10 @@ function CtaBanner() {
       <div className="relative z-10 max-w-2xl mx-auto text-center space-y-7">
         <div className="space-y-3">
           <h2 className="text-3xl lg:text-4xl font-bold tracking-tight">
-            Ready to find your edge?
+            Start building smarter strategies
           </h2>
           <p className="text-text-secondary leading-relaxed">
-            Join traders using {APP_NAME} to build, test, and refine systematic strategies
-            with AI-grade speed and precision.
+            Free to start. No credit card required. Your first AI-generated strategy is one click away.
           </p>
         </div>
 
@@ -388,13 +368,14 @@ function CtaBanner() {
             href="/auth/register"
             className="h-11 px-7 rounded-xl text-sm font-semibold bg-accent hover:bg-accent-hover text-white transition-colors flex items-center gap-2"
           >
-            Start for free <ArrowRight size={14} />
+            <Sparkles size={14} />
+            Get started free
           </Link>
           <Link
-            href="/auth/login"
+            href="/pricing"
             className="h-11 px-7 rounded-xl text-sm font-semibold border border-border bg-surface-1 text-text-primary hover:bg-surface-2 hover:border-border-hover transition-colors flex items-center gap-2"
           >
-            Sign in <ChevronRight size={14} />
+            View pricing <ChevronRight size={14} />
           </Link>
         </div>
 
@@ -406,7 +387,7 @@ function CtaBanner() {
   );
 }
 
-// ── Footer ──────────────────────────────────────────────────────────────────
+// ── Footer ────────────────────────────────────────────────────────────────────
 
 function Footer() {
   return (
@@ -414,9 +395,9 @@ function Footer() {
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-6 flex-wrap">
         <Logo size="sm" />
         <div className="flex items-center gap-6 text-xs text-text-muted">
-          <Link href="/auth/login" className="hover:text-text-secondary transition-colors">Sign In</Link>
-          <Link href="/auth/register" className="hover:text-text-secondary transition-colors">Get Started</Link>
-          <Link href="/dashboard" className="hover:text-text-secondary transition-colors">Dashboard</Link>
+          <Link href="/pricing" className="hover:text-text-secondary transition-colors">Pricing</Link>
+          <Link href="/auth/login" className="hover:text-text-secondary transition-colors">Sign in</Link>
+          <Link href="/auth/register" className="hover:text-text-secondary transition-colors">Get started</Link>
         </div>
         <p className="text-xs text-text-muted">
           © {new Date().getFullYear()} {APP_NAME}. All rights reserved.
