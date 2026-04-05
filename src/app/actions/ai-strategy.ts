@@ -23,7 +23,6 @@ export async function generateAndTestStrategyAction(formData: FormData) {
   // ── Create a strategy row so the user keeps it ──────────────────────────
   const { data: strategy, error: strategyError } = await supabase
     .from("strategies")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .insert({
       user_id: user.id,
       name: generated.name,
@@ -57,7 +56,6 @@ export async function generateAndTestStrategyAction(formData: FormData) {
   // ── Insert pending backtest run ──────────────────────────────────────────
   const { data: run, error: runError } = await supabase
     .from("backtest_runs")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .insert({
       user_id: user.id,
       strategy_id: strategy.id,

@@ -61,7 +61,6 @@ export async function submitBacktestAction(formData: FormData) {
   // ─── Insert pending run in Supabase ───────────────────────
   const { data: run, error: insertError } = await supabase
     .from("backtest_runs")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .insert({
       user_id: user.id,
       strategy_id: strategyId,
