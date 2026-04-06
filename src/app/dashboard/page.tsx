@@ -11,8 +11,10 @@ import { WelcomePanel } from "@/components/dashboard/welcome-panel";
 import { AiActivityFeed } from "@/components/dashboard/ai-activity-feed";
 import type { ActivityEvent } from "@/components/dashboard/ai-activity-feed";
 import { generateAlerts } from "@/lib/alerts";
-import { computeStrategyTrend } from "@/lib/trends";
+import { computeStrategyTrend, compareTwoRuns } from "@/lib/trends";
 import type { TrendLabel } from "@/lib/trends";
+import { TodayOverview } from "@/components/dashboard/today-overview";
+import type { StrategyOverviewCard } from "@/components/dashboard/today-overview";
 import { pnlColor, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { BacktestMetrics } from "@/types";
@@ -161,6 +163,76 @@ export default async function DashboardPage() {
   });
   const dashboardAlerts = generateAlerts(alertRunInputs);
 
+  // ── Per-strategy "Today / Overview" cards ───────────────────────────────────
+
+  function firstRunSummary(returnPct: number, sharpe: number): string {
+    if (returnPct > 15 && sharpe > 1.2)
+      return `Strong first run — ${returnPct.toFixed(1)}% return with a Sharpe of ${sharpe.toFixed(2)}.`;
+    if (returnPct > 0)
+      return `Profitable first run at ${returnPct.toFixed(1)}% return. Run again to establish a trend direction.`;
+    return `First run came in negative at ${returnPct.toFixed(1)}%. Review the entry conditions before running again.`;
+  }
+
+  const strategyOverviewCards: StrategyOverviewCard[] = [];
+
+  for (const [sid, sRuns] of strategyRunMap) {
+    const sorted = [...sRuns].sort((a, b) => a.completedAt.localeCompare(b.completedAt));
+    const latest = sorted[sorted.length - 1];
+    const prev   = sorted.length >= 2 ? sorted[sorted.length - 2] : null;
+
+    // Look up name + symbol from the raw completed run record
+    const runRecord = (completedRuns ?? []).find((r) => (r.id as string) === latest.id);
+    const cfg      = runRecord?.config as Record<string, unknown> | null;
+    const stratRef = runRecord as Record<string, unknown> & { strategies?: { name?: string } };
+    const stratName = stratRef?.strategies?.name || (cfg?.name as string) || sid.slice(0, 8);
+    const symbol    = (cfg?.symbol as string) || "—";
+
+    // 1-line summary: comparison text if prev run exists, otherwise first-run blurb
+    let summary: string;
+    if (prev) {
+      const comp = compareTwoRuns(
+        { returnPct: latest.returnPct, sharpe: latest.sharpe, drawdown: latest.drawdown, winRate: latest.winRate, trades: latest.trades },
+        { returnPct: prev.returnPct,   sharpe: prev.sharpe,   drawdown: prev.drawdown,   winRate: prev.winRate,   trades: prev.trades },
+      );
+      summary = comp.summary;
+    } else {
+      summary = firstRunSummary(latest.returnPct, latest.sharpe);
+    }
+
+    const trend = computeStrategyTrend(
+      sorted.map((r) => ({ returnPct: r.returnPct, sharpe: r.sharpe, drawdown: r.drawdown, winRate: r.winRate, trades: r.trades }))
+    );
+    const stratAlerts = dashboardAlerts.filter((a) => a.strategyId === sid);
+
+    strategyOverviewCards.push({
+      strategyId: sid,
+      strategyName: stratName,
+      symbol,
+      latestRunId: latest.id,
+      latestRunAt: latest.completedAt,
+      trend,
+      returnPct: latest.returnPct,
+      sharpe: latest.sharpe,
+      isBest: false,
+      isWorst: false,
+      summary,
+      alerts: stratAlerts,
+    });
+  }
+
+  // Mark best and worst by return pct
+  if (strategyOverviewCards.length > 0) {
+    const byReturn = [...strategyOverviewCards].sort((a, b) => b.returnPct - a.returnPct);
+    const bestId  = byReturn[0].strategyId;
+    const worstId = byReturn.length > 1 ? byReturn[byReturn.length - 1].strategyId : null;
+    for (const card of strategyOverviewCards) {
+      if (card.strategyId === bestId)  card.isBest  = true;
+      if (worstId && card.strategyId === worstId) card.isWorst = true;
+    }
+    // Sort: best first, then by return desc
+    strategyOverviewCards.sort((a, b) => b.returnPct - a.returnPct);
+  }
+
   // Build activity feed events from completed runs + alerts
   const activityEvents: ActivityEvent[] = [];
 
@@ -271,8 +343,13 @@ export default async function DashboardPage() {
             <AiStatusBar strategyCount={strategyCount ?? 0} lastRunAt={lastRunAt} />
           )}
 
-          {/* ── AI Alerts ─────────────────────────────────────── */}
-          {dashboardAlerts.length > 0 && (
+          {/* ── Today's Overview ──────────────────────────────── */}
+          {strategyOverviewCards.length > 0 && (
+            <TodayOverview strategies={strategyOverviewCards} />
+          )}
+
+          {/* ── AI Alerts (full detail — shown only when no overview) */}
+          {dashboardAlerts.length > 0 && strategyOverviewCards.length === 0 && (
             <AiAlerts alerts={dashboardAlerts} variant="full" />
           )}
 
