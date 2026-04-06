@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Sparkles, CheckCircle2, Info, AlertTriangle, ChevronRight } from "lucide-react";
+import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Sparkles, CheckCircle2, Info, AlertTriangle, XCircle, ListChecks } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,10 +10,11 @@ import { cn } from "@/lib/utils";
 import {
   computeConfidence,
   generateSummary,
-  generateRecommendations,
   generateInsights,
   generateRiskLabel,
   generateWhenItWorksAndFails,
+  generateWhatToDoNow,
+  generateWhenToAvoid,
 } from "@/lib/ai-strategy";
 import { compareTwoRuns } from "@/lib/trends";
 import { RunComparisonPanel } from "@/components/dashboard/run-comparison";
@@ -466,17 +467,38 @@ function AiAnalysisPanel({
   timeframe?: TimeframeHorizon;
   symbol?: string;
 }) {
-  const confidence = computeConfidence(metrics);
-  const summary = generateSummary(metrics, { risk, timeframe, symbol });
-  const recommendations = generateRecommendations(metrics, risk, timeframe);
-  const insights = generateInsights(metrics, risk ?? "balanced", timeframe ?? "medium");
-  const riskLabel = generateRiskLabel(metrics);
-  const conditions = generateWhenItWorksAndFails(metrics, risk, timeframe);
+  const confidence  = computeConfidence(metrics);
+  const summary     = generateSummary(metrics, { risk, timeframe, symbol });
+  const insights    = generateInsights(metrics, risk ?? "balanced", timeframe ?? "medium");
+  const riskLabel   = generateRiskLabel(metrics);
+  const conditions  = generateWhenItWorksAndFails(metrics, risk, timeframe);
+  const steps       = generateWhatToDoNow(metrics, risk, timeframe);
+  const avoidList   = generateWhenToAvoid(metrics, risk, timeframe);
 
-  const confidenceStyles = {
-    good:    { card: "border-profit/20 bg-profit/[0.03]",         badge: "bg-profit/10 text-profit border-profit/20",             icon: <CheckCircle2 size={13} className="shrink-0" /> },
-    neutral: { card: "border-accent/20 bg-accent/[0.03]",         badge: "bg-accent/10 text-accent border-accent/20",             icon: <Info size={13} className="shrink-0" /> },
-    risky:   { card: "border-yellow-400/20 bg-yellow-400/[0.03]", badge: "bg-yellow-400/10 text-yellow-400 border-yellow-400/20", icon: <AlertTriangle size={13} className="shrink-0" /> },
+  // ── Style maps ────────────────────────────────────────────────────────────
+
+  const confCard = {
+    good:    "border-profit/20 bg-profit/[0.03]",
+    neutral: "border-accent/20 bg-accent/[0.03]",
+    risky:   "border-yellow-400/20 bg-yellow-400/[0.03]",
+  }[confidence.level];
+
+  const confBar = {
+    good:    "bg-profit",
+    neutral: "bg-accent",
+    risky:   "bg-yellow-400",
+  }[confidence.level];
+
+  const confText = {
+    good:    "text-profit",
+    neutral: "text-accent",
+    risky:   "text-yellow-400",
+  }[confidence.level];
+
+  const confIcon = {
+    good:    <CheckCircle2 size={13} className="text-profit shrink-0" />,
+    neutral: <Info         size={13} className="text-accent shrink-0" />,
+    risky:   <AlertTriangle size={13} className="text-yellow-400 shrink-0" />,
   }[confidence.level];
 
   const riskBadgeCls = {
@@ -485,60 +507,100 @@ function AiAnalysisPanel({
     high:   "bg-loss/10 text-loss border-loss/20",
   }[riskLabel.level];
 
-  const insightIconCls = {
+  const insightStyle = {
     positive: { icon: <CheckCircle2 size={13} className="text-profit shrink-0 mt-0.5" />, wrap: "border-profit/10 bg-profit/[0.03]" },
-    neutral:  { icon: <Info size={13} className="text-accent shrink-0 mt-0.5" />,          wrap: "border-border bg-surface-2" },
+    neutral:  { icon: <Info          size={13} className="text-accent shrink-0 mt-0.5" />, wrap: "border-border bg-surface-2" },
     warning:  { icon: <AlertTriangle size={13} className="text-yellow-400 shrink-0 mt-0.5" />, wrap: "border-yellow-400/10 bg-yellow-400/[0.02]" },
   };
 
   return (
-    <div className={cn("rounded-2xl border px-6 py-5 space-y-5", confidenceStyles.card)}>
+    <div className={cn("rounded-2xl border px-6 py-5 space-y-5", confCard)}>
 
-      {/* Header */}
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <Sparkles size={14} className="text-accent" />
           <p className="text-sm font-semibold text-text-primary">AI Analysis</p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border", riskBadgeCls)}>
-            {riskLabel.label}
-          </span>
-          <div className={cn("flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border", confidenceStyles.badge)}>
-            {confidenceStyles.icon}
-            {confidence.label} · {confidence.score}
-          </div>
-        </div>
+        <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border", riskBadgeCls)}>
+          {riskLabel.label}
+        </span>
       </div>
 
-      {/* Summary */}
+      {/* ── Confidence score bar ─────────────────────────────────────────── */}
+      <div className="rounded-xl bg-surface-2 border border-border px-4 py-3 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider">
+            Confidence Score
+          </p>
+          <div className="flex items-center gap-1.5">
+            {confIcon}
+            <span className={cn("text-xs font-semibold", confText)}>{confidence.label}</span>
+            <span className="text-lg font-bold font-mono text-text-primary leading-none">
+              {confidence.score}
+              <span className="text-xs font-normal text-text-muted">/100</span>
+            </span>
+          </div>
+        </div>
+        {/* Bar */}
+        <div className="h-2 bg-surface-3 rounded-full overflow-hidden">
+          <div
+            className={cn("h-full rounded-full transition-all duration-500", confBar)}
+            style={{ width: `${confidence.score}%` }}
+          />
+        </div>
+        <p className="text-xs text-text-muted leading-relaxed">{confidence.reason}</p>
+      </div>
+
+      {/* ── Summary ──────────────────────────────────────────────────────── */}
       <p className="text-sm text-text-secondary leading-relaxed">{summary}</p>
 
-      {/* When it works / When it fails */}
+      {/* ── When it works / When it fails ────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="rounded-xl border border-profit/10 bg-profit/[0.02] px-4 py-3">
-          <p className="text-2xs font-semibold text-profit uppercase tracking-wider mb-1.5">When it works</p>
+          <p className="text-2xs font-semibold text-profit uppercase tracking-wider mb-1.5">
+            When it works
+          </p>
           <p className="text-xs text-text-secondary leading-relaxed">{conditions.works}</p>
         </div>
         <div className="rounded-xl border border-loss/10 bg-loss/[0.02] px-4 py-3">
-          <p className="text-2xs font-semibold text-loss uppercase tracking-wider mb-1.5">When it struggles</p>
+          <p className="text-2xs font-semibold text-loss uppercase tracking-wider mb-1.5">
+            When it struggles
+          </p>
           <p className="text-xs text-text-secondary leading-relaxed">{conditions.fails}</p>
         </div>
       </div>
 
-      {/* Divider */}
+      {/* ── When to avoid ────────────────────────────────────────────────── */}
+      <div className="rounded-xl border border-loss/15 bg-loss/[0.015] px-4 py-3 space-y-2.5">
+        <div className="flex items-center gap-1.5">
+          <XCircle size={12} className="text-loss/70 shrink-0" />
+          <p className="text-2xs font-semibold text-loss/80 uppercase tracking-wider">
+            When to avoid
+          </p>
+        </div>
+        <div className="space-y-2">
+          {avoidList.map((cond, i) => (
+            <div key={i} className="flex items-start gap-2">
+              <span className="mt-1 w-1 h-1 rounded-full bg-loss/50 shrink-0" />
+              <p className="text-xs text-text-muted leading-relaxed">{cond}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="border-t border-border" />
 
-      {/* Key Insights */}
+      {/* ── Key Insights ─────────────────────────────────────────────────── */}
       <div className="space-y-2.5">
         <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider">Key Insights</p>
         <div className="space-y-2">
           {insights.map((insight, i) => {
-            const style = insightIconCls[insight.type];
+            const s = insightStyle[insight.type];
             return (
-              <div key={i} className={cn("rounded-xl border px-4 py-3", style.wrap)}>
+              <div key={i} className={cn("rounded-xl border px-4 py-3", s.wrap)}>
                 <div className="flex items-start gap-2.5">
-                  {style.icon}
+                  {s.icon}
                   <div>
                     <p className="text-xs font-semibold text-text-primary mb-0.5">{insight.title}</p>
                     <p className="text-xs text-text-muted leading-relaxed">{insight.text}</p>
@@ -550,23 +612,28 @@ function AiAnalysisPanel({
         </div>
       </div>
 
-      {/* Divider */}
       <div className="border-t border-border" />
 
-      {/* Recommendations */}
+      {/* ── What to do now ───────────────────────────────────────────────── */}
       <div className="space-y-2.5">
-        <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider">Recommendations</p>
-        <div className="space-y-3">
-          {recommendations.map((rec, i) => (
-            <div key={i} className="flex items-start gap-3">
-              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-accent/10 text-accent text-2xs font-bold flex items-center justify-center mt-0.5">
+        <div className="flex items-center gap-1.5">
+          <ListChecks size={13} className="text-accent shrink-0" />
+          <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider">
+            What to do now
+          </p>
+        </div>
+        <div className="space-y-2">
+          {steps.map((step, i) => (
+            <div key={i} className="flex items-start gap-3 rounded-xl bg-surface-2 border border-border px-4 py-3">
+              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-accent text-surface-0 text-2xs font-bold flex items-center justify-center mt-0.5">
                 {i + 1}
               </span>
-              <p className="text-sm text-text-secondary leading-relaxed">{rec}</p>
+              <p className="text-sm text-text-secondary leading-relaxed">{step}</p>
             </div>
           ))}
         </div>
       </div>
+
     </div>
   );
 }

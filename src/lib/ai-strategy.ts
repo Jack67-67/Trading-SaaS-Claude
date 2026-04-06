@@ -719,6 +719,166 @@ export function generateWhenItWorksAndFails(
   };
 }
 
+// ── What to do now ─────────────────────────────────────────────────────────
+
+/**
+ * Returns 3 prioritised, concrete next steps the user should take right now.
+ * Step 1 = most urgent live-trading gate.
+ * Step 2 = highest-impact single improvement to test.
+ * Step 3 = validation / benchmark step.
+ */
+export function generateWhatToDoNow(
+  metrics: BacktestMetrics,
+  risk?: RiskLevel,
+  timeframe?: TimeframeHorizon,
+): string[] {
+  const steps: string[] = [];
+  const conf   = computeConfidence(metrics);
+  const dd     = Math.abs(metrics.max_drawdown_pct);
+  const sharpe = metrics.sharpe_ratio;
+  const ret    = metrics.total_return_pct;
+  const trades = metrics.total_trades;
+  const wr     = metrics.win_rate_pct;
+  const pf     = metrics.profit_factor;
+
+  // ── Step 1: Live-trading readiness gate ────────────────────────────────
+  if (ret < 0) {
+    steps.push(
+      "Do not run live yet. Identify the primary failure before changing anything: if win rate is below 40% the entry signal needs work; if profit factor is below 1.0 the exits are cutting winners too early. Fix one thing, rerun, then reassess.",
+    );
+  } else if (dd > 30) {
+    steps.push(
+      `Halve your position size before any live test. At ${dd.toFixed(1)}% backtest drawdown, real-world conditions could push this higher — starting at 50% of intended allocation limits your maximum downside while you validate the edge.`,
+    );
+  } else if (trades < 20) {
+    steps.push(
+      `Extend the backtest date range before acting on these results. ${trades} trades is not statistically sufficient — a single unlucky sequence can make a good strategy look bad. Aim for at least 30–50 trades before trusting the numbers.`,
+    );
+  } else if (conf.score >= 65) {
+    steps.push(
+      "Start a 2–4 week paper trading period using these exact parameters. Track whether real signal frequency matches the backtest — a large divergence is an early warning that the edge doesn't transfer to live conditions.",
+    );
+  } else {
+    steps.push(
+      "Run an out-of-sample test on a date range not used here before committing capital. If results hold within 30–40% of these figures, the edge is likely real. If they collapse, the strategy is overfit to this specific period.",
+    );
+  }
+
+  // ── Step 2: Highest-impact single improvement ──────────────────────────
+  if (dd > 25 && sharpe < 1.5) {
+    steps.push(
+      `Tighten the stop-loss by 1–2% and rerun. If drawdown falls significantly while returns stay roughly flat, the loose stop was the main drag on risk-adjusted performance. This is the fastest lever to improve Sharpe.`,
+    );
+  } else if (wr < 45 && pf < 1.3) {
+    steps.push(
+      "Add a trend filter to the entry: only take signals when price is above the 200-period moving average. This one change typically improves both win rate and profit factor simultaneously, without touching core logic.",
+    );
+  } else if (wr >= 60 && pf < 1.5) {
+    steps.push(
+      `Widen the take-profit target by 25–30% in the next run. With a ${wr.toFixed(0)}% win rate, you can afford to let winners run longer — and that single change would materially lift the profit factor.`,
+    );
+  } else if (sharpe < 1 && ret > 0) {
+    steps.push(
+      "Test the same strategy on a shorter interval. Moving from daily to 4-hour charts often improves Sharpe by generating more frequent, higher-quality signals without changing the core logic.",
+    );
+  } else if (timeframe === "long" || trades < 25) {
+    steps.push(
+      "Extend the test window to 3–5 years. The current trade sample is too small for long-term timeframes — more data separates genuine edge from market-specific luck.",
+    );
+  } else {
+    steps.push(
+      "Run the same strategy on 2–3 additional symbols of the same market type. Strategies with genuine edge generalize across related assets — if performance collapses on other symbols, the current results may be asset-specific luck.",
+    );
+  }
+
+  // ── Step 3: Validation or benchmark ───────────────────────────────────
+  if (conf.score >= 65 && dd <= 20) {
+    steps.push(
+      "Compare against a simple buy-and-hold benchmark for the same symbol and period. If the strategy doesn't beat buy-and-hold on a risk-adjusted basis (Sharpe comparison), the added complexity isn't generating value.",
+    );
+  } else if (ret < 0) {
+    steps.push(
+      "Run a control test: flip the entry direction (long → short or short → long) and rerun on the same period. If that version is profitable, the market had a directional bias against your original signal — not a flaw in the signal logic itself.",
+    );
+  } else {
+    steps.push(
+      "Do a parameter sensitivity test: vary the stop-loss by ±1% and the take-profit by ±2%, then compare results. Robust strategies produce similar results across a small range. If metrics collapse with minor changes, the current settings are overfit.",
+    );
+  }
+
+  return steps;
+}
+
+// ── When to avoid ──────────────────────────────────────────────────────────
+
+/**
+ * Returns 2–3 specific conditions under which this strategy should NOT be run.
+ * More prescriptive than "when it struggles" — these are hard stop signals.
+ */
+export function generateWhenToAvoid(
+  metrics: BacktestMetrics,
+  risk?: RiskLevel,
+  timeframe?: TimeframeHorizon,
+): string[] {
+  const conditions: string[] = [];
+  const dd     = Math.abs(metrics.max_drawdown_pct);
+  const sharpe = metrics.sharpe_ratio;
+  const wr     = metrics.win_rate_pct;
+  const trades = metrics.total_trades;
+  const vol    = metrics.volatility_pct;
+
+  // ── Market regime mismatch ─────────────────────────────────────────────
+  if (wr >= 55) {
+    conditions.push(
+      "Sideways or range-bound markets. High win-rate strategies depend on directional price follow-through — when markets chop without a trend, signals trigger frequently but price fails to follow, turning a working edge into a losing one.",
+    );
+  } else if (wr < 45) {
+    conditions.push(
+      "During sharp, news-driven reversals. Low win-rate momentum strategies accumulate edge slowly across many trades — a single sudden reversal can erase several days of gains before the signal has time to adapt.",
+    );
+  } else {
+    conditions.push(
+      "During periods of unusually low volatility (e.g. VIX below 12, or tight daily ranges). When price movement compresses, many signals stop triggering or produce false positives at a much higher rate.",
+    );
+  }
+
+  // ── Risk/drawdown condition ────────────────────────────────────────────
+  if (dd > 25) {
+    conditions.push(
+      `When your account is already down more than 10% from its recent peak. Combining this strategy's ${dd.toFixed(0)}% backtest drawdown with an existing account drawdown significantly increases the chance of a forced stop-out before recovery.`,
+    );
+  } else if (vol > 20) {
+    conditions.push(
+      "During high-volatility regimes — broad market crashes, central bank surprises, or sudden liquidity crises. The strategy was calibrated on normal volatility; extreme regimes break the assumptions built into the signal and risk parameters.",
+    );
+  } else {
+    conditions.push(
+      "On illiquid assets or during low-volume sessions (pre-market, thin crypto pairs, holiday trading). Wide bid-ask spreads and shallow order books create slippage that the backtest doesn't model, eroding the edge in ways that are hard to predict.",
+    );
+  }
+
+  // ── Practical readiness condition ─────────────────────────────────────
+  if (trades < 20) {
+    conditions.push(
+      "Until the backtest has at least 30–50 trades. The current sample is too small to rule out luck — undiscovered failure modes could surface quickly in live trading.",
+    );
+  } else if (sharpe < 0.8) {
+    conditions.push(
+      "With full position sizing. Risk-adjusted returns are not yet strong enough to justify maximum allocation — run at 30–50% of intended position size until a higher Sharpe is consistently demonstrated across multiple runs.",
+    );
+  } else if (risk === "aggressive" || timeframe === "short") {
+    conditions.push(
+      "Immediately after a major macro event or policy shift (rate decisions, earnings, geopolitical shocks). Short-timeframe and aggressive strategies are most vulnerable to regime changes — wait 1–2 weeks before resuming normal signals.",
+    );
+  } else {
+    conditions.push(
+      "Immediately after a major economic event or structural market change. Strategies calibrated on historical data can underperform significantly when regimes shift — pause for 2–3 weeks of post-event data before resuming.",
+    );
+  }
+
+  return conditions;
+}
+
 // ── AI Insights ────────────────────────────────────────────────────────────
 
 export function generateInsights(
