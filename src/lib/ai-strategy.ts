@@ -493,49 +493,49 @@ export function generateSummary(
   // Opening: overall result tone
   if (ret >= 20 && sharpe >= 1.5) {
     parts.push(
-      `This strategy delivered strong results${symbol ? ` on ${symbol}` : ""} — ${ret.toFixed(1)}% total return with an excellent Sharpe of ${sharpe.toFixed(2)}.`,
+      `This strategy returned ${ret.toFixed(1)}%${symbol ? ` on ${symbol}` : ""} with a Sharpe of ${sharpe.toFixed(2)} — meaning each unit of risk generated ${sharpe.toFixed(2)}× in return. That combination indicates a genuine, well-constructed edge.`,
     );
   } else if (ret >= 10 && sharpe >= 1) {
     parts.push(
-      `The strategy achieved solid performance${symbol ? ` on ${symbol}` : ""}, returning ${ret.toFixed(1)}% with acceptable risk-adjusted returns.`,
+      `The strategy returned ${ret.toFixed(1)}%${symbol ? ` on ${symbol}` : ""} with a Sharpe of ${sharpe.toFixed(2)}. The risk-adjusted return is acceptable — not exceptional, but a real and repeatable edge if the test window is representative.`,
     );
   } else if (ret >= 0) {
     parts.push(
-      `The strategy was marginally profitable${symbol ? ` on ${symbol}` : ""}, returning ${ret.toFixed(1)}%, though the risk-adjusted picture is mixed.`,
+      `The strategy was marginally profitable${symbol ? ` on ${symbol}` : ""}, returning ${ret.toFixed(1)}%. With a Sharpe of ${sharpe.toFixed(2)}, most of that gain came with significant volatility attached — the edge is present but fragile and needs strengthening before live trading.`,
     );
   } else {
     parts.push(
-      `This strategy was unprofitable${symbol ? ` on ${symbol}` : ""}, losing ${Math.abs(ret).toFixed(1)}% over the test period.`,
+      `This strategy lost ${Math.abs(ret).toFixed(1)}%${symbol ? ` on ${symbol}` : ""} over the test period. The signal logic is generating more noise than directional edge — the entry conditions need to be reviewed or tightened.`,
     );
   }
 
   // Middle: standout risk/reward factor
   if (dd > 30) {
     parts.push(
-      `However, a ${dd.toFixed(1)}% max drawdown is significant — the strategy carries real downside risk in adverse conditions.`,
+      `A ${dd.toFixed(1)}% max drawdown means the portfolio fell nearly ${Math.round(dd)}% from its peak at some point during the test. In live trading, that level of loss is psychologically very difficult to hold through — most traders cut exposure before recovery.`,
     );
   } else if (dd <= 15 && ret > 0) {
     parts.push(
-      `Drawdown was well-controlled at ${dd.toFixed(1)}%, suggesting the risk management rules are working as intended.`,
+      `Drawdown was held to ${dd.toFixed(1)}% — meaning the worst losing streak cost under ${Math.ceil(dd)}¢ per dollar invested while gains compounded. That level of capital preservation is a meaningful signal of edge quality.`,
     );
   }
 
   // Closer: behavioral observation
   if (wr < 45 && pf > 1.3) {
     parts.push(
-      `The edge comes from letting winners run — a low win rate is expected for this style, but individual wins are disproportionately large.`,
+      `The ${wr.toFixed(0)}% win rate seems low, but individual wins are large enough to more than offset the frequent small losses. This is how systematic trend-following works — the critical discipline is holding positions when it feels uncomfortable rather than cutting winners early.`,
     );
   } else if (wr >= 55 && pf < 1.3) {
     parts.push(
-      `While the win rate is high, average wins are small relative to losses. Widening profit targets could improve the profit factor.`,
+      `A ${wr.toFixed(0)}% win rate is high, but average wins are smaller than average losses — that gap leaves little margin for error. Widening profit targets by 20–30% could significantly improve the profit factor without sacrificing signal quality.`,
     );
   } else if (risk === "aggressive" && dd > 25) {
     parts.push(
-      `The drawdown is typical for an aggressive profile — position sizing is the primary lever for controlling live trading risk.`,
+      `The drawdown is consistent with an aggressive profile, but remember that live drawdowns often run 30–50% deeper than backtests. Even a 50% reduction in position size would roughly halve the drawdown while preserving the strategy's edge.`,
     );
   } else if (timeframe === "long" && metrics.total_trades < 20) {
     parts.push(
-      `Long-term strategies generate fewer signals by design; a longer test window would further strengthen statistical confidence.`,
+      `Long-term strategies generate fewer signals by design — ${metrics.total_trades} trades is expected at this timeframe. A 3–5 year test window would better separate genuine edge from market-specific luck and improve statistical confidence.`,
     );
   }
 
@@ -559,57 +559,57 @@ export function generateRecommendations(
   // 1. Position / risk sizing
   if (dd > 30) {
     recs.push(
-      "Reduce position size by 30–50% to bring max drawdown into a safer range before trading live.",
+      `Cut position size to 40–50% of your intended allocation before live trading. At ${dd.toFixed(1)}% backtest drawdown, live conditions could push that to ${(dd * 1.5).toFixed(0)}%+ — the kind of loss most traders stop out of before recovering.`,
     );
   } else if (sharpe < 0.8 && metrics.total_return_pct > 0) {
     recs.push(
-      "Tighten stop-loss levels to improve risk/reward and lift the Sharpe ratio above 1.0.",
+      "Tighten your stop-loss to improve risk/reward. A stop set at 1.5–2× the average trade's expected range would limit losers without cutting too many winners — and should move Sharpe above 1.0.",
     );
   } else if (risk === "aggressive" && sharpe < 1) {
     recs.push(
-      "Consider switching to a balanced risk profile — the aggressive sizing is not generating proportional returns.",
+      `Aggressive position sizing isn't being rewarded here — Sharpe of ${sharpe.toFixed(2)} means the extra risk isn't generating extra return. Switch to a balanced profile (50–70% max position) and retest before increasing size.`,
     );
   } else {
     recs.push(
-      "Position sizing is appropriate for this risk profile. Monitor live drawdown and reduce exposure if it exceeds backtest levels.",
+      "Position sizing looks appropriate for the backtest. In live trading, start at 50–60% of the backtest position size — this gives room to scale up once real-money performance confirms the edge holds.",
     );
   }
 
   // 2. Signal quality
   if (wr < 45 && pf < 1.2) {
     recs.push(
-      "Both win rate and profit factor are weak. Adding a trend filter (e.g. only trade in the direction of the 200-day SMA) could significantly improve signal quality.",
+      `Win rate (${wr.toFixed(0)}%) and profit factor (${pf.toFixed(2)}) are both weak — the signal is generating frequent small losses without enough offsetting wins. Adding a trend filter (e.g. only take long signals when price is above the 200-day SMA) is usually the fastest way to improve both metrics.`,
     );
   } else if (wr >= 60 && pf < 1.5) {
     recs.push(
-      "Increase profit targets by 20–30% to let winners run longer — the high win rate suggests you're exiting profitable trades too early.",
+      `${wr.toFixed(0)}% win rate is strong, but winners are too small relative to losers (profit factor ${pf.toFixed(2)}). Increase profit targets by 20–30% — with this accuracy you can afford to let trades run, and it would meaningfully improve the overall profit factor.`,
     );
   } else if (trades < 15) {
     recs.push(
-      "Extend the backtest period or use a shorter interval to generate more trades and improve statistical significance.",
+      `Only ${trades} trades executed — not enough to distinguish genuine edge from luck. Extend the test window by at least 1–2 years, or lower entry thresholds to generate more signals before drawing any conclusions from the results.`,
     );
   } else if (timeframe === "short" && sharpe >= 1.5) {
     recs.push(
-      "Performance is strong on the short timeframe. Paper trade for 2–4 weeks to validate edge before committing real capital.",
+      "Performance looks strong on this timeframe. Before live trading, paper trade for 3–4 weeks to verify the real signal quality matches the backtest — slippage and timing gaps often erode short-timeframe edges significantly.",
     );
   } else {
     recs.push(
-      `${timeframe === "long" ? "Test this strategy on a medium-term interval" : "Run this strategy on 2–3 additional symbols"} to verify the edge generalizes beyond this single test.`,
+      `${timeframe === "long" ? "Test this strategy on a medium-term interval (daily vs weekly)" : "Run this strategy on 2–3 additional symbols"} to verify the edge isn't specific to this one market or period. Real edge generalizes — time-specific luck doesn't.`,
     );
   }
 
   // 3. Validation / next step
   if (sharpe >= 1.5 && dd <= 20) {
     recs.push(
-      "Results look promising. Run an out-of-sample validation on a separate date range to check for overfitting before going live.",
+      "Results are strong enough to warrant out-of-sample validation. Run the exact same parameters on a date range not used in this test — if performance holds within 30–40% of these results, the edge is likely real and not overfit.",
     );
   } else if (metrics.total_return_pct < 0) {
     recs.push(
-      "Review the entry conditions — the current signal logic may be generating noise rather than meaningful edge in this market regime.",
+      "Before abandoning this strategy, isolate one change at a time: try a simpler entry condition or a different timeframe on the same symbol. A single parameter is often responsible for most of the underperformance.",
     );
   } else {
     recs.push(
-      "Run a parameter sensitivity test (vary stop-loss by ±1%) to confirm results are robust and not highly dependent on exact settings.",
+      "Run a sensitivity test: vary the stop-loss by ±1% and the take-profit by ±2%, then compare results. If key metrics hold up across these variations, the strategy is robust. If they collapse, the current settings are overfit to this specific period.",
     );
   }
 
@@ -733,19 +733,19 @@ export function generateInsights(
     insights.push({
       type: "positive",
       title: "Strong risk-adjusted returns",
-      text: `A Sharpe ratio of ${metrics.sharpe_ratio.toFixed(2)} indicates excellent return per unit of risk. This strategy generates meaningful alpha beyond what would be expected from market exposure alone.`,
+      text: `A Sharpe of ${metrics.sharpe_ratio.toFixed(2)} means the strategy earned ${metrics.sharpe_ratio.toFixed(2)}× return per unit of risk — well above the 1.0 benchmark. This level is rare and indicates genuine edge rather than just favorable market conditions during the test period.`,
     });
   } else if (metrics.sharpe_ratio >= 0.8) {
     insights.push({
       type: "neutral",
-      title: "Moderate risk-adjusted returns",
-      text: `A Sharpe ratio of ${metrics.sharpe_ratio.toFixed(2)} is acceptable but leaves room for improvement. Consider tightening entry conditions or adjusting stop-loss levels to improve capital efficiency.`,
+      title: "Acceptable risk-adjusted returns",
+      text: `A Sharpe of ${metrics.sharpe_ratio.toFixed(2)} is workable but leaves room to grow. Tightening entry conditions or trimming the stop-loss by 0.5–1% typically moves Sharpe from this range into the 1.0–1.5 zone without sacrificing trade frequency.`,
     });
   } else {
     insights.push({
       type: "warning",
-      title: "Low risk-adjusted returns",
-      text: `A Sharpe ratio of ${metrics.sharpe_ratio.toFixed(2)} suggests the strategy takes on more risk than the returns justify. Try increasing the profit target or reducing position size to improve the ratio.`,
+      title: "Risk isn't being rewarded",
+      text: `A Sharpe of ${metrics.sharpe_ratio.toFixed(2)} means the strategy is absorbing more volatility than the returns justify. The most common fix: stricter entry conditions that trade less often but with higher conviction per trade.`,
     });
   }
 
@@ -755,20 +755,20 @@ export function generateInsights(
   if (ddAbs <= ddExpected * 0.6) {
     insights.push({
       type: "positive",
-      title: "Well-controlled drawdown",
-      text: `Max drawdown of ${ddAbs.toFixed(1)}% is well within expectations for a ${risk} strategy. The risk management parameters are working effectively to preserve capital during losing streaks.`,
+      title: "Drawdown well within safe range",
+      text: `At ${ddAbs.toFixed(1)}%, drawdown is significantly below the ${ddExpected}% threshold typical for a ${risk} strategy. This means risk controls are working — the strategy can absorb a bad period without triggering forced position reductions or a crisis of confidence.`,
     });
   } else if (ddAbs <= ddExpected) {
     insights.push({
       type: "neutral",
-      title: "Drawdown within tolerance",
-      text: `Max drawdown of ${ddAbs.toFixed(1)}% is within the expected range for this risk profile. Monitor closely — extended losing streaks could push drawdown higher in live trading.`,
+      title: "Drawdown within acceptable range",
+      text: `At ${ddAbs.toFixed(1)}%, drawdown sits within the expected range for this risk profile. Note: live drawdowns often run 30–50% deeper than backtests due to slippage and delayed signals — worth sizing positions conservatively at first.`,
     });
   } else {
     insights.push({
       type: "warning",
-      title: "Drawdown exceeds expectations",
-      text: `Max drawdown of ${ddAbs.toFixed(1)}% is higher than typical for a ${risk} strategy. Consider tightening the stop-loss from ${risk === "aggressive" ? "6%" : risk === "balanced" ? "3%" : "2%"} or reducing position sizing to limit downside.`,
+      title: "Drawdown exceeds safe range",
+      text: `At ${ddAbs.toFixed(1)}%, drawdown is higher than typical for a ${risk} strategy. The most likely cause: positions held through extended losing periods. Tightening the stop-loss from ${risk === "aggressive" ? "6%" : risk === "balanced" ? "3%" : "2%"} to ${risk === "aggressive" ? "4%" : risk === "balanced" ? "2%" : "1.5%"} is the most direct fix.`,
     });
   }
 
@@ -776,26 +776,26 @@ export function generateInsights(
   if (metrics.win_rate_pct >= 55 && metrics.total_trades >= 20) {
     insights.push({
       type: "positive",
-      title: "High-accuracy trade signals",
-      text: `A ${metrics.win_rate_pct.toFixed(1)}% win rate across ${metrics.total_trades} trades shows consistent signal quality. The strategy has a statistical edge — avoid over-optimizing, which could reduce robustness on unseen data.`,
+      title: "High-accuracy entry signals",
+      text: `${metrics.win_rate_pct.toFixed(0)}% win rate across ${metrics.total_trades} trades shows the entry logic is consistently identifying good setups. With accuracy this high, you can afford to widen profit targets — most robust strategies at this win rate push take-profit levels before scaling up.`,
     });
   } else if (metrics.win_rate_pct < 50 && metrics.profit_factor > 1.2) {
     insights.push({
       type: "neutral",
-      title: "Low win rate, high profit factor",
-      text: `With ${metrics.win_rate_pct.toFixed(1)}% win rate but a profit factor of ${metrics.profit_factor.toFixed(2)}, this strategy wins less often but wins bigger. Ensure you can psychologically tolerate extended losing streaks before trading live.`,
+      title: "Low win rate with positive edge",
+      text: `Winning ${metrics.win_rate_pct.toFixed(0)}% of trades but maintaining a ${metrics.profit_factor.toFixed(2)} profit factor means individual wins are substantially larger than losses. This is a legitimate style — but it requires psychological discipline through losing streaks of 4–8 consecutive trades.`,
     });
   } else if (metrics.total_trades < 15) {
     insights.push({
       type: "neutral",
-      title: "Limited trade sample",
-      text: `Only ${metrics.total_trades} trades were generated. ${timeframe === "long" ? "Long-term strategies naturally trade less frequently, but" : "Consider extending the test period —"} a larger sample size would make these results more statistically reliable.`,
+      title: "Sample size too small to be conclusive",
+      text: `${metrics.total_trades} trades isn't enough to draw reliable conclusions — even a coin flip produces short streaks that look like patterns. ${timeframe === "long" ? "For long-term strategies, a 3–5 year window is the minimum for statistical significance." : "Extend the test window or loosen entry conditions to generate more data."}`,
     });
   } else {
     insights.push({
       type: "neutral",
-      title: "Average trade accuracy",
-      text: `A ${metrics.win_rate_pct.toFixed(1)}% win rate is near the breakeven point. The strategy's edge comes more from trade sizing and profit factor (${metrics.profit_factor.toFixed(2)}) than raw accuracy. This is normal for trend-following systems.`,
+      title: "Neutral trade accuracy",
+      text: `At ${metrics.win_rate_pct.toFixed(0)}%, win rate is near breakeven — but the profit factor of ${metrics.profit_factor.toFixed(2)} shows winners are meaningfully larger than losers. This pattern is normal and sustainable for systematic trend-following strategies.`,
     });
   }
 

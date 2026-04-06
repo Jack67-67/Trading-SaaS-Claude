@@ -2,10 +2,10 @@ import Link from "next/link";
 import { Sparkles, Code2, ArrowRight, FlaskConical, BarChart3, ShieldCheck } from "lucide-react";
 
 const HOW_IT_WORKS = [
-  { icon: Code2,        step: "1", label: "Define a strategy",  desc: "Write Python or let AI generate it" },
-  { icon: FlaskConical, step: "2", label: "Run a backtest",     desc: "Test it against years of market data" },
-  { icon: BarChart3,    step: "3", label: "Analyze the results", desc: "AI explains what the numbers mean" },
-  { icon: ShieldCheck,  step: "4", label: "Monitor over time",  desc: "Track performance across runs" },
+  { icon: Code2,        step: "1", label: "Define a strategy",   desc: "Describe your idea or paste Python — AI can write the full code for you" },
+  { icon: FlaskConical, step: "2", label: "Run a backtest",      desc: "Test against years of real market data in seconds" },
+  { icon: BarChart3,    step: "3", label: "Read the AI analysis", desc: "AI explains why the strategy worked or struggled, in plain English" },
+  { icon: ShieldCheck,  step: "4", label: "Monitor over time",   desc: "Compare runs and track whether your edge is improving or declining" },
 ];
 
 export function WelcomePanel({ name }: { name: string }) {
@@ -25,8 +25,14 @@ export function WelcomePanel({ name }: { name: string }) {
             Test any trading strategy<br />against historical data
           </h2>
           <p className="text-sm text-text-secondary leading-relaxed">
-            Define your edge in Python, backtest it on real market history, and let AI
-            explain the results — in seconds. No data science degree required.
+            Build a strategy, backtest it on real market history, and let AI explain
+            what the results actually mean — in plain English. Under 2 minutes from
+            idea to insights.
+          </p>
+          <p className="text-xs text-text-muted mt-3">
+            Not sure where to start?{" "}
+            <span className="text-accent font-medium">Use AI Strategy</span>
+            {" "}— no coding required.
           </p>
         </div>
 
@@ -50,8 +56,9 @@ export function WelcomePanel({ name }: { name: string }) {
                 Generate with AI
               </p>
               <p className="text-xs text-text-muted mt-1 leading-relaxed">
-                Describe your trading idea. AI writes the code, runs the backtest,
-                and explains what worked — all in one step.
+                No Python required. Describe your idea in plain English — e.g.
+                &quot;buy oversold crypto on the daily chart&quot; — and we&apos;ll
+                write the code, run the backtest, and explain the results.
               </p>
             </div>
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent mt-auto">
@@ -72,8 +79,9 @@ export function WelcomePanel({ name }: { name: string }) {
                 Write your own strategy
               </p>
               <p className="text-xs text-text-muted mt-1 leading-relaxed">
-                Already have an idea in Python? Paste your code, configure the
-                parameters, and run it against any symbol.
+                Already have Python code or a specific idea to implement? Paste
+                your strategy, set the entry rules and risk parameters, and test
+                it against any symbol and date range.
               </p>
             </div>
             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-text-muted group-hover:text-accent transition-colors mt-auto">

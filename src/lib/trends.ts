@@ -150,48 +150,48 @@ function buildSummary(
 
   if (trend === "improving") {
     if (returnUp && sharpeUp && ddDown) {
-      return "Performance improved across the board — higher returns, better risk-adjusted quality, and lower drawdown compared to the previous run.";
+      return "Return, Sharpe, and drawdown all moved in the right direction — three signals improving at once is meaningful. The underlying edge appears to be strengthening, not just benefiting from a favorable period.";
     }
     if (returnUp && sharpeUp) {
-      return "Returns and risk-adjusted quality both improved compared to the previous run. The strategy is trending in the right direction.";
+      return "Returns and risk-adjusted quality both improved from the previous run. Two of the most important signals moving together suggests a genuine improvement in the strategy's edge.";
     }
     if (returnUp) {
-      return `Return increased by ${Math.abs(returnDelta).toFixed(1)}pp compared to the previous run. Most other metrics held steady or improved.`;
+      return `Return increased by ${Math.abs(returnDelta).toFixed(1)}pp from the previous run, with other metrics holding steady. A good directional signal — run again to confirm the improvement is consistent.`;
     }
-    return "Performance improved compared to the previous run. Key metrics are trending in the right direction.";
+    return "Key metrics are trending in the right direction compared to the previous run. The strategy is moving toward a healthier risk/return profile.";
   }
 
   if (trend === "at-risk") {
     if (ddUp && Math.abs(ddDelta) > 8) {
-      return `Drawdown increased significantly — up ${ddDelta.toFixed(1)}pp from the previous run. The strategy is taking on more risk without a proportional improvement in returns.`;
+      return `Drawdown jumped ${ddDelta.toFixed(1)}pp from the previous run — the strategy is absorbing significantly more loss without generating proportionally higher returns. Review the stop-loss settings before running again.`;
     }
     if (returnDown && Math.abs(returnDelta) > 10) {
-      return `Return dropped ${Math.abs(returnDelta).toFixed(1)}pp compared to the previous run. Review the strategy's parameters before running again.`;
+      return `Return dropped ${Math.abs(returnDelta).toFixed(1)}pp from the previous run. A move this large between runs often signals a regime shift — what worked previously may not be working in the current market environment.`;
     }
-    return "This run shows signs of stress compared to the previous one. Drawdown or return has moved outside the expected range.";
+    return "This run shows signs of stress compared to the previous one. Drawdown or return has moved outside the expected range — investigate before treating these results as baseline.";
   }
 
   if (trend === "declining") {
     if (returnDown && ddUp) {
-      return "Returns declined while drawdown increased — the strategy is both earning less and taking on more risk than before.";
+      return "Returns fell while drawdown rose — the strategy is both earning less and losing more than before. This double deterioration often signals a parameter that's no longer suited to current market conditions.";
     }
     if (returnDown) {
-      return `Performance declined compared to the previous run — return fell by ${Math.abs(returnDelta).toFixed(1)}pp. Market conditions may have shifted.`;
+      return `Return fell ${Math.abs(returnDelta).toFixed(1)}pp from the previous run. Market conditions may have shifted — consider testing the same strategy on the most recent 6-month window to see if the decline continues.`;
     }
-    return "Most metrics moved in the wrong direction compared to the previous run. Consider reviewing the strategy logic or testing on a different time window.";
+    return "Most metrics moved in the wrong direction compared to the previous run. The strategy logic or time window may need revisiting before continuing.";
   }
 
   // stable
   if (ddDown && returnUp) {
-    return "Returns improved slightly and drawdown shrank — a positive sign of improving risk control. No major shifts detected.";
+    return "Returns improved slightly and drawdown shrank from the previous run — a quiet but positive combination. No major shifts detected.";
   }
   if (ddDown) {
-    return "Returns held steady while drawdown improved. The strategy is showing consistent behavior with better risk control.";
+    return "Returns held steady while drawdown improved. Consistency here is a good signal — strategies that behave predictably across runs tend to hold up better in live trading.";
   }
   if (Math.abs(returnDelta) < 2 && Math.abs(current.sharpe - previous.sharpe) < 0.15) {
-    return "Performance is consistent with the previous run — no significant changes in either direction. The strategy is behaving as expected.";
+    return "Performance is consistent with the previous run — no significant changes in either direction. Stability like this is itself a signal of strategy robustness.";
   }
-  return "Results are broadly in line with the previous run. Minor variations are within the normal range for this strategy.";
+  return "Results are broadly in line with the previous run. Minor variations are within normal range for this strategy — no action needed.";
 }
 
 // ── Multi-run trend ────────────────────────────────────────────────────────────
