@@ -46,9 +46,12 @@ POSTGREST_URL = f"{SUPABASE_URL}/rest/v1"
 
 app = FastAPI(title="Backtest Engine (stub)", version="0.1.0")
 
+_frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+_allowed_origins = [o.strip() for o in _frontend_url.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
