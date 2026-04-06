@@ -11,6 +11,9 @@ import {
   computeConfidence,
   generateSummary,
   generateRecommendations,
+  generateInsights,
+  generateRiskLabel,
+  generateWhenItWorksAndFails,
 } from "@/lib/ai-strategy";
 import { compareTwoRuns } from "@/lib/trends";
 import { RunComparisonPanel } from "@/components/dashboard/run-comparison";
@@ -466,29 +469,86 @@ function AiAnalysisPanel({
   const confidence = computeConfidence(metrics);
   const summary = generateSummary(metrics, { risk, timeframe, symbol });
   const recommendations = generateRecommendations(metrics, risk, timeframe);
+  const insights = generateInsights(metrics, risk ?? "balanced", timeframe ?? "medium");
+  const riskLabel = generateRiskLabel(metrics);
+  const conditions = generateWhenItWorksAndFails(metrics, risk, timeframe);
 
   const confidenceStyles = {
-    good:    { card: "border-profit/20 bg-profit/[0.03]",    badge: "bg-profit/10 text-profit border-profit/20",    icon: <CheckCircle2 size={13} className="shrink-0" /> },
-    neutral: { card: "border-accent/20 bg-accent/[0.03]",    badge: "bg-accent/10 text-accent border-accent/20",    icon: <Info size={13} className="shrink-0" /> },
+    good:    { card: "border-profit/20 bg-profit/[0.03]",         badge: "bg-profit/10 text-profit border-profit/20",             icon: <CheckCircle2 size={13} className="shrink-0" /> },
+    neutral: { card: "border-accent/20 bg-accent/[0.03]",         badge: "bg-accent/10 text-accent border-accent/20",             icon: <Info size={13} className="shrink-0" /> },
     risky:   { card: "border-yellow-400/20 bg-yellow-400/[0.03]", badge: "bg-yellow-400/10 text-yellow-400 border-yellow-400/20", icon: <AlertTriangle size={13} className="shrink-0" /> },
   }[confidence.level];
 
+  const riskBadgeCls = {
+    low:    "bg-profit/10 text-profit border-profit/20",
+    medium: "bg-yellow-400/10 text-yellow-400 border-yellow-400/20",
+    high:   "bg-loss/10 text-loss border-loss/20",
+  }[riskLabel.level];
+
+  const insightIconCls = {
+    positive: { icon: <CheckCircle2 size={13} className="text-profit shrink-0 mt-0.5" />, wrap: "border-profit/10 bg-profit/[0.03]" },
+    neutral:  { icon: <Info size={13} className="text-accent shrink-0 mt-0.5" />,          wrap: "border-border bg-surface-2" },
+    warning:  { icon: <AlertTriangle size={13} className="text-yellow-400 shrink-0 mt-0.5" />, wrap: "border-yellow-400/10 bg-yellow-400/[0.02]" },
+  };
+
   return (
-    <div className={cn("rounded-2xl border px-6 py-5 space-y-4", confidenceStyles.card)}>
+    <div className={cn("rounded-2xl border px-6 py-5 space-y-5", confidenceStyles.card)}>
+
       {/* Header */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <Sparkles size={14} className="text-accent" />
           <p className="text-sm font-semibold text-text-primary">AI Analysis</p>
         </div>
-        <div className={cn("flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border", confidenceStyles.badge)}>
-          {confidenceStyles.icon}
-          {confidence.label}
+        <div className="flex items-center gap-2">
+          <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border", riskBadgeCls)}>
+            {riskLabel.label}
+          </span>
+          <div className={cn("flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border", confidenceStyles.badge)}>
+            {confidenceStyles.icon}
+            {confidence.label} · {confidence.score}
+          </div>
         </div>
       </div>
 
       {/* Summary */}
       <p className="text-sm text-text-secondary leading-relaxed">{summary}</p>
+
+      {/* When it works / When it fails */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="rounded-xl border border-profit/10 bg-profit/[0.02] px-4 py-3">
+          <p className="text-2xs font-semibold text-profit uppercase tracking-wider mb-1.5">When it works</p>
+          <p className="text-xs text-text-secondary leading-relaxed">{conditions.works}</p>
+        </div>
+        <div className="rounded-xl border border-loss/10 bg-loss/[0.02] px-4 py-3">
+          <p className="text-2xs font-semibold text-loss uppercase tracking-wider mb-1.5">When it struggles</p>
+          <p className="text-xs text-text-secondary leading-relaxed">{conditions.fails}</p>
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div className="border-t border-border" />
+
+      {/* Key Insights */}
+      <div className="space-y-2.5">
+        <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider">Key Insights</p>
+        <div className="space-y-2">
+          {insights.map((insight, i) => {
+            const style = insightIconCls[insight.type];
+            return (
+              <div key={i} className={cn("rounded-xl border px-4 py-3", style.wrap)}>
+                <div className="flex items-start gap-2.5">
+                  {style.icon}
+                  <div>
+                    <p className="text-xs font-semibold text-text-primary mb-0.5">{insight.title}</p>
+                    <p className="text-xs text-text-muted leading-relaxed">{insight.text}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Divider */}
       <div className="border-t border-border" />
@@ -496,12 +556,16 @@ function AiAnalysisPanel({
       {/* Recommendations */}
       <div className="space-y-2.5">
         <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider">Recommendations</p>
-        {recommendations.map((rec, i) => (
-          <div key={i} className="flex items-start gap-2.5">
-            <ChevronRight size={13} className="text-accent mt-0.5 shrink-0" />
-            <p className="text-sm text-text-secondary leading-relaxed">{rec}</p>
-          </div>
-        ))}
+        <div className="space-y-3">
+          {recommendations.map((rec, i) => (
+            <div key={i} className="flex items-start gap-3">
+              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-accent/10 text-accent text-2xs font-bold flex items-center justify-center mt-0.5">
+                {i + 1}
+              </span>
+              <p className="text-sm text-text-secondary leading-relaxed">{rec}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

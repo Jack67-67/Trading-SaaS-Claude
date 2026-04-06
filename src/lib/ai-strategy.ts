@@ -616,6 +616,109 @@ export function generateRecommendations(
   return recs.slice(0, 3);
 }
 
+// ── Risk Label ─────────────────────────────────────────────────────────────
+
+export type RiskLabelType = "low" | "medium" | "high";
+
+export interface RiskLabelResult {
+  level: RiskLabelType;
+  label: string;
+  description: string;
+}
+
+export function generateRiskLabel(metrics: BacktestMetrics): RiskLabelResult {
+  const dd = Math.abs(metrics.max_drawdown_pct);
+  const vol = metrics.volatility_pct;
+  const sharpe = metrics.sharpe_ratio;
+
+  if (dd > 30 || (vol > 25 && sharpe < 1)) {
+    return {
+      level: "high",
+      label: "High Risk",
+      description: `${dd.toFixed(1)}% peak drawdown — significant capital exposure. Not suitable for live trading without tighter position sizing.`,
+    };
+  }
+
+  if (dd <= 15 && vol <= 18 && sharpe >= 0.8) {
+    return {
+      level: "low",
+      label: "Low Risk",
+      description: `${dd.toFixed(1)}% max drawdown with ${vol.toFixed(1)}% annualized volatility — well-controlled downside suitable for conservative accounts.`,
+    };
+  }
+
+  return {
+    level: "medium",
+    label: "Medium Risk",
+    description: `${dd.toFixed(1)}% max drawdown and ${vol.toFixed(1)}% volatility — moderate exposure. Size positions accordingly.`,
+  };
+}
+
+// ── When it works / When it fails ──────────────────────────────────────────
+
+export interface StrategyConditions {
+  works: string;
+  fails: string;
+}
+
+export function generateWhenItWorksAndFails(
+  metrics: BacktestMetrics,
+  risk?: RiskLevel,
+  timeframe?: TimeframeHorizon,
+): StrategyConditions {
+  const sharpe = metrics.sharpe_ratio;
+  const wr = metrics.win_rate_pct;
+  const pf = metrics.profit_factor;
+  const dd = Math.abs(metrics.max_drawdown_pct);
+
+  if (wr >= 55 && pf >= 1.5) {
+    return {
+      works: "Performs best in trending markets with consistent directional momentum. High accuracy signals suggest the entry logic is well-calibrated to the timeframe.",
+      fails: "Likely to struggle in choppy, sideways markets where signals trigger frequently but price follow-through is weak.",
+    };
+  }
+
+  if (wr < 45 && pf >= 1.3) {
+    return {
+      works: "Designed to capture large directional moves — works well in high-momentum regimes where a few big trades drive most of the returns.",
+      fails: "Extended range-bound periods will produce repeated small losses. Requires psychological tolerance for losing streaks of 4–8 consecutive trades.",
+    };
+  }
+
+  if (sharpe >= 1.5 && dd <= 20) {
+    return {
+      works: "Demonstrates strong risk-adjusted performance across varying conditions. The combination of controlled drawdown and high Sharpe suggests resilience across market regimes.",
+      fails: "May underperform during extreme volatility events or structural regime changes where historical price patterns break down.",
+    };
+  }
+
+  if (dd > 30) {
+    return {
+      works: "Can generate outsized returns during strong trending conditions when momentum aligns with the signal direction over sustained periods.",
+      fails: "High drawdown indicates vulnerability during trend reversals and spike volatility events. Reduce position size before trading live.",
+    };
+  }
+
+  if (timeframe === "long") {
+    return {
+      works: "Best suited for sustained macro trends spanning multiple months. Works well in directional bull or bear markets with clear bias.",
+      fails: "Will underperform during range-bound years or frequent trend reversals, where few valid entry signals are generated.",
+    };
+  }
+
+  if (timeframe === "short" || risk === "aggressive") {
+    return {
+      works: "Captures short-term momentum effectively in liquid markets with consistent price action and tight bid-ask spreads.",
+      fails: "Sensitive to slippage, transaction costs, and news-driven volatility spikes that can invalidate signals before they play out.",
+    };
+  }
+
+  return {
+    works: "Performs best when market volatility aligns with the strategy's expected signal frequency and the trend environment is clear.",
+    fails: "Performance degrades when market conditions shift significantly from the backtest period — regular re-evaluation is recommended.",
+  };
+}
+
 // ── AI Insights ────────────────────────────────────────────────────────────
 
 export function generateInsights(
