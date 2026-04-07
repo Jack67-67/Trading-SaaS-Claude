@@ -6,6 +6,7 @@ import {
 import { cn } from "@/lib/utils";
 import { formatPercent, pnlColor } from "@/lib/utils";
 import type { TrendLabel } from "@/lib/trends";
+import { TREND_META } from "@/components/dashboard/run-comparison";
 import type { AppAlert } from "@/lib/alerts";
 
 // ── Public types ────────────────────────────────────────────────────────────
@@ -80,14 +81,20 @@ function StrategyRow({
   const trend = card.trend ? TREND_CFG[card.trend] : null;
   const TIcon = trend?.Icon ?? Minus;
 
+  const leftEdge = card.trend ? TREND_META[card.trend].leftEdge : null;
+
   return (
     <Link
       href={`/dashboard/results/${card.latestRunId}`}
       className={cn(
-        "group flex flex-col gap-3 px-5 py-4 hover:bg-surface-1/60 transition-colors",
+        "group relative flex flex-col gap-3 px-5 py-4 hover:bg-surface-1/60 transition-colors",
         !isLast && "border-b border-border"
       )}
     >
+      {/* Left-edge trend accent */}
+      {leftEdge && (
+        <span className={cn("absolute left-0 inset-y-0 w-0.5 rounded-r-full", leftEdge)} />
+      )}
       {/* ── Top row: identity + trend + return ── */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
 

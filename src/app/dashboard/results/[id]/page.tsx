@@ -15,6 +15,7 @@ import {
   generateWhenItWorksAndFails,
   generateWhatToDoNow,
   generateWhenToAvoid,
+  generateVerdict,
 } from "@/lib/ai-strategy";
 import { compareTwoRuns } from "@/lib/trends";
 import { RunComparisonPanel } from "@/components/dashboard/run-comparison";
@@ -173,8 +174,13 @@ export default async function ResultDetailPage({ params }: PageProps) {
             )
           : null;
 
+        const verdict = generateVerdict(metrics);
+
         return (
         <>
+          {/* Verdict banner — strategy quality at a glance */}
+          <VerdictBanner verdict={verdict} />
+
           {/* KPI hero — unified card */}
           <KpiHero metrics={metrics} />
 
@@ -265,6 +271,42 @@ export default async function ResultDetailPage({ params }: PageProps) {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+import type { VerdictResult } from "@/lib/ai-strategy";
+
+function VerdictBanner({ verdict }: { verdict: VerdictResult }) {
+  const colorMap = {
+    profit: { border: "border-profit/20", bg: "from-profit/[0.06] via-surface-1 to-surface-1", badge: "bg-profit/10 text-profit border-profit/20", dot: "bg-profit" },
+    accent:  { border: "border-accent/20",  bg: "from-accent/[0.06] via-surface-1 to-surface-1",  badge: "bg-accent/10 text-accent border-accent/20",   dot: "bg-accent" },
+    amber:   { border: "border-amber-400/25", bg: "from-amber-400/[0.05] via-surface-1 to-surface-1", badge: "bg-amber-400/10 text-amber-400 border-amber-400/20", dot: "bg-amber-400" },
+    loss:    { border: "border-loss/20",  bg: "from-loss/[0.05] via-surface-1 to-surface-1",  badge: "bg-loss/10 text-loss border-loss/20",   dot: "bg-loss" },
+  };
+  const s = colorMap[verdict.color];
+
+  return (
+    <div className={cn("rounded-2xl border overflow-hidden bg-gradient-to-br", s.border, s.bg)}>
+      <div className="px-6 py-5 flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", s.dot)} />
+          <div>
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-0.5">
+              Strategy Verdict
+            </p>
+            <p className="text-xl font-bold text-text-primary leading-snug">
+              {verdict.label}
+            </p>
+          </div>
+        </div>
+        <span className={cn("text-xs font-semibold border rounded-full px-3 py-1.5 shrink-0", s.badge)}>
+          {verdict.tagline}
+        </span>
+      </div>
+      <div className="border-t border-border/50 px-6 py-3 bg-surface-1/50">
+        <p className="text-sm text-text-secondary leading-relaxed">{verdict.explanation}</p>
+      </div>
+    </div>
+  );
+}
 
 function sharpeLabel(v: number): { text: string; cls: string } {
   if (v >= 2)   return { text: "Excellent", cls: "text-profit" };
@@ -550,6 +592,9 @@ function AiAnalysisPanel({
           />
         </div>
         <p className="text-xs text-text-muted leading-relaxed">{confidence.reason}</p>
+        <p className="text-xs text-text-secondary leading-relaxed border-t border-border/60 pt-2 mt-1">
+          {confidence.explanation}
+        </p>
       </div>
 
       {/* ── Summary ──────────────────────────────────────────────────────── */}

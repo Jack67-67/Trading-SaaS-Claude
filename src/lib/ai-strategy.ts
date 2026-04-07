@@ -406,6 +406,8 @@ export interface ConfidenceSignal {
   label: string;
   score: number; // 0–100
   reason: string;
+  /** Plain-English interpretation of what this score means for actionability */
+  explanation: string;
 }
 
 export function computeConfidence(metrics: BacktestMetrics): ConfidenceSignal {
@@ -467,11 +469,21 @@ export function computeConfidence(metrics: BacktestMetrics): ConfidenceSignal {
   const level: ConfidenceLevel =
     score >= 65 ? "good" : score >= 40 ? "neutral" : "risky";
 
+  const explanation: string =
+    score >= 70
+      ? "This score is high enough to justify paper trading or a small live test. The edge is statistically meaningful — validate on an out-of-sample period before scaling up."
+      : score >= 55
+        ? "There is a real but cautious edge here. At least one factor is limiting confidence — fix the primary concern and rerun to see if the score improves."
+        : score >= 40
+          ? "The edge is present but fragile. The primary concern must be addressed before this strategy is deployable — the numbers aren't reliable enough yet."
+          : "This score is too low to act on. The strategy needs significant work — focus on the most critical metric before running again.";
+
   return {
     level,
     label: level === "good" ? "Good" : level === "neutral" ? "Neutral" : "Risky",
     score,
     reason,
+    explanation,
   };
 }
 
@@ -960,4 +972,67 @@ export function generateInsights(
   }
 
   return insights;
+}
+
+
+// ── Strategy Verdict ──────────────────────────────────────────────────────
+
+export type VerdictLabel = "Ready to Scale" | "Promising" | "Needs Refinement" | "Not Ready";
+export type VerdictColor = "profit" | "accent" | "amber" | "loss";
+
+export interface VerdictResult {
+  label: VerdictLabel;
+  color: VerdictColor;
+  tagline: string;
+  explanation: string;
+}
+
+export function generateVerdict(metrics: BacktestMetrics): VerdictResult {
+  const confidence = computeConfidence(metrics);
+  const ret    = metrics.total_return_pct;
+  const sharpe = metrics.sharpe_ratio;
+  const dd     = Math.abs(metrics.max_drawdown_pct);
+  const trades = metrics.total_trades;
+
+  if (ret < 0 || confidence.score < 35) {
+    return {
+      label: "Not Ready",
+      color: "loss",
+      tagline: "This strategy needs significant work before it is tradeable.",
+      explanation: trades < 10
+        ? `Only ${trades} trades executed — the sample is too small to trust any metric. Extend the date range before drawing conclusions.`
+        : ret < 0
+          ? `The strategy lost ${Math.abs(ret).toFixed(1)}% — the entry logic is generating more noise than edge. Review the signal conditions before running again.`
+          : `Risk metrics are outside acceptable ranges. Address the primary concern flagged in the AI analysis before considering live trading.`,
+    };
+  }
+
+  if (confidence.score < 55 || (sharpe < 0.8 && ret < 10)) {
+    return {
+      label: "Needs Refinement",
+      color: "amber",
+      tagline: "Potential is here, but at least one key metric is holding it back.",
+      explanation: sharpe < 0.8
+        ? `A Sharpe of ${sharpe.toFixed(2)} means returns are not compensating for the volatility taken. Tightening entry conditions is usually the fastest way to improve this ratio.`
+        : dd > 25
+          ? `The ${dd.toFixed(1)}% drawdown is the primary concern. Adding a stop-loss or reducing position size would lower this significantly while preserving most of the return.`
+          : `The results show real but fragile edge. A second run on a different date range will reveal whether this performance holds or is period-specific.`,
+    };
+  }
+
+  if (confidence.score < 70 || (sharpe >= 0.8 && sharpe < 1.5)) {
+    return {
+      label: "Promising",
+      color: "accent",
+      tagline: "Genuine edge is present — confirm it holds before going live.",
+      explanation: `A Sharpe of ${sharpe.toFixed(2)} with ${dd.toFixed(1)}% drawdown is a reasonable risk/return profile. Run the same parameters on a fresh date range — if performance holds within 30%, the edge is likely real.`,
+    };
+  }
+
+  return {
+    label: "Ready to Scale",
+    color: "profit",
+    tagline: "Strong risk-adjusted results across key metrics.",
+    explanation: `Sharpe of ${sharpe.toFixed(2)} and drawdown of ${dd.toFixed(1)}% represent a well-constructed edge. Confirm with an out-of-sample test, then start live at 30–50% of the backtest position size.`,
+  };
 }

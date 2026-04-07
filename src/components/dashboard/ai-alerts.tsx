@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, AlertCircle, Info, BellRing, ArrowRight } from "lucide-react";
+import { AlertTriangle, AlertCircle, Info, BellRing, ArrowRight, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AppAlert, AlertSeverity } from "@/lib/alerts";
 
@@ -54,6 +54,17 @@ const SEV: Record<AlertSeverity, {
     pill: "bg-accent/10 border-accent/20",
     pillText: "text-accent",
     label: "Info",
+  },
+  good: {
+    Icon: CheckCircle2,
+    iconBg: "bg-profit/10",
+    iconColor: "text-profit",
+    titleColor: "text-profit",
+    border: "border-profit/20",
+    leftBar: "bg-profit",
+    pill: "bg-profit/10 border-profit/20",
+    pillText: "text-profit",
+    label: "Good Signal",
   },
 };
 
@@ -134,6 +145,7 @@ export function AiAlerts({ alerts, variant = "full" }: AiAlertsProps) {
 
   const criticalCount = alerts.filter((a) => a.severity === "critical").length;
   const warningCount = alerts.filter((a) => a.severity === "warning").length;
+  const goodCount = alerts.filter((a) => a.severity === "good").length;
   const hasUrgent = criticalCount > 0 || warningCount > 0;
 
   if (variant === "compact") {
@@ -179,7 +191,13 @@ export function AiAlerts({ alerts, variant = "full" }: AiAlertsProps) {
               {warningCount} warning{warningCount > 1 ? "s" : ""}
             </span>
           )}
-          {!hasUrgent && (
+          {goodCount > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-2xs font-semibold bg-profit/10 text-profit border border-profit/20 rounded-full px-2.5 py-1">
+              <CheckCircle2 size={9} />
+              {goodCount} positive
+            </span>
+          )}
+          {!hasUrgent && goodCount === 0 && (
             <span className="text-2xs font-medium text-text-muted">
               {alerts.length} info notice{alerts.length > 1 ? "s" : ""}
             </span>

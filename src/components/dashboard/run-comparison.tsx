@@ -10,30 +10,35 @@ export const TREND_META: Record<TrendLabel, {
   icon: React.ElementType;
   badge: string;
   dot: string;
+  leftEdge: string;
 }> = {
   improving: {
     label: "Improving",
     icon: TrendingUp,
     badge: "bg-profit/10 text-profit border-profit/20",
     dot: "bg-profit",
+    leftEdge: "bg-profit/50",
   },
   stable: {
     label: "Stable",
     icon: ShieldCheck,
     badge: "bg-accent/10 text-accent border-accent/20",
     dot: "bg-accent",
+    leftEdge: "bg-accent/30",
   },
   "at-risk": {
     label: "At Risk",
     icon: AlertTriangle,
     badge: "bg-amber-400/10 text-amber-400 border-amber-400/20",
     dot: "bg-amber-400",
+    leftEdge: "bg-amber-400/50",
   },
   declining: {
     label: "Declining",
     icon: TrendingDown,
     badge: "bg-loss/10 text-loss border-loss/20",
     dot: "bg-loss",
+    leftEdge: "bg-loss/50",
   },
 };
 
@@ -63,28 +68,44 @@ function DeltaChip({ delta }: { delta: MetricDelta }) {
   const isFlat = delta.direction === "flat";
   const isGood = delta.isPositive;
   const isBad  = !delta.isPositive && !isFlat;
-
-  const Icon = isFlat ? Minus : delta.direction === "up" ? TrendingUp : TrendingDown;
+  const Arrow  = isFlat ? Minus : delta.direction === "up" ? TrendingUp : TrendingDown;
 
   return (
-    <div className="flex flex-col gap-1 min-w-0">
+    <div className={cn(
+      "rounded-xl border p-3 flex flex-col gap-1.5 min-w-0",
+      isGood ? "border-profit/15 bg-profit/[0.025]"
+      : isBad ? "border-loss/15 bg-loss/[0.025]"
+      : "border-border/60 bg-surface-2/60"
+    )}>
+      {/* Label */}
       <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider truncate">
         {delta.label}
       </p>
-      <p className={cn(
-        "text-base font-mono font-bold tabular-nums leading-none",
-        isGood ? "text-profit" : isBad ? "text-loss" : "text-text-primary"
-      )}>
-        {delta.currentFormatted}
-      </p>
+
+      {/* Before → After */}
+      <div className="flex items-baseline gap-1.5 flex-wrap">
+        <span className="text-xs font-mono text-text-muted/50 tabular-nums">
+          {delta.previousFormatted}
+        </span>
+        <span className="text-text-muted/35 text-2xs leading-none">→</span>
+        <span className={cn(
+          "text-base font-mono font-bold tabular-nums leading-none",
+          isGood ? "text-profit" : isBad ? "text-loss" : "text-text-primary"
+        )}>
+          {delta.currentFormatted}
+        </span>
+      </div>
+
+      {/* Delta badge pill */}
       <span className={cn(
-        "inline-flex items-center gap-0.5 text-2xs font-semibold",
-        isGood ? "text-profit" : isBad ? "text-loss" : "text-text-muted"
+        "inline-flex items-center gap-0.5 text-2xs font-semibold rounded-full px-1.5 py-0.5 w-fit border",
+        isGood ? "text-profit bg-profit/10 border-profit/20"
+        : isBad ? "text-loss bg-loss/10 border-loss/20"
+        : "text-text-muted bg-surface-3 border-border"
       )}>
-        <Icon size={10} />
+        <Arrow size={8} />
         {isFlat ? "no change" : delta.deltaFormatted}
       </span>
-      <p className="text-2xs text-text-muted/50">prev {delta.previousFormatted}</p>
     </div>
   );
 }
@@ -111,6 +132,10 @@ export function RunComparisonPanel({ comparison, prevRunId }: RunComparisonPanel
     comparison.trend === "at-risk"   ? "bg-amber-400/[0.025]" :
     comparison.trend === "declining" ? "bg-loss/[0.025]" :
     "bg-surface-1";
+
+  const improvedDeltas  = comparison.deltas.filter((d) => d.isPositive);
+  const declinedDeltas  = comparison.deltas.filter((d) => !d.isPositive && d.direction !== "flat");
+  const unchangedDeltas = comparison.deltas.filter((d) => d.direction === "flat");
 
   return (
     <div className={cn("rounded-2xl border overflow-hidden", borderColor, bgColor)}>
@@ -142,10 +167,24 @@ export function RunComparisonPanel({ comparison, prevRunId }: RunComparisonPanel
                 AI
               </span>
             </div>
-            <p className="text-xs text-text-muted">
-              {comparison.improvingCount} metric{comparison.improvingCount !== 1 ? "s" : ""} improved
-              {comparison.decliningCount > 0 && `, ${comparison.decliningCount} declined`}
-            </p>
+            {/* Colored change counters */}
+            <div className="flex items-center gap-1.5 mt-0.5">
+              {improvedDeltas.length > 0 && (
+                <span className="inline-flex items-center gap-0.5 text-2xs font-semibold text-profit bg-profit/10 border border-profit/20 rounded-full px-1.5 py-0.5">
+                  <TrendingUp size={8} />
+                  {improvedDeltas.length} improved
+                </span>
+              )}
+              {declinedDeltas.length > 0 && (
+                <span className="inline-flex items-center gap-0.5 text-2xs font-semibold text-loss bg-loss/10 border border-loss/20 rounded-full px-1.5 py-0.5">
+                  <TrendingDown size={8} />
+                  {declinedDeltas.length} declined
+                </span>
+              )}
+              {unchangedDeltas.length > 0 && improvedDeltas.length === 0 && declinedDeltas.length === 0 && (
+                <span className="text-2xs text-text-muted">No significant changes</span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -161,15 +200,15 @@ export function RunComparisonPanel({ comparison, prevRunId }: RunComparisonPanel
         </div>
       </div>
 
-      {/* Summary — the AI's main insight, given visual prominence */}
+      {/* Summary — the AI's main insight */}
       <div className="px-5 py-4 border-b border-border/50">
         <p className="text-sm text-text-primary leading-relaxed font-medium">
           {comparison.summary}
         </p>
       </div>
 
-      {/* Metric deltas */}
-      <div className="px-5 py-4 grid grid-cols-2 sm:grid-cols-4 gap-5">
+      {/* Metric delta tiles — color-coded individually */}
+      <div className="px-5 py-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
         {comparison.deltas.map((delta) => (
           <DeltaChip key={delta.key} delta={delta} />
         ))}

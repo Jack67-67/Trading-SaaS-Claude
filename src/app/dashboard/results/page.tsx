@@ -4,6 +4,9 @@ import { BarChart3, TrendingUp, TrendingDown } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { formatDateTime, formatPercent, pnlColor } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { compareTwoRuns } from "@/lib/trends";
+import type { TrendLabel } from "@/lib/trends";
+import { TrendBadge } from "@/components/dashboard/run-comparison";
 
 export const metadata: Metadata = {
   title: "Results",
@@ -36,6 +39,38 @@ export default async function ResultsPage() {
     ? allMetrics.reduce((s, m) => s + (m.sharpe_ratio ?? 0), 0) / allMetrics.length
     : null;
   const maxReturn = Math.max(...allMetrics.map((m) => Math.abs(m.total_return_pct ?? 0)), 1);
+
+  // ── Per-run trend data (vs. previous run of same strategy) ───────────────
+  type RunTrendData = { trend: TrendLabel; returnDelta: number; sharpeDelta: number };
+  const runTrendMap = new Map<string, RunTrendData>();
+
+  const stratGroups = new Map<string, typeof items>();
+  for (const run of items) {
+    const sid = run.strategy_id as string | undefined;
+    if (!sid) continue;
+    const g = stratGroups.get(sid) ?? [];
+    g.push(run);
+    stratGroups.set(sid, g);
+  }
+  for (const [, group] of stratGroups) {
+    const sorted = [...group].sort(
+      (a, b) => new Date(a.completed_at as string).getTime() - new Date(b.completed_at as string).getTime()
+    );
+    for (let i = 1; i < sorted.length; i++) {
+      const cm = (sorted[i].results as Record<string, unknown> | null)?.metrics as Record<string, number> | null;
+      const pm = (sorted[i - 1].results as Record<string, unknown> | null)?.metrics as Record<string, number> | null;
+      if (!cm || !pm || cm.total_return_pct == null || pm.total_return_pct == null) continue;
+      const { trend } = compareTwoRuns(
+        { returnPct: cm.total_return_pct, sharpe: cm.sharpe_ratio ?? 0, drawdown: Math.abs(cm.max_drawdown_pct ?? 0), winRate: cm.win_rate_pct ?? 0, trades: cm.total_trades ?? 0 },
+        { returnPct: pm.total_return_pct, sharpe: pm.sharpe_ratio ?? 0, drawdown: Math.abs(pm.max_drawdown_pct ?? 0), winRate: pm.win_rate_pct ?? 0, trades: pm.total_trades ?? 0 },
+      );
+      runTrendMap.set(sorted[i].id as string, {
+        trend,
+        returnDelta: cm.total_return_pct - pm.total_return_pct,
+        sharpeDelta: (cm.sharpe_ratio ?? 0) - (pm.sharpe_ratio ?? 0),
+      });
+    }
+  }
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -128,19 +163,35 @@ export default async function ResultsPage() {
               const barWidth = returnPct !== undefined
                 ? Math.round((Math.abs(returnPct) / maxReturn) * 100)
                 : 0;
+              const td = runTrendMap.get(run.id as string);
 
               return (
                 <Link
                   key={run.id}
                   href={`/dashboard/results/${run.id}`}
-                  className="grid grid-cols-[minmax(200px,2fr)_minmax(120px,1fr)_130px_100px_100px_80px_120px] items-center px-5 py-3.5 gap-4 hover:bg-surface-1 transition-colors group"
+                  className={cn(
+                    "relative grid grid-cols-[minmax(200px,2fr)_minmax(120px,1fr)_130px_100px_100px_80px_120px] items-center px-5 py-3.5 gap-4 hover:bg-surface-1 transition-colors group",
+                    td?.trend === "improving" && "hover:bg-profit/[0.02]",
+                    td?.trend === "at-risk"   && "hover:bg-amber-400/[0.02]",
+                    td?.trend === "declining" && "hover:bg-loss/[0.02]",
+                  )}
                 >
+                  {/* Left-edge trend accent */}
+                  {td && (
+                    <span className={cn(
+                      "absolute left-0 inset-y-0 w-0.5 rounded-r-full",
+                      td.trend === "improving" ? "bg-profit/50"
+                      : td.trend === "at-risk"  ? "bg-amber-400/50"
+                      : td.trend === "declining" ? "bg-loss/50"
+                      : "bg-accent/20"
+                    )} />
+                  )}
                   {/* Run name */}
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-text-primary group-hover:text-accent transition-colors truncate">
                       {runName}
                     </p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">
                         {symbol}
                       </span>
@@ -149,6 +200,7 @@ export default async function ResultsPage() {
                           {interval}
                         </span>
                       )}
+                      {td && <TrendBadge trend={td.trend} size="sm" />}
                     </div>
                   </div>
 
@@ -178,6 +230,11 @@ export default async function ResultsPage() {
                         />
                       </div>
                     )}
+                    {td && returnPct !== undefined && Math.abs(td.returnDelta) > 0.1 && (
+                      <p className={cn("text-2xs font-mono mt-0.5", td.returnDelta > 0 ? "text-profit/70" : "text-loss/70")}>
+                        {td.returnDelta > 0 ? "+" : ""}{td.returnDelta.toFixed(1)}pp
+                      </p>
+                    )}
                   </div>
 
                   {/* Sharpe */}
@@ -188,6 +245,11 @@ export default async function ResultsPage() {
                     )}>
                       {sharpe !== undefined ? sharpe.toFixed(2) : "—"}
                     </span>
+                    {td && sharpe !== undefined && Math.abs(td.sharpeDelta) > 0.01 && (
+                      <p className={cn("text-2xs font-mono mt-0.5", td.sharpeDelta > 0 ? "text-profit/70" : "text-loss/70")}>
+                        {td.sharpeDelta > 0 ? "+" : ""}{td.sharpeDelta.toFixed(2)}
+                      </p>
+                    )}
                   </div>
 
                   {/* Win Rate */}

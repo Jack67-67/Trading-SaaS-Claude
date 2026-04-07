@@ -15,6 +15,8 @@ import { computeStrategyTrend, compareTwoRuns } from "@/lib/trends";
 import type { TrendLabel } from "@/lib/trends";
 import { TodayOverview } from "@/components/dashboard/today-overview";
 import type { StrategyOverviewCard } from "@/components/dashboard/today-overview";
+import { NextAction } from "@/components/dashboard/next-action";
+import { generateNextActions } from "@/lib/next-actions";
 import { pnlColor, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { BacktestMetrics } from "@/types";
@@ -297,6 +299,20 @@ export default async function DashboardPage() {
     .sort()
     .at(-1) ?? null;
 
+  // ── Next actions ────────────────────────────────────────────────────────────
+  const nextActions = generateNextActions({
+    alerts: dashboardAlerts,
+    strategies: strategyOverviewCards.map((c) => ({
+      id: c.strategyId,
+      name: c.strategyName,
+      trend: c.trend,
+      returnPct: c.returnPct,
+      latestRunId: c.latestRunId,
+    })),
+    totalRuns: backtestCount ?? 0,
+    totalStrategies: strategyCount ?? 0,
+  });
+
   const displayName =
     user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Trader";
 
@@ -341,6 +357,11 @@ export default async function DashboardPage() {
             <AiPortfolioOverview runs={aiRunSummaries} lastRunAt={lastRunAt} trends={runTrends} />
           ) : (
             <AiStatusBar strategyCount={strategyCount ?? 0} lastRunAt={lastRunAt} />
+          )}
+
+          {/* ── Next Actions ──────────────────────────────────── */}
+          {nextActions.length > 0 && (
+            <NextAction actions={nextActions} />
           )}
 
           {/* ── Today's Overview ──────────────────────────────── */}

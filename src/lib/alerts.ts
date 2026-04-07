@@ -1,4 +1,4 @@
-export type AlertSeverity = "critical" | "warning" | "info";
+export type AlertSeverity = "critical" | "warning" | "info" | "good";
 
 export interface AppAlert {
   id: string;
@@ -135,13 +135,13 @@ export function generateAlerts(runs: RunInput[]): AppAlert[] {
       });
     }
 
-    // ── Info: moderate Sharpe improvement ────────────────────────────────────
-    if (prev && latest.sharpe - prev.sharpe > 0.4 && stratAlerts.length < 2) {
+    // ── Good: return improved significantly vs previous ───────────────────
+    if (prev && latest.returnPct - prev.returnPct > 8 && latest.returnPct > 0 && stratAlerts.length < 2) {
       stratAlerts.push({
-        id: `${latest.id}-sharpe-improvement`,
-        severity: "info",
-        title: "Strategy Improving",
-        message: `Sharpe jumped from ${prev.sharpe.toFixed(2)} to ${latest.sharpe.toFixed(2)} — a meaningful improvement in risk-adjusted quality. This is a real signal, not noise. Run the same parameters on an additional symbol to confirm the improvement generalizes.`,
+        id: `${latest.id}-return-improvement`,
+        severity: "good",
+        title: "Return Improved",
+        message: `Return increased from ${prev.returnPct.toFixed(1)}% to ${latest.returnPct.toFixed(1)}% — a ${(latest.returnPct - prev.returnPct).toFixed(1)}pp gain. Confirm this holds by running on a fresh date range before increasing position size.`,
         strategyId: latest.strategyId,
         strategyName: latest.strategyName,
         runId: latest.id,
@@ -150,18 +150,34 @@ export function generateAlerts(runs: RunInput[]): AppAlert[] {
       });
     }
 
-    // Push max 2 alerts, critical first
+    // ── Good: Sharpe improved meaningfully ───────────────────────────────
+    if (prev && latest.sharpe - prev.sharpe > 0.4 && stratAlerts.length < 2) {
+      stratAlerts.push({
+        id: `${latest.id}-sharpe-improvement`,
+        severity: "good",
+        title: "Strategy Improving",
+        message: `Sharpe jumped from ${prev.sharpe.toFixed(2)} to ${latest.sharpe.toFixed(2)} — a meaningful improvement in risk-adjusted quality. This is a real signal, not noise. Run on an additional symbol to confirm the improvement generalizes.`,
+        strategyId: latest.strategyId,
+        strategyName: latest.strategyName,
+        runId: latest.id,
+        symbol: latest.symbol,
+        completedAt: latest.completedAt,
+      });
+    }
+
+    // Push max 2 alerts, critical first, good last
     const prioritized = [
       ...stratAlerts.filter((a) => a.severity === "critical"),
       ...stratAlerts.filter((a) => a.severity === "warning"),
       ...stratAlerts.filter((a) => a.severity === "info"),
+      ...stratAlerts.filter((a) => a.severity === "good"),
     ].slice(0, 2);
 
     alerts.push(...prioritized);
   }
 
   // Sort final list: critical → warning → info, then by date desc
-  const severityOrder: Record<AlertSeverity, number> = { critical: 0, warning: 1, info: 2 };
+  const severityOrder: Record<AlertSeverity, number> = { critical: 0, warning: 1, info: 2, good: 3 };
   return alerts.sort((a, b) => {
     const sd = severityOrder[a.severity] - severityOrder[b.severity];
     if (sd !== 0) return sd;
