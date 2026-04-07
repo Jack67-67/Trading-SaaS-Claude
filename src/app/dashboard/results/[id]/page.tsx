@@ -276,33 +276,67 @@ import type { VerdictResult } from "@/lib/ai-strategy";
 
 function VerdictBanner({ verdict }: { verdict: VerdictResult }) {
   const colorMap = {
-    profit: { border: "border-profit/20", bg: "from-profit/[0.06] via-surface-1 to-surface-1", badge: "bg-profit/10 text-profit border-profit/20", dot: "bg-profit" },
-    accent:  { border: "border-accent/20",  bg: "from-accent/[0.06] via-surface-1 to-surface-1",  badge: "bg-accent/10 text-accent border-accent/20",   dot: "bg-accent" },
-    amber:   { border: "border-amber-400/25", bg: "from-amber-400/[0.05] via-surface-1 to-surface-1", badge: "bg-amber-400/10 text-amber-400 border-amber-400/20", dot: "bg-amber-400" },
-    loss:    { border: "border-loss/20",  bg: "from-loss/[0.05] via-surface-1 to-surface-1",  badge: "bg-loss/10 text-loss border-loss/20",   dot: "bg-loss" },
+    profit: {
+      border: "border-profit/20",
+      bg: "from-profit/[0.06] via-surface-1 to-surface-1",
+      badge: "bg-profit/10 text-profit border-profit/20",
+      dot: "bg-profit",
+      labelColor: "text-profit",
+    },
+    accent: {
+      border: "border-accent/20",
+      bg: "from-accent/[0.06] via-surface-1 to-surface-1",
+      badge: "bg-accent/10 text-accent border-accent/20",
+      dot: "bg-accent",
+      labelColor: "text-accent",
+    },
+    amber: {
+      border: "border-amber-400/25",
+      bg: "from-amber-400/[0.05] via-surface-1 to-surface-1",
+      badge: "bg-amber-400/10 text-amber-400 border-amber-400/20",
+      dot: "bg-amber-400",
+      labelColor: "text-amber-400",
+    },
+    loss: {
+      border: "border-loss/20",
+      bg: "from-loss/[0.05] via-surface-1 to-surface-1",
+      badge: "bg-loss/10 text-loss border-loss/20",
+      dot: "bg-loss",
+      labelColor: "text-loss",
+    },
   };
   const s = colorMap[verdict.color];
 
   return (
     <div className={cn("rounded-2xl border overflow-hidden bg-gradient-to-br", s.border, s.bg)}>
-      <div className="px-6 py-5 flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", s.dot)} />
+      {/* Top row: verdict label + tagline pill */}
+      <div className="px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-2.5">
+          <span className={cn("w-2 h-2 rounded-full shrink-0", s.dot)} />
           <div>
-            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-0.5">
+            <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider mb-0.5">
               Strategy Verdict
             </p>
-            <p className="text-xl font-bold text-text-primary leading-snug">
+            <p className={cn("text-lg font-bold leading-snug", s.labelColor)}>
               {verdict.label}
             </p>
           </div>
         </div>
-        <span className={cn("text-xs font-semibold border rounded-full px-3 py-1.5 shrink-0", s.badge)}>
+        <span className={cn("text-xs font-semibold border rounded-full px-3 py-1 shrink-0", s.badge)}>
           {verdict.tagline}
         </span>
       </div>
-      <div className="border-t border-border/50 px-6 py-3 bg-surface-1/50">
-        <p className="text-sm text-text-secondary leading-relaxed">{verdict.explanation}</p>
+
+      {/* TL;DR — the most important line, always visible */}
+      <div className={cn("px-6 py-3 border-t border-border/50 bg-surface-1/60")}>
+        <p className="text-sm font-semibold text-text-primary leading-snug">
+          {verdict.tldr}
+        </p>
+      </div>
+
+      {/* Explanation — fuller context */}
+      <div className="px-6 py-3 border-t border-border/40 bg-surface-1/30">
+        <p className="text-xs text-text-muted leading-relaxed">{verdict.explanation}</p>
       </div>
     </div>
   );

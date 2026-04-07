@@ -150,48 +150,48 @@ function buildSummary(
 
   if (trend === "improving") {
     if (returnUp && sharpeUp && ddDown) {
-      return "Return, Sharpe, and drawdown all moved in the right direction — three signals improving at once is meaningful. The underlying edge appears to be strengthening, not just benefiting from a favorable period.";
+      return `Return, Sharpe, and drawdown all moved in the right direction — three signals improving at once is a reliable confirmation. This is not noise. The edge is genuinely strengthening and the direction is clear.`;
     }
     if (returnUp && sharpeUp) {
-      return "Returns and risk-adjusted quality both improved from the previous run. Two of the most important signals moving together suggests a genuine improvement in the strategy's edge.";
+      return `Return and Sharpe both up — the two most important metrics moving together is a real signal, not luck. The strategy is generating more return per unit of risk than it was before.`;
     }
     if (returnUp) {
-      return `Return increased by ${Math.abs(returnDelta).toFixed(1)}pp from the previous run, with other metrics holding steady. A good directional signal — run again to confirm the improvement is consistent.`;
+      return `Return up ${Math.abs(returnDelta).toFixed(1)}pp with other metrics holding steady. A clear directional improvement — run again on a fresh date range to confirm this is repeatable, not a one-off.`;
     }
-    return "Key metrics are trending in the right direction compared to the previous run. The strategy is moving toward a healthier risk/return profile.";
+    return "Key metrics are moving in the right direction. The strategy is improving — keep the current configuration and run again to build on this.";
   }
 
   if (trend === "at-risk") {
     if (ddUp && Math.abs(ddDelta) > 8) {
-      return `Drawdown jumped ${ddDelta.toFixed(1)}pp from the previous run — the strategy is absorbing significantly more loss without generating proportionally higher returns. Review the stop-loss settings before running again.`;
+      return `Drawdown spiked ${ddDelta.toFixed(1)}pp — this is a warning you cannot ignore. The strategy is absorbing significantly more loss without generating more return. Do not run this live until you have reviewed the stop-loss settings.`;
     }
     if (returnDown && Math.abs(returnDelta) > 10) {
-      return `Return dropped ${Math.abs(returnDelta).toFixed(1)}pp from the previous run. A move this large between runs often signals a regime shift — what worked previously may not be working in the current market environment.`;
+      return `Return dropped ${Math.abs(returnDelta).toFixed(1)}pp — a move this large between runs is not normal variation. Either the market regime shifted or the parameters are breaking down. Test on the most recent period to find out which.`;
     }
-    return "This run shows signs of stress compared to the previous one. Drawdown or return has moved outside the expected range — investigate before treating these results as baseline.";
+    return "Something has moved outside the expected range — this is not normal variation. Diagnose the cause before treating these results as representative or running again.";
   }
 
   if (trend === "declining") {
     if (returnDown && ddUp) {
-      return "Returns fell while drawdown rose — the strategy is both earning less and losing more than before. This double deterioration often signals a parameter that's no longer suited to current market conditions.";
+      return `Returns down and drawdown up — a double deterioration. The strategy is earning less and losing more at the same time. Stop running the same configuration and diagnose what changed before the next run.`;
     }
     if (returnDown) {
-      return `Return fell ${Math.abs(returnDelta).toFixed(1)}pp from the previous run. Market conditions may have shifted — consider testing the same strategy on the most recent 6-month window to see if the decline continues.`;
+      return `Return fell ${Math.abs(returnDelta).toFixed(1)}pp and the decline appears sustained, not a one-off. Run the strategy on the most recent 6-month window immediately — you need to know whether this is ongoing or market-specific.`;
     }
-    return "Most metrics moved in the wrong direction compared to the previous run. The strategy logic or time window may need revisiting before continuing.";
+    return "Multiple metrics moved in the wrong direction. This configuration is losing its edge — do not keep running it unchanged. Identify the weakest metric and fix that first.";
   }
 
   // stable
   if (ddDown && returnUp) {
-    return "Returns improved slightly and drawdown shrank from the previous run — a quiet but positive combination. No major shifts detected.";
+    return "Returns up and drawdown down — a quiet but meaningful combination. The strategy is getting slightly better in both dimensions. Keep the current configuration.";
   }
   if (ddDown) {
-    return "Returns held steady while drawdown improved. Consistency here is a good signal — strategies that behave predictably across runs tend to hold up better in live trading.";
+    return "Returns held steady while drawdown improved. This is exactly what robustness looks like — the strategy is behaving predictably, which is a real signal of live-trading durability.";
   }
   if (Math.abs(returnDelta) < 2 && Math.abs(current.sharpe - previous.sharpe) < 0.15) {
-    return "Performance is consistent with the previous run — no significant changes in either direction. Stability like this is itself a signal of strategy robustness.";
+    return "Performance is essentially unchanged from the previous run — no meaningful drift in either direction. Stable behaviour across runs is a reliability signal, not a problem.";
   }
-  return "Results are broadly in line with the previous run. Minor variations are within normal range for this strategy — no action needed.";
+  return "Results are within normal variation of the previous run. No action required — keep the current configuration.";
 }
 
 // ── Multi-run trend ────────────────────────────────────────────────────────────
