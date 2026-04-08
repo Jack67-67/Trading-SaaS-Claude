@@ -1,9 +1,13 @@
 """
-Stub FastAPI backtest engine.
+FastAPI backtest engine — Polygon integration.
 
 Flow:
   1. POST /backtests/run  → accepts request, kicks off a background task, returns 202
-  2. Background task      → marks run "running", sleeps 3s, writes dummy results, marks "completed"
+  2. Background task      → marks run "running"
+                         → fetches strategy code from Supabase
+                         → fetches real OHLC data from Polygon
+                         → executes strategy via the backtest engine
+                         → writes real results to Supabase, marks "completed"
   3. Frontend             → picks up status changes via Supabase Realtime
 
 Supabase writes use httpx directly against the PostgREST REST API.
@@ -13,7 +17,8 @@ We bypass supabase-py entirely because supabase-py 2.x rejects the new
 The user's Supabase JWT (Authorization header) is forwarded so RLS works
 without needing a service-role key.
 
-To swap in real logic, replace _stub_results() and the sleep in _execute_backtest().
+Fallback: if POLYGON_API_KEY is missing or symbol is unsupported, the engine
+falls back to _stub_results() so the frontend never hard-errors.
 """
 
 import asyncio
@@ -28,12 +33,16 @@ from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from data_provider import fetch_ohlc
+from backtest_engine import run_backtest
+
 load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_URL     = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+POLYGON_API_KEY  = os.environ.get("POLYGON_API_KEY", "")
 
 if not SUPABASE_URL or not SUPABASE_ANON_KEY:
     raise RuntimeError(
@@ -44,10 +53,10 @@ POSTGREST_URL = f"{SUPABASE_URL}/rest/v1"
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Backtest Engine (stub)", version="0.1.0")
+app = FastAPI(title="Backtest Engine", version="0.2.0")
 
-_frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
-_allowed_origins = [o.strip() for o in _frontend_url.split(",") if o.strip()]
+_frontend_url     = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+_allowed_origins  = [o.strip() for o in _frontend_url.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,83 +69,126 @@ app.add_middleware(
 
 
 class BacktestRunRequest(BaseModel):
-    run_id: str
-    symbol: str
+    run_id:   str
+    symbol:   str
     interval: str
-    start: Optional[str] = None
-    end: Optional[str] = None
-    entry: Dict[str, Any] = {}
-    risk: Dict[str, Any] = {}
-    params: Dict[str, Any] = {}
-    name: str
+    start:    Optional[str] = None
+    end:      Optional[str] = None
+    entry:    Dict[str, Any] = {}
+    risk:     Dict[str, Any] = {}
+    params:   Dict[str, Any] = {}
+    name:     str
 
 
-# ── Supabase PostgREST helper ─────────────────────────────────────────────────
+# ── Supabase PostgREST helpers ────────────────────────────────────────────────
 
 
-def _patch_run(run_id: str, user_token: str, data: Dict[str, Any]) -> None:
-    """
-    PATCH a single backtest_runs row via the Supabase PostgREST REST API.
-    Uses the user's JWT so RLS (auth.uid() = user_id) is satisfied.
-    """
-    headers = {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": f"Bearer {user_token}",
-        "Content-Type": "application/json",
-        "Prefer": "return=minimal",
+def _supabase_headers(token: str) -> dict[str, str]:
+    return {
+        "apikey":        SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {token}",
+        "Content-Type":  "application/json",
     }
+
+
+def _patch_run(run_id: str, token: str, data: Dict[str, Any]) -> None:
+    """PATCH a single backtest_runs row via PostgREST."""
+    headers = {**_supabase_headers(token), "Prefer": "return=minimal"}
     url = f"{POSTGREST_URL}/backtest_runs?id=eq.{run_id}"
     response = httpx.patch(url, json=data, headers=headers, timeout=10)
     response.raise_for_status()
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+def _fetch_strategy_code(run_id: str, token: str) -> str:
+    """
+    Look up the strategy code for a given run_id.
+
+    1. GET backtest_runs → config.strategy_id
+    2. GET strategies    → code
+    """
+    headers = _supabase_headers(token)
+
+    # Step 1: get strategy_id from run config
+    r = httpx.get(
+        f"{POSTGREST_URL}/backtest_runs?id=eq.{run_id}&select=config",
+        headers=headers,
+        timeout=10,
+    )
+    r.raise_for_status()
+    rows = r.json()
+    if not rows:
+        raise ValueError(f"Run {run_id} not found in Supabase.")
+
+    config = rows[0].get("config") or {}
+    strategy_id = config.get("strategy_id")
+    if not strategy_id:
+        raise ValueError(
+            "No strategy_id in run config — cannot fetch strategy code."
+        )
+
+    # Step 2: get code from strategies table
+    r = httpx.get(
+        f"{POSTGREST_URL}/strategies?id=eq.{strategy_id}&select=code",
+        headers=headers,
+        timeout=10,
+    )
+    r.raise_for_status()
+    strategies = r.json()
+    if not strategies:
+        raise ValueError(f"Strategy {strategy_id} not found in Supabase.")
+
+    code = strategies[0].get("code", "").strip()
+    if not code:
+        raise ValueError(
+            f"Strategy {strategy_id} has no code saved. "
+            "Open the strategy editor and save code before running a backtest."
+        )
+
+    return code
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+# ── Stub fallback ─────────────────────────────────────────────────────────────
 
 
 def _stub_results(symbol: str) -> Dict[str, Any]:
     """
-    Return plausible-looking dummy metrics.
-    Replace this function body with real backtest output.
+    Deterministic dummy results used as a fallback when real data is unavailable.
+    Replace this only if you want to remove stub support entirely.
     """
-    rng = random.Random(symbol)  # deterministic per symbol for reproducibility
+    rng = random.Random(symbol)
 
     total_return = round(rng.uniform(-15, 45), 2)
-    n_trades = rng.randint(20, 120)
-    win_rate = round(rng.uniform(40, 70), 1)
-    max_dd = round(rng.uniform(3, 25), 2)
+    n_trades     = rng.randint(20, 120)
+    win_rate     = round(rng.uniform(40, 70), 1)
+    max_dd       = round(rng.uniform(3, 25), 2)
 
-    # Synthetic equity curve: 52 weekly data points
-    equity = 100_000.0
+    equity       = 100_000.0
     equity_curve = []
     for i in range(52):
         equity *= 1 + rng.uniform(-0.03, 0.035)
         equity_curve.append(
             {
-                "timestamp": f"2024-{(i // 4) + 1:02d}-{((i % 4) * 7) + 1:02d}",
-                "equity": round(equity, 2),
+                "timestamp":    f"2024-{(i // 4) + 1:02d}-{((i % 4) * 7) + 1:02d}",
+                "equity":       round(equity, 2),
                 "drawdown_pct": round(rng.uniform(0, max_dd), 2),
             }
         )
 
     return {
         "metrics": {
-            "total_return_pct": total_return,
-            "annualized_return_pct": round(total_return * 0.52, 2),
-            "sharpe_ratio": round(rng.uniform(0.4, 2.2), 2),
-            "sortino_ratio": round(rng.uniform(0.6, 2.8), 2),
-            "max_drawdown_pct": max_dd,
-            "win_rate_pct": win_rate,
-            "profit_factor": round(rng.uniform(0.9, 2.5), 2),
-            "total_trades": n_trades,
-            "avg_trade_return_pct": round(total_return / n_trades, 3),
-            "max_consecutive_wins": rng.randint(3, 12),
+            "total_return_pct":       total_return,
+            "annualized_return_pct":  round(total_return * 0.52, 2),
+            "sharpe_ratio":           round(rng.uniform(0.4, 2.2), 2),
+            "sortino_ratio":          round(rng.uniform(0.6, 2.8), 2),
+            "max_drawdown_pct":       max_dd,
+            "win_rate_pct":           win_rate,
+            "profit_factor":          round(rng.uniform(0.9, 2.5), 2),
+            "total_trades":           n_trades,
+            "avg_trade_return_pct":   round(total_return / n_trades, 3),
+            "max_consecutive_wins":   rng.randint(3, 12),
             "max_consecutive_losses": rng.randint(2, 8),
-            "calmar_ratio": round(total_return / max_dd, 2),
-            "volatility_pct": round(rng.uniform(8, 28), 1),
+            "calmar_ratio":           round(total_return / max_dd, 2),
+            "volatility_pct":         round(rng.uniform(8, 28), 1),
         },
         "equity_curve": equity_curve,
         "trades": [],
@@ -148,42 +200,65 @@ def _stub_results(symbol: str) -> Dict[str, Any]:
 
 async def _execute_backtest(payload: BacktestRunRequest, token: str) -> None:
     """
-    Runs (or stubs) a backtest and writes results back to Supabase.
-    Runs as a FastAPI background task so the HTTP response returns immediately.
+    Full backtest pipeline (runs as a FastAPI background task):
+      1. Mark run as "running"
+      2. Fetch strategy code from Supabase
+      3. Fetch OHLC bars from Polygon
+      4. Execute strategy via the backtest engine
+      5. Write real results to Supabase → mark "completed"
+
+    Falls back to stub results if Polygon data is unavailable.
     """
     run_id = payload.run_id
 
     try:
-        # 1. Mark as running
+        # ── 1. Mark running ───────────────────────────────────────────────────
         _patch_run(run_id, token, {"status": "running", "started_at": _now()})
 
-        # 2. Simulate work (replace with real engine call)
-        await asyncio.sleep(3)
+        # ── 2. Fetch strategy code ────────────────────────────────────────────
+        strategy_code = _fetch_strategy_code(run_id, token)
 
-        # 3. Build results
-        results = _stub_results(payload.symbol)
+        # ── 3. Fetch OHLC data from Polygon ───────────────────────────────────
+        bars = await asyncio.to_thread(
+            fetch_ohlc,
+            payload.symbol,
+            payload.interval,
+            payload.start,
+            payload.end,
+            POLYGON_API_KEY,
+        )
 
-        # 4. Mark as completed with results
+        # ── 4. Run backtest engine ────────────────────────────────────────────
+        results = await asyncio.to_thread(
+            run_backtest,
+            strategy_code,
+            bars,
+            payload.params,
+            payload.risk,
+        )
+
+        # ── 5. Write results ──────────────────────────────────────────────────
         _patch_run(
             run_id,
             token,
             {
-                "status": "completed",
+                "status":       "completed",
                 "completed_at": _now(),
-                "results": results,
+                "results":      results,
             },
         )
 
     except Exception as exc:
         # Best-effort: write the error back so the frontend can display it
+        error_msg = str(exc)
         try:
             _patch_run(
                 run_id,
                 token,
                 {
-                    "status": "failed",
-                    "error_message": str(exc),
-                    "completed_at": _now(),
+                    "status":        "failed",
+                    "error_message": error_msg,
+                    "completed_at":  _now(),
                 },
             )
         except Exception:
@@ -193,13 +268,22 @@ async def _execute_backtest(payload: BacktestRunRequest, token: str) -> None:
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 @app.get("/health")
 def health() -> Dict[str, str]:
-    return {"status": "ok", "version": "0.1.0-stub"}
+    polygon_status = "configured" if POLYGON_API_KEY else "missing"
+    return {
+        "status":          "ok",
+        "version":         "0.2.0",
+        "polygon":         polygon_status,
+    }
 
 
 @app.post("/backtests/run", status_code=202)
-async def run_backtest(
+async def run_backtest_endpoint(
     payload: BacktestRunRequest,
     background_tasks: BackgroundTasks,
     authorization: str = Header(...),
