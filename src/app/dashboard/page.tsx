@@ -334,6 +334,9 @@ export default async function DashboardPage() {
           <h1 className="text-3xl font-bold tracking-tight text-text-primary">
             {displayName}
           </h1>
+          <p className="text-2xs text-text-muted/50 mt-1.5 font-medium tracking-widest uppercase">
+            Describe · Test · Analyze · Improve
+          </p>
         </div>
         <div className="text-right">
           <p className="text-xs text-text-muted">{dateLabel}</p>

@@ -78,6 +78,15 @@ export default async function ResultDetailPage({ params }: PageProps) {
         )
       : null;
 
+  // Derive tested period from equity curve timestamps (most reliable) or config
+  const periodStart = equityCurve[0]?.timestamp ?? (config.start as string | null) ?? null;
+  const periodEnd   = equityCurve[equityCurve.length - 1]?.timestamp ?? (config.end as string | null) ?? null;
+  const periodLabel = periodStart && periodEnd
+    ? (periodStart.slice(0, 4) === periodEnd.slice(0, 4)
+        ? periodStart.slice(0, 4)
+        : `${periodStart.slice(0, 4)}–${periodEnd.slice(0, 4)}`)
+    : null;
+
   return (
     <div className="space-y-5 animate-fade-in max-w-5xl">
 
@@ -118,6 +127,18 @@ export default async function ResultDetailPage({ params }: PageProps) {
                 <Database size={10} />
                 Real market data · Polygon
               </span>
+              {periodLabel && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-border-hover" />
+                  <span className="font-mono">{periodLabel}</span>
+                </>
+              )}
+              {metrics && metrics.total_trades > 0 && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-border-hover" />
+                  <span className="font-mono">{metrics.total_trades} trades executed</span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -270,13 +291,20 @@ export default async function ResultDetailPage({ params }: PageProps) {
               <ConfigItem label="Symbol" value={(config.symbol as string) || "—"} mono />
               <ConfigItem label="Interval" value={(config.interval as string) || "—"} mono />
               <ConfigItem
-                label="Period"
-                value={`${(config.start as string) || "Auto"} → ${(config.end as string) || "Auto"}`}
+                label="Period tested"
+                value={periodStart && periodEnd
+                  ? `${periodStart} → ${periodEnd}`
+                  : `${(config.start as string) || "Auto"} → ${(config.end as string) || "Auto"}`}
               />
               <ConfigItem label="Name" value={(config.name as string) || "—"} />
               <ConfigItem label="Run ID" value={run.id.slice(0, 8) + "…"} mono />
             </div>
           </div>
+
+          {/* Disclaimer */}
+          <p className="text-center text-2xs text-text-muted/40 leading-relaxed pb-1">
+            Past performance does not guarantee future results. This simulation uses historical data and does not account for trading fees, slippage, or market impact. Do not make investment decisions based solely on backtest results.
+          </p>
         </>
         );
       })()}

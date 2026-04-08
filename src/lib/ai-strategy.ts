@@ -513,11 +513,11 @@ export function generateSummary(
     );
   } else if (ret >= 0) {
     parts.push(
-      `The strategy was marginally profitable${symbol ? ` on ${symbol}` : ""}, returning ${ret.toFixed(1)}%. With a Sharpe of ${sharpe.toFixed(2)}, most of that gain came with significant volatility attached — the edge is present but fragile and needs strengthening before live trading.`,
+      `The strategy returned ${ret.toFixed(1)}%${symbol ? ` on ${symbol}` : ""}, but with a Sharpe of ${sharpe.toFixed(2)} the gains came with too much volatility to be reliable. This is not strong enough for live trading yet — the edge exists but is fragile. Strengthen the entry signal or tighten the stop before committing real capital.`,
     );
   } else {
     parts.push(
-      `This strategy lost ${Math.abs(ret).toFixed(1)}%${symbol ? ` on ${symbol}` : ""} over the test period. The signal logic is generating more noise than directional edge — the entry conditions need to be reviewed or tightened.`,
+      `This strategy lost ${Math.abs(ret).toFixed(1)}%${symbol ? ` on ${symbol}` : ""} over the test period and is not strong enough for live trading. The signal is generating more noise than edge — review the entry conditions or switch to a different timeframe before running again.`,
     );
   }
 
@@ -647,7 +647,7 @@ export function generateRiskLabel(metrics: BacktestMetrics): RiskLabelResult {
     return {
       level: "high",
       label: "High Risk",
-      description: `${dd.toFixed(1)}% peak drawdown — significant capital exposure. Not suitable for live trading without tighter position sizing.`,
+      description: `${dd.toFixed(1)}% peak drawdown — this strategy is not ready for live trading. Tighten the stop-loss and reduce position size before running with real capital.`,
     };
   }
 
@@ -707,7 +707,7 @@ export function generateWhenItWorksAndFails(
   if (dd > 30) {
     return {
       works: "Can generate outsized returns during strong trending conditions when momentum aligns with the signal direction over sustained periods.",
-      fails: "High drawdown indicates vulnerability during trend reversals and spike volatility events. Reduce position size before trading live.",
+      fails: `This strategy is unstable in volatile markets. A ${dd.toFixed(0)}% drawdown means it holds losing positions through large reversals — in a real crash or volatility spike, losses would accumulate faster than the signal can exit.`,
     };
   }
 
