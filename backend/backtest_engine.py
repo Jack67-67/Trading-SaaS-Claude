@@ -340,8 +340,13 @@ def run_backtest(
         n_bars          = len(bars),
     )
 
+    buy_and_hold_return_pct = round(
+        (bars[-1]["close"] / bars[0]["close"] - 1) * 100, 2
+    ) if bars[0]["close"] > 0 else 0.0
+
     return {
-        "metrics":      metrics,
-        "equity_curve": equity_curve,
-        "trades":       [],  # detailed trades omitted from frontend payload for now
+        "metrics":                  metrics,
+        "equity_curve":             equity_curve,
+        "trades":                   [],  # detailed trades omitted from frontend payload for now
+        "buy_and_hold_return_pct":  buy_and_hold_return_pct,
     }

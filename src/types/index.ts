@@ -82,6 +82,7 @@ export interface BacktestMetrics {
   max_consecutive_losses: number;
   calmar_ratio: number;
   volatility_pct: number;
+  buy_and_hold_return_pct?: number;
 }
 
 export interface EquityCurvePoint {

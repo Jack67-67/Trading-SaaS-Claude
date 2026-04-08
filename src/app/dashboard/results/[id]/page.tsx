@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Sparkles, CheckCircle2, Info, AlertTriangle, XCircle, ListChecks } from "lucide-react";
+import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Sparkles, CheckCircle2, Info, AlertTriangle, XCircle, ListChecks, Database, TriangleAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -101,7 +101,7 @@ export default async function ResultDetailPage({ params }: PageProps) {
               </span>
               <StatusBadge status={run.status as BacktestStatus} />
             </div>
-            <div className="flex items-center gap-3 mt-1.5 text-xs text-text-muted">
+            <div className="flex items-center gap-3 mt-1.5 text-xs text-text-muted flex-wrap">
               <span>{strategyName}</span>
               <span className="w-1 h-1 rounded-full bg-border-hover" />
               <span className="font-mono">{(config.interval as string) || "—"}</span>
@@ -113,6 +113,11 @@ export default async function ResultDetailPage({ params }: PageProps) {
               )}
               <span className="w-1 h-1 rounded-full bg-border-hover" />
               <span>{formatDateTime(run.created_at)}</span>
+              <span className="w-1 h-1 rounded-full bg-border-hover" />
+              <span className="inline-flex items-center gap-1 text-accent font-medium">
+                <Database size={10} />
+                Real market data · Polygon
+              </span>
             </div>
           </div>
         </div>
@@ -183,6 +188,15 @@ export default async function ResultDetailPage({ params }: PageProps) {
 
           {/* KPI hero — unified card */}
           <KpiHero metrics={metrics} />
+
+          {/* Benchmark comparison */}
+          {metrics.buy_and_hold_return_pct !== undefined && (
+            <BenchmarkBar
+              strategyReturn={metrics.total_return_pct}
+              buyAndHoldReturn={metrics.buy_and_hold_return_pct}
+              symbol={(config.symbol as string) || "asset"}
+            />
+          )}
 
           {/* Comparison vs previous run */}
           {comparison && (
@@ -342,6 +356,71 @@ function VerdictBanner({ verdict }: { verdict: VerdictResult }) {
   );
 }
 
+function BenchmarkBar({
+  strategyReturn,
+  buyAndHoldReturn,
+  symbol,
+}: {
+  strategyReturn: number;
+  buyAndHoldReturn: number;
+  symbol: string;
+}) {
+  const delta = strategyReturn - buyAndHoldReturn;
+  const beats = delta > 0;
+  const isFlat = Math.abs(delta) < 0.5;
+
+  return (
+    <div className="rounded-xl border border-border bg-surface-1 px-5 py-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        {/* Label */}
+        <p className="text-2xs font-semibold text-text-muted uppercase tracking-widest shrink-0">
+          vs Buy &amp; Hold · {symbol}
+        </p>
+
+        {/* Strategy vs benchmark numbers */}
+        <div className="flex items-center gap-6 flex-wrap">
+          <div className="text-center">
+            <p className="text-2xs text-text-muted mb-1">Strategy</p>
+            <p className={cn("text-base font-bold font-mono tabular-nums", pnlColor(strategyReturn))}>
+              {strategyReturn >= 0 ? "+" : ""}{strategyReturn.toFixed(1)}%
+            </p>
+          </div>
+          <div className="text-text-muted text-sm">vs</div>
+          <div className="text-center">
+            <p className="text-2xs text-text-muted mb-1">Buy &amp; Hold</p>
+            <p className={cn("text-base font-bold font-mono tabular-nums", pnlColor(buyAndHoldReturn))}>
+              {buyAndHoldReturn >= 0 ? "+" : ""}{buyAndHoldReturn.toFixed(1)}%
+            </p>
+          </div>
+          <div className={cn(
+            "text-xs font-semibold border rounded-full px-3 py-1 shrink-0",
+            isFlat
+              ? "bg-surface-2 border-border text-text-muted"
+              : beats
+                ? "bg-profit/10 border-profit/20 text-profit"
+                : "bg-loss/10 border-loss/20 text-loss"
+          )}>
+            {isFlat
+              ? "In line with benchmark"
+              : beats
+                ? `+${delta.toFixed(1)}pp above benchmark`
+                : `${delta.toFixed(1)}pp below benchmark`}
+          </div>
+        </div>
+      </div>
+
+      {/* Context line */}
+      <p className="text-xs text-text-muted mt-3 leading-relaxed">
+        {isFlat
+          ? "The strategy returned roughly the same as simply holding the asset — no meaningful alpha generated."
+          : beats
+            ? "The strategy outperformed buy-and-hold. Confirm this holds on a different date range before treating it as reliable edge."
+            : "The strategy underperformed buy-and-hold. More risk was taken for a lower return than simply holding the asset."}
+      </p>
+    </div>
+  );
+}
+
 function sharpeLabel(v: number): { text: string; cls: string } {
   if (v >= 2)   return { text: "Excellent", cls: "text-profit" };
   if (v >= 1.5) return { text: "Very Good", cls: "text-profit" };
@@ -413,21 +492,37 @@ function KpiHero({ metrics }: { metrics: BacktestMetrics }) {
           </p>
           <p className={cn(
             "text-4xl font-bold font-mono tabular-nums tracking-tight leading-none",
-            pnlColor(metrics.win_rate_pct - 50)
+            metrics.total_trades < 10 ? "text-text-muted" : pnlColor(metrics.win_rate_pct - 50)
           )}>
-            {metrics.win_rate_pct.toFixed(1)}%
+            {metrics.total_trades === 0 ? "—" : `${metrics.win_rate_pct.toFixed(1)}%`}
           </p>
-          <div className="mt-3.5 space-y-1">
+          <div className="mt-3.5 space-y-1.5">
             <div className="flex justify-between text-2xs text-text-muted font-mono">
-              <span>{metrics.total_trades} trades</span>
-              <span>{Math.round(metrics.total_trades * metrics.win_rate_pct / 100)} wins</span>
+              <span className="font-semibold text-text-secondary">{metrics.total_trades} trades</span>
+              {metrics.total_trades > 0 && (
+                <span>{Math.round(metrics.total_trades * metrics.win_rate_pct / 100)} wins</span>
+              )}
             </div>
-            <div className="h-1.5 bg-surface-3 rounded-full overflow-hidden">
-              <div
-                className={cn("h-full rounded-full", metrics.win_rate_pct >= 50 ? "bg-profit" : "bg-loss")}
-                style={{ width: `${metrics.win_rate_pct}%` }}
-              />
-            </div>
+            {metrics.total_trades > 0 && (
+              <div className="h-1.5 bg-surface-3 rounded-full overflow-hidden">
+                <div
+                  className={cn("h-full rounded-full", metrics.total_trades < 10 ? "bg-text-muted/40" : metrics.win_rate_pct >= 50 ? "bg-profit" : "bg-loss")}
+                  style={{ width: `${metrics.win_rate_pct}%` }}
+                />
+              </div>
+            )}
+            {metrics.total_trades < 10 && metrics.total_trades > 0 && (
+              <p className="text-2xs text-amber-400 flex items-center gap-1 pt-0.5">
+                <TriangleAlert size={9} />
+                Low sample — win rate unreliable
+              </p>
+            )}
+            {metrics.total_trades === 0 && (
+              <p className="text-2xs text-loss flex items-center gap-1 pt-0.5">
+                <TriangleAlert size={9} />
+                No trades executed
+              </p>
+            )}
           </div>
         </div>
 
