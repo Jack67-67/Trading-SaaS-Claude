@@ -268,7 +268,7 @@ export function StrategyForm({ mode, strategyId, initialData }: StrategyFormProp
                   Describe your trading idea in plain English. AI writes working Python code in seconds — no coding required.
                 </p>
                 <p className="text-xs text-accent font-medium mt-3 flex items-center gap-1">
-                  Try it — "buy SPY when it's trending up"
+                  Try it — &quot;buy SPY when it&#39;s trending up&quot;
                   <ChevronRight size={12} />
                 </p>
               </div>
