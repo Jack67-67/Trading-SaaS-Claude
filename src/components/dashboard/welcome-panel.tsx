@@ -1,39 +1,52 @@
 import Link from "next/link";
 import { Sparkles, Code2, ArrowRight, FlaskConical, BarChart3, ShieldCheck } from "lucide-react";
+import { TryExampleButton } from "@/components/dashboard/try-example-button";
 
 const HOW_IT_WORKS = [
-  { icon: Code2,        step: "1", label: "Define a strategy",   desc: "Describe your idea or paste Python — AI can write the full code for you" },
-  { icon: FlaskConical, step: "2", label: "Run a backtest",      desc: "Test against years of real market data in seconds" },
-  { icon: BarChart3,    step: "3", label: "Read the AI analysis", desc: "AI explains why the strategy worked or struggled, in plain English" },
-  { icon: ShieldCheck,  step: "4", label: "Monitor over time",   desc: "Compare runs and track whether your edge is improving or declining" },
+  { icon: Code2,         step: "1", label: "Define a strategy",    desc: "Describe your idea or paste Python — AI can write the full code for you" },
+  { icon: FlaskConical,  step: "2", label: "Run a backtest",       desc: "Test against 2 years of real SPY data in seconds" },
+  { icon: BarChart3,     step: "3", label: "Read the AI analysis", desc: "AI explains why the strategy worked or struggled, in plain English" },
+  { icon: ShieldCheck,   step: "4", label: "Monitor over time",    desc: "Compare runs and track whether your edge is improving or declining" },
 ];
 
 export function WelcomePanel({ name }: { name: string }) {
   return (
     <div className="space-y-6">
 
-      {/* Hero */}
+      {/* ── Hero ──────────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden">
         {/* Top accent */}
         <div className="h-px bg-gradient-to-r from-transparent via-accent/50 to-transparent" />
 
-        <div className="px-8 py-10 text-center max-w-xl mx-auto">
+        {/* Primary CTA — the fastest path to a result */}
+        <div className="px-8 pt-10 pb-8 text-center max-w-xl mx-auto">
           <p className="text-xs font-semibold text-accent uppercase tracking-widest mb-3">
             Welcome, {name}
           </p>
           <h2 className="text-2xl font-bold tracking-tight text-text-primary mb-3 leading-snug">
-            Test any trading strategy<br />against historical data
+            See a real backtest result<br />in under 30 seconds
           </h2>
-          <p className="text-sm text-text-secondary leading-relaxed">
-            Build a strategy, backtest it on real market history, and let AI explain
-            what the results actually mean — in plain English. Under 2 minutes from
-            idea to insights.
+          <p className="text-sm text-text-secondary leading-relaxed mb-6">
+            Click below and we&apos;ll run a working SMA Crossover strategy on 2 years
+            of real SPY data. No setup required — just watch the results come in.
           </p>
+
+          {/* Primary button */}
+          <TryExampleButton size="lg" />
+
+          {/* What this does */}
           <p className="text-xs text-text-muted mt-3">
-            Not sure where to start?{" "}
-            <span className="text-accent font-medium">Use AI Strategy</span>
-            {" "}— no coding required.
+            Creates an example strategy · runs SPY daily · shows full AI analysis
           </p>
+        </div>
+
+        {/* Divider */}
+        <div className="flex items-center gap-4 px-8 pb-6">
+          <div className="flex-1 h-px bg-border" />
+          <span className="text-2xs font-medium text-text-muted uppercase tracking-wider">
+            or build your own
+          </span>
+          <div className="flex-1 h-px bg-border" />
         </div>
 
         {/* Two paths */}
@@ -48,7 +61,7 @@ export function WelcomePanel({ name }: { name: string }) {
                 <Sparkles size={18} className="text-accent" />
               </div>
               <span className="text-2xs font-semibold text-accent bg-accent/10 border border-accent/20 rounded-full px-2 py-0.5">
-                Recommended
+                No coding needed
               </span>
             </div>
             <div>
@@ -56,9 +69,7 @@ export function WelcomePanel({ name }: { name: string }) {
                 Generate with AI
               </p>
               <p className="text-xs text-text-muted mt-1 leading-relaxed">
-                No Python required. Describe your idea in plain English — e.g.
-                &quot;buy oversold crypto on the daily chart&quot; — and we&apos;ll
-                write the code, run the backtest, and explain the results.
+                Describe your idea in plain English — &quot;buy oversold crypto on the daily chart&quot; — and AI writes the code, runs the backtest, and explains the results.
               </p>
             </div>
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent mt-auto">
@@ -79,9 +90,7 @@ export function WelcomePanel({ name }: { name: string }) {
                 Write your own strategy
               </p>
               <p className="text-xs text-text-muted mt-1 leading-relaxed">
-                Already have Python code or a specific idea to implement? Paste
-                your strategy, set the entry rules and risk parameters, and test
-                it against any symbol and date range.
+                Already have Python code or a specific idea? Start from a template or write from scratch — full code editor included.
               </p>
             </div>
             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-text-muted group-hover:text-accent transition-colors mt-auto">
@@ -91,7 +100,7 @@ export function WelcomePanel({ name }: { name: string }) {
         </div>
       </div>
 
-      {/* How it works */}
+      {/* ── How it works ──────────────────────────────────────────── */}
       <div>
         <p className="text-xs font-semibold text-text-muted uppercase tracking-widest mb-3 px-1">
           How it works
