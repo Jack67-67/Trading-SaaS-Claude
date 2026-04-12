@@ -114,8 +114,8 @@ export default function AiStrategyPage() {
           </span>
         </div>
         <p className="text-sm text-text-secondary ml-9 leading-relaxed">
-          Tell the AI your preferences. It will design, code, and backtest a
-          complete trading strategy — in seconds.
+          Describe what you want — the AI will design, code, and backtest a
+          complete trading strategy in seconds.
         </p>
       </div>
 
@@ -127,121 +127,131 @@ export default function AiStrategyPage() {
         </div>
       )}
 
-      {/* ── Risk level ──────────────────────────────────────────── */}
-      <div className="space-y-3">
-        <div>
-          <label className="block text-sm font-medium text-text-secondary">
-            How should the AI manage risk?
-          </label>
-          <p className="text-xs text-text-muted mt-0.5">
-            This shapes position sizing, stop-loss placement, and how often it trades.
-          </p>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          {RISK_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setRisk(opt.value)}
-              className={cn(
-                "flex flex-col items-start gap-2 p-4 rounded-xl border text-left transition-all duration-150",
-                risk === opt.value
-                  ? "border-accent bg-accent/8 ring-1 ring-accent/30"
-                  : "border-border bg-surface-1 hover:border-border-hover hover:bg-surface-2"
-              )}
-            >
-              <div className={cn(
-                "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
-                risk === opt.value ? "bg-accent/20 text-accent" : "bg-surface-3 text-text-muted"
-              )}>
-                {opt.icon}
-              </div>
-              <div>
-                <p className={cn(
-                  "text-sm font-semibold",
-                  risk === opt.value ? "text-accent" : "text-text-primary"
-                )}>
-                  {opt.label}
-                </p>
-                <p className="text-xs text-text-muted mt-0.5 leading-relaxed">{opt.sub}</p>
-              </div>
-            </button>
-          ))}
-        </div>
+      {/* ── PRIMARY: Strategy description ───────────────────────── */}
+      <div className="space-y-2">
+        <label className="block text-base font-semibold text-text-primary">
+          Describe your strategy in plain English
+        </label>
+        <p className="text-sm text-text-secondary">
+          No coding needed. Just describe what you want — the AI handles the rest.
+        </p>
+        <textarea
+          value={goal}
+          onChange={(e) => setGoal(e.target.value)}
+          placeholder={`e.g. "Buy SPY when it's trending up and RSI is oversold. Sell when momentum fades."`}
+          rows={4}
+          className={cn(
+            "w-full px-4 py-3 rounded-xl text-sm text-text-primary placeholder:text-text-muted/50",
+            "bg-surface-1 border border-border transition-colors resize-none",
+            "hover:border-border-hover focus:outline-none focus:ring-1 focus:border-accent focus:ring-accent/30"
+          )}
+        />
+        <p className="text-xs text-text-muted">
+          Be specific for better results: mention the asset, signal type, or what you want to optimize.
+        </p>
       </div>
 
-      {/* ── Trading horizon ─────────────────────────────────────── */}
-      <div className="space-y-3">
-        <div>
-          <label className="block text-sm font-medium text-text-secondary">
-            How actively should it trade?
-          </label>
-          <p className="text-xs text-text-muted mt-0.5">
-            Determines the signal timeframe, bar interval, and average holding period.
-          </p>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          {TIMEFRAME_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setTimeframe(opt.value)}
-              className={cn(
-                "flex flex-col items-start gap-2 p-4 rounded-xl border text-left transition-all duration-150",
-                timeframe === opt.value
-                  ? "border-accent bg-accent/8 ring-1 ring-accent/30"
-                  : "border-border bg-surface-1 hover:border-border-hover hover:bg-surface-2"
-              )}
-            >
-              <div className={cn(
-                "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
-                timeframe === opt.value ? "bg-accent/20 text-accent" : "bg-surface-3 text-text-muted"
-              )}>
-                {opt.icon}
-              </div>
-              <div>
-                <p className={cn(
-                  "text-sm font-semibold",
-                  timeframe === opt.value ? "text-accent" : "text-text-primary"
-                )}>
-                  {opt.label}
-                </p>
-                <p className="text-xs text-text-muted mt-0.5 leading-relaxed">{opt.sub}</p>
-              </div>
-            </button>
-          ))}
-        </div>
+      {/* ── Recommended timeframe badge ──────────────────────────── */}
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-surface-1 border border-border">
+        <Clock size={14} className="text-accent shrink-0" />
+        <span className="text-xs text-text-secondary">
+          Recommended timeframe:{" "}
+          <span className="font-semibold text-text-primary capitalize">{intervalLabel} bars ({preview.interval})</span>
+        </span>
+        <span className="text-xs text-text-muted ml-auto">
+          Based on your settings below
+        </span>
       </div>
 
-      {/* ── Symbol + Goal ────────────────────────────────────────── */}
-      <div className="space-y-4">
+      {/* ── Secondary config ─────────────────────────────────────── */}
+      <div className="space-y-6">
+        <p className="text-xs font-semibold text-text-muted uppercase tracking-widest">
+          Tune the strategy
+        </p>
+
+        {/* Risk level */}
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-text-secondary">
+            Risk profile
+          </label>
+          <div className="grid grid-cols-3 gap-3">
+            {RISK_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setRisk(opt.value)}
+                className={cn(
+                  "flex flex-col items-start gap-2 p-4 rounded-xl border text-left transition-all duration-150",
+                  risk === opt.value
+                    ? "border-accent bg-accent/8 ring-1 ring-accent/30"
+                    : "border-border bg-surface-1 hover:border-border-hover hover:bg-surface-2"
+                )}
+              >
+                <div className={cn(
+                  "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
+                  risk === opt.value ? "bg-accent/20 text-accent" : "bg-surface-3 text-text-muted"
+                )}>
+                  {opt.icon}
+                </div>
+                <div>
+                  <p className={cn(
+                    "text-sm font-semibold",
+                    risk === opt.value ? "text-accent" : "text-text-primary"
+                  )}>
+                    {opt.label}
+                  </p>
+                  <p className="text-xs text-text-muted mt-0.5 leading-relaxed">{opt.sub}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Trading horizon */}
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-text-secondary">
+            Trading frequency
+          </label>
+          <div className="grid grid-cols-3 gap-3">
+            {TIMEFRAME_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setTimeframe(opt.value)}
+                className={cn(
+                  "flex flex-col items-start gap-2 p-4 rounded-xl border text-left transition-all duration-150",
+                  timeframe === opt.value
+                    ? "border-accent bg-accent/8 ring-1 ring-accent/30"
+                    : "border-border bg-surface-1 hover:border-border-hover hover:bg-surface-2"
+                )}
+              >
+                <div className={cn(
+                  "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
+                  timeframe === opt.value ? "bg-accent/20 text-accent" : "bg-surface-3 text-text-muted"
+                )}>
+                  {opt.icon}
+                </div>
+                <div>
+                  <p className={cn(
+                    "text-sm font-semibold",
+                    timeframe === opt.value ? "text-accent" : "text-text-primary"
+                  )}>
+                    {opt.label}
+                  </p>
+                  <p className="text-xs text-text-muted mt-0.5 leading-relaxed">{opt.sub}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Symbol */}
         <Select
-          label="Which market should it analyze?"
+          label="Market to analyze"
           options={SYMBOL_OPTIONS}
           value={symbol}
           onChange={(e) => setSymbol(e.target.value)}
         />
-        <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-text-secondary">
-            What matters most to you?{" "}
-            <span className="font-normal text-text-muted">(optional)</span>
-          </label>
-          <textarea
-            value={goal}
-            onChange={(e) => setGoal(e.target.value)}
-            placeholder="e.g. Minimize drawdowns even at the cost of fewer trades, or capitalize on strong trending conditions in crypto"
-            rows={2}
-            className={cn(
-              "w-full px-3 py-2.5 rounded-lg text-sm text-text-primary placeholder:text-text-muted/50",
-              "bg-surface-1 border border-border transition-colors resize-none",
-              "hover:border-border-hover focus:outline-none focus:ring-1 focus:border-accent focus:ring-accent/30"
-            )}
-          />
-          <p className="text-xs text-text-muted">
-            The AI uses this to calibrate signal sensitivity and position sizing.
-            The more specific, the more tailored the result.
-          </p>
-        </div>
       </div>
 
       {/* ── Dynamic preview card ─────────────────────────────────── */}
@@ -253,7 +263,7 @@ export default function AiStrategyPage() {
               The AI will design a <span className="text-accent">{riskLabel}</span>{" "}
               {horizonLabel} strategy for{" "}
               <span className="text-accent font-mono">{symbol}</span> using{" "}
-              {signalDesc} on {intervalLabel} data.
+              {signalDesc} on <span className="text-accent">{intervalLabel}</span> data.
             </p>
             <ul className="space-y-1.5">
               {[

@@ -93,7 +93,6 @@ export async function tryExampleAction(): Promise<{ error: string } | never> {
       strategy_id: strategyId,
       status: "pending",
       config: config as unknown as Record<string, unknown>,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
     .select("id")
     .single();
