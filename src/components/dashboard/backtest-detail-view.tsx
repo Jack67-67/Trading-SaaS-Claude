@@ -101,39 +101,12 @@ export function BacktestDetailView({ initialRun, strategyName }: BacktestDetailV
 
       {/* ── Pending / Running ──────────────────────────────────── */}
       {(run.status === "pending" || run.status === "running") && (
-        <div className="relative rounded-2xl border border-border overflow-hidden bg-surface-1">
-          {/* Progress bar */}
-          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-surface-3">
-            <div className={cn(
-              "h-full transition-all duration-1000",
-              run.status === "pending"
-                ? "w-[12%] bg-yellow-400"
-                : "w-2/3 bg-accent animate-pulse"
-            )} />
-          </div>
-
-          <div className="text-center py-12">
-            <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-accent/10 flex items-center justify-center">
-              <Activity
-                size={24}
-                className={cn("text-accent", run.status === "running" && "animate-pulse")}
-              />
-            </div>
-            <h2 className="text-base font-semibold text-text-primary mb-1.5">
-              {run.status === "pending" ? "Queued for execution" : "Backtest running…"}
-            </h2>
-            <p className="text-sm text-text-secondary max-w-xs mx-auto leading-relaxed">
-              {run.status === "pending"
-                ? "Your backtest is queued and will start shortly."
-                : "Simulating trades against historical market data."}
-            </p>
-            {elapsed !== null && (
-              <p className="text-xs text-text-muted font-mono mt-3 tabular-nums">
-                {elapsed}s elapsed
-              </p>
-            )}
-          </div>
-        </div>
+        <BacktestProgressCard
+          status={run.status}
+          elapsed={elapsed}
+          symbol={config.symbol}
+          interval={config.interval}
+        />
       )}
 
       {/* ── Failed ─────────────────────────────────────────────── */}
@@ -280,6 +253,151 @@ function ConfigItem({ label, value, mono = false }: { label: string; value: stri
     <div>
       <p className="text-2xs text-text-muted mb-0.5">{label}</p>
       <p className={cn("text-sm text-text-primary", mono && "font-mono")}>{value ?? "—"}</p>
+    </div>
+  );
+}
+
+function BacktestProgressCard({
+  status,
+  elapsed,
+  symbol,
+  interval,
+}: {
+  status: "pending" | "running";
+  elapsed: number | null;
+  symbol?: string;
+  interval?: string;
+}) {
+  const e = elapsed ?? 0;
+
+  // Determine which step is actively in progress based on status + elapsed
+  // 0 = queued, 1 = fetching data, 2 = running simulation, 3 = done (not shown here)
+  let activeStep: number;
+  if (status === "pending") {
+    activeStep = 0;
+  } else if (e < 12) {
+    activeStep = 1;
+  } else {
+    activeStep = 2;
+  }
+
+  const steps = [
+    {
+      label: "Sending to backtest engine",
+      sub: "Queuing your run",
+    },
+    {
+      label: "Fetching market data",
+      sub: symbol && interval
+        ? `Downloading ${symbol} ${interval.toUpperCase()} history from Polygon`
+        : "Downloading historical price data",
+    },
+    {
+      label: "Running simulation",
+      sub: "Simulating trades bar-by-bar against real market data",
+    },
+    {
+      label: "Generating AI analysis",
+      sub: "Scoring performance and writing recommendations",
+    },
+  ];
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden">
+      {/* Animated progress bar at top */}
+      <div className="h-0.5 bg-surface-3">
+        <div
+          className={cn(
+            "h-full bg-accent transition-all duration-1000",
+            status === "pending" ? "w-[8%]" : activeStep === 1 ? "w-[35%]" : "w-[65%] animate-pulse"
+          )}
+        />
+      </div>
+
+      <div className="px-6 py-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2.5">
+            <Activity size={15} className="text-accent animate-pulse shrink-0" />
+            <p className="text-sm font-semibold text-text-primary">
+              {status === "pending" ? "Queued" : "Running…"}
+            </p>
+          </div>
+          {elapsed !== null && (
+            <span className="text-xs font-mono text-text-muted tabular-nums">
+              {elapsed}s elapsed
+            </span>
+          )}
+        </div>
+
+        {/* Steps */}
+        <div className="space-y-4">
+          {steps.map((step, i) => {
+            const isDone = i < activeStep;
+            const isActive = i === activeStep;
+            const isPending = i > activeStep;
+
+            return (
+              <div key={i} className="flex items-start gap-3">
+                {/* Step indicator */}
+                <div className={cn(
+                  "mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors",
+                  isDone
+                    ? "bg-profit text-surface-0"
+                    : isActive
+                      ? "bg-accent text-surface-0"
+                      : "bg-surface-3 text-text-muted"
+                )}>
+                  {isDone ? (
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                      <path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  ) : (
+                    <span className={cn(
+                      "text-2xs font-bold leading-none",
+                      isActive ? "text-white" : "text-text-muted"
+                    )}>
+                      {i + 1}
+                    </span>
+                  )}
+                </div>
+
+                {/* Step text */}
+                <div className="min-w-0">
+                  <p className={cn(
+                    "text-sm font-medium leading-snug",
+                    isDone ? "text-text-muted line-through decoration-text-muted/50" : isActive ? "text-text-primary" : "text-text-muted"
+                  )}>
+                    {step.label}
+                    {isActive && (
+                      <span className="inline-flex gap-0.5 ml-1.5">
+                        {[0, 1, 2].map((d) => (
+                          <span
+                            key={d}
+                            className="w-1 h-1 rounded-full bg-accent inline-block animate-bounce"
+                            style={{ animationDelay: `${d * 150}ms` }}
+                          />
+                        ))}
+                      </span>
+                    )}
+                  </p>
+                  {isActive && (
+                    <p className="text-xs text-text-muted mt-0.5 leading-relaxed">{step.sub}</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Cold start hint for long runs */}
+        {status === "running" && e > 45 && (
+          <p className="mt-5 pt-4 border-t border-border text-xs text-text-muted leading-relaxed">
+            Taking longer than usual — the backtest engine may be waking up from sleep.
+            This happens on first run and typically resolves within 2–3 minutes.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

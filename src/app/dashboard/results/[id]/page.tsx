@@ -19,6 +19,7 @@ import {
 } from "@/lib/ai-strategy";
 import { compareTwoRuns } from "@/lib/trends";
 import { RunComparisonPanel } from "@/components/dashboard/run-comparison";
+import { ShareButton } from "@/components/dashboard/share-button";
 import type { RiskLevel, TimeframeHorizon, ConfidenceSignal } from "@/lib/ai-strategy";
 import type { BacktestStatus, BacktestMetrics, EquityCurvePoint } from "@/types";
 
@@ -142,7 +143,18 @@ export default async function ResultDetailPage({ params }: PageProps) {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {run.status === "completed" && metrics && (
+            <ShareButton text={buildShareText({
+              strategyName,
+              symbol: (config.symbol as string) || "—",
+              interval: (config.interval as string) || "—",
+              periodLabel,
+              metrics,
+              buyAndHold: metrics.buy_and_hold_return_pct,
+              runName: (config.name as string) || undefined,
+            })} />
+          )}
           {!!strategyRef?.id && (
             <Link href={`/dashboard/strategies/${strategyRef.id as string}`}>
               <Button variant="ghost" size="sm">View Strategy</Button>
@@ -325,6 +337,46 @@ export default async function ResultDetailPage({ params }: PageProps) {
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 import type { VerdictResult } from "@/lib/ai-strategy";
+
+function buildShareText({
+  strategyName,
+  symbol,
+  interval,
+  periodLabel,
+  metrics,
+  buyAndHold,
+  runName,
+}: {
+  strategyName: string;
+  symbol: string;
+  interval: string;
+  periodLabel: string | null;
+  metrics: BacktestMetrics;
+  buyAndHold?: number;
+  runName?: string;
+}): string {
+  const verdict = generateVerdict(metrics);
+  const sign = (n: number) => n >= 0 ? `+${n.toFixed(1)}%` : `${n.toFixed(1)}%`;
+  const lines: string[] = [];
+
+  lines.push(`📊 Backtest Result — ${symbol} ${interval.toUpperCase()}`);
+  if (runName) lines.push(`Strategy: ${runName}`);
+  else lines.push(`Strategy: ${strategyName}`);
+  if (periodLabel) lines.push(`Period: ${periodLabel} · ${metrics.total_trades} trades executed`);
+  lines.push("");
+  lines.push(`Return: ${sign(metrics.total_return_pct)}  |  Sharpe: ${metrics.sharpe_ratio.toFixed(2)}  |  Win Rate: ${metrics.win_rate_pct.toFixed(1)}%  |  Max DD: ${sign(-Math.abs(metrics.max_drawdown_pct))}`);
+  if (buyAndHold !== undefined) {
+    const delta = metrics.total_return_pct - buyAndHold;
+    lines.push(`vs Buy & Hold: ${sign(buyAndHold)}  |  Alpha: ${delta >= 0 ? "+" : ""}${delta.toFixed(1)}pp`);
+  }
+  lines.push("");
+  lines.push(`Verdict: ${verdict.label}`);
+  lines.push(`"${verdict.tldr}"`);
+  lines.push("");
+  lines.push("Tested on real market data · Quanterra Backtesting");
+
+  return lines.join("\n");
+}
 
 function VerdictBanner({ verdict, confidence }: { verdict: VerdictResult; confidence: ConfidenceSignal }) {
   const colorMap = {
