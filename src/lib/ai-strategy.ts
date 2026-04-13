@@ -897,6 +897,7 @@ export function generateInsights(
   metrics: BacktestMetrics,
   risk: RiskLevel,
   timeframe: TimeframeHorizon,
+  costContext?: { totalCostsPct: number; grossReturnPct: number },
 ): AiInsight[] {
   const insights: AiInsight[] = [];
 
@@ -969,6 +970,34 @@ export function generateInsights(
       title: "Neutral trade accuracy",
       text: `At ${metrics.win_rate_pct.toFixed(0)}%, win rate is near breakeven — but the profit factor of ${metrics.profit_factor.toFixed(2)} shows winners are meaningfully larger than losers. This pattern is normal and sustainable for systematic trend-following strategies.`,
     });
+  }
+
+  // 4. Fee sensitivity (only shown when costs were applied)
+  if (costContext && costContext.totalCostsPct > 0) {
+    const { totalCostsPct, grossReturnPct } = costContext;
+    const netReturn = metrics.total_return_pct;
+    const edgeLost = grossReturnPct >= 0 && netReturn < 0;
+    const dragPct = grossReturnPct > 0 ? Math.round((totalCostsPct / grossReturnPct) * 100) : 0;
+
+    if (edgeLost) {
+      insights.push({
+        type: "warning",
+        title: "Strategy loses edge after fees",
+        text: `Gross return was +${grossReturnPct.toFixed(1)}% but fees reduced it to ${netReturn.toFixed(1)}%. This strategy is not viable at current fee levels. To survive real trading costs it needs either fewer trades, a higher profit factor, or a tighter entry signal that generates larger average wins.`,
+      });
+    } else if (dragPct > 20) {
+      insights.push({
+        type: "warning",
+        title: `Fees consumed ${dragPct}% of gross returns`,
+        text: `The strategy earned +${grossReturnPct.toFixed(1)}% before costs but only +${netReturn.toFixed(1)}% after. High trade frequency is the likely cause — each round-trip multiplies commission and slippage. Reducing signal sensitivity to cut trade count by 30–40% would meaningfully reduce fee drag without changing the core edge.`,
+      });
+    } else {
+      insights.push({
+        type: "positive",
+        title: "Edge survives after fees",
+        text: `After accounting for ${totalCostsPct.toFixed(2)}% in total fees, the strategy returned +${netReturn.toFixed(1)}%. The gross-to-net ratio shows the edge is robust enough to survive real trading costs at these levels.`,
+      });
+    }
   }
 
   return insights;

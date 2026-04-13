@@ -41,6 +41,8 @@ export function BacktestForm({ strategies }: BacktestFormProps) {
   const [entryJson, setEntryJson] = useState(DEFAULT_ENTRY);
   const [riskJson, setRiskJson] = useState(DEFAULT_RISK);
   const [paramsJson, setParamsJson] = useState(DEFAULT_PARAMS);
+  const [commissionPct, setCommissionPct] = useState("0.1");
+  const [slippagePct, setSlippagePct] = useState("0.05");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const handleReset = () => {
@@ -53,6 +55,8 @@ export function BacktestForm({ strategies }: BacktestFormProps) {
     setEntryJson(DEFAULT_ENTRY);
     setRiskJson(DEFAULT_RISK);
     setParamsJson(DEFAULT_PARAMS);
+    setCommissionPct("0.1");
+    setSlippagePct("0.05");
     setShowAdvanced(false);
   };
 
@@ -68,6 +72,8 @@ export function BacktestForm({ strategies }: BacktestFormProps) {
       formData.set("entry", entryJson);
       formData.set("risk", riskJson);
       formData.set("params", paramsJson);
+      formData.set("commission_pct", commissionPct);
+      formData.set("slippage_pct", slippagePct);
 
       const result = await submitBacktestAction(formData);
       if (result?.error) toast("error", result.error);
@@ -180,7 +186,39 @@ export function BacktestForm({ strategies }: BacktestFormProps) {
 
           <div className="border-t border-border" />
 
-          {/* ── Section 3: Parameters ──────────────────────────── */}
+          {/* ── Section 3: Execution Costs ─────────────────────── */}
+          <div className="py-5 space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+                Execution Costs
+              </p>
+              <p className="text-xs text-text-muted mt-1">
+                Applied per trade to simulate real-world fees. Results will show before and after fees.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input
+                label="Commission %"
+                type="number"
+                value={commissionPct}
+                onChange={(e) => setCommissionPct(e.target.value)}
+                hint="Per trade leg (e.g. 0.1 = 0.1%)"
+                placeholder="0.1"
+              />
+              <Input
+                label="Slippage %"
+                type="number"
+                value={slippagePct}
+                onChange={(e) => setSlippagePct(e.target.value)}
+                hint="One-way price slippage (e.g. 0.05 = 0.05%)"
+                placeholder="0.05"
+              />
+            </div>
+          </div>
+
+          <div className="border-t border-border" />
+
+          {/* ── Section 4: Parameters ──────────────────────────── */}
           <div className="pt-5 space-y-4">
             <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">
               Parameters

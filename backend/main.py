@@ -69,15 +69,17 @@ app.add_middleware(
 
 
 class BacktestRunRequest(BaseModel):
-    run_id:   str
-    symbol:   str
-    interval: str
-    start:    Optional[str] = None
-    end:      Optional[str] = None
-    entry:    Dict[str, Any] = {}
-    risk:     Dict[str, Any] = {}
-    params:   Dict[str, Any] = {}
-    name:     str
+    run_id:         str
+    symbol:         str
+    interval:       str
+    start:          Optional[str] = None
+    end:            Optional[str] = None
+    entry:          Dict[str, Any] = {}
+    risk:           Dict[str, Any] = {}
+    params:         Dict[str, Any] = {}
+    name:           str
+    commission_pct: float = 0.0   # e.g. 0.1 means 0.1% per trade leg
+    slippage_pct:   float = 0.0   # e.g. 0.05 means 0.05% one-way slippage
 
 
 # ── Supabase PostgREST helpers ────────────────────────────────────────────────
@@ -235,6 +237,9 @@ async def _execute_backtest(payload: BacktestRunRequest, token: str) -> None:
             bars,
             payload.params,
             payload.risk,
+            100_000.0,
+            payload.commission_pct,
+            payload.slippage_pct,
         )
 
         # ── 5. Write results ──────────────────────────────────────────────────

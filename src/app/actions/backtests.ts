@@ -19,6 +19,8 @@ export async function submitBacktestAction(formData: FormData) {
   const entryRaw = formData.get("entry") as string;
   const riskRaw = formData.get("risk") as string;
   const paramsRaw = formData.get("params") as string;
+  const commissionPct = Math.max(0, Math.min(5, parseFloat((formData.get("commission_pct") as string) || "0"))) || 0;
+  const slippagePct = Math.max(0, Math.min(5, parseFloat((formData.get("slippage_pct") as string) || "0"))) || 0;
 
   // ─── Validation ───────────────────────────────────────────
   const errors: string[] = [];
@@ -56,7 +58,7 @@ export async function submitBacktestAction(formData: FormData) {
   if (strategyError || !strategy) return { error: "Strategy not found." };
 
   // ─── Build config (stored in Supabase for display) ────────
-  const config = { strategy_id: strategyId, name, symbol, interval, start, end, entry, risk, params };
+  const config = { strategy_id: strategyId, name, symbol, interval, start, end, entry, risk, params, commission_pct: commissionPct, slippage_pct: slippagePct };
 
   // ─── Insert pending run in Supabase ───────────────────────
   const { data: run, error: insertError } = await supabase
@@ -86,6 +88,8 @@ export async function submitBacktestAction(formData: FormData) {
     risk,
     params,
     name,
+    commission_pct: commissionPct,
+    slippage_pct: slippagePct,
   };
 
   try {

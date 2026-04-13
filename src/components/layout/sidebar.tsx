@@ -32,7 +32,7 @@ const navItems = [
   { label: "AI Strategy",   href: "/dashboard/ai-strategy", icon: "Sparkles" as const,        badge: "New" },
 ];
 
-export function Sidebar() {
+export function Sidebar({ alertCount = 0 }: { alertCount?: number }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
@@ -72,13 +72,25 @@ export function Sidebar() {
               )}
               title={collapsed ? item.label : undefined}
             >
-              <Icon className="w-4.5 h-4.5 shrink-0" size={18} />
+              <span className="relative shrink-0">
+                <Icon className="w-4.5 h-4.5" size={18} />
+                {/* Alert dot on Strategies when there are active warnings */}
+                {item.href === "/dashboard/strategies" && alertCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-yellow-400 ring-1 ring-surface-0" />
+                )}
+              </span>
               {!collapsed && (
                 <>
                   <span className="flex-1">{item.label}</span>
                   {item.badge && (
                     <span className="text-2xs font-semibold px-1 py-0.5 rounded bg-accent/20 text-accent leading-none">
                       {item.badge}
+                    </span>
+                  )}
+                  {/* Alert count badge */}
+                  {item.href === "/dashboard/strategies" && alertCount > 0 && (
+                    <span className="text-2xs font-bold px-1.5 py-0.5 rounded-full bg-yellow-400/20 text-yellow-400 leading-none tabular-nums">
+                      {alertCount}
                     </span>
                   )}
                 </>

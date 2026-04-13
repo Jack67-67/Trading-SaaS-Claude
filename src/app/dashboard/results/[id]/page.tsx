@@ -20,6 +20,7 @@ import {
 import { compareTwoRuns } from "@/lib/trends";
 import { RunComparisonPanel } from "@/components/dashboard/run-comparison";
 import { ShareButton } from "@/components/dashboard/share-button";
+import { RerunButton } from "@/components/dashboard/rerun-button";
 import type { RiskLevel, TimeframeHorizon, ConfidenceSignal } from "@/lib/ai-strategy";
 import type { BacktestStatus, BacktestMetrics, EquityCurvePoint } from "@/types";
 
@@ -71,6 +72,12 @@ export default async function ResultDetailPage({ params }: PageProps) {
       : null;
   const equityCurve: EquityCurvePoint[] =
     (resultsData?.equity_curve as EquityCurvePoint[]) ?? [];
+
+  // Cost model data (present only in runs that sent commission/slippage)
+  const costsApplied = resultsData?.costs_applied as { commission_pct: number; slippage_pct: number } | undefined;
+  const totalCostsPct = resultsData?.total_costs_pct as number | undefined;
+  const grossReturnPct = resultsData?.gross_return_pct as number | undefined;
+  const hasCosts = costsApplied && (costsApplied.commission_pct > 0 || costsApplied.slippage_pct > 0);
 
   const elapsed =
     run.started_at && run.completed_at
@@ -140,10 +147,21 @@ export default async function ResultDetailPage({ params }: PageProps) {
                   <span className="font-mono">{metrics.total_trades} trades executed</span>
                 </>
               )}
+              {hasCosts && costsApplied && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-border-hover" />
+                  <span className="text-amber-400 font-medium">
+                    After fees ({costsApplied.commission_pct}% commission · {costsApplied.slippage_pct}% slippage)
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {run.status === "completed" && (
+            <RerunButton runId={run.id} />
+          )}
           {run.status === "completed" && metrics && (
             <ShareButton text={buildShareText({
               strategyName,
@@ -227,7 +245,18 @@ export default async function ResultDetailPage({ params }: PageProps) {
           <NextStepsCard steps={nextSteps} />
 
           {/* KPI hero — unified card */}
-          <KpiHero metrics={metrics} />
+          <KpiHero metrics={metrics} hasCosts={!!hasCosts} />
+
+          {/* Fee impact — shown when costs were applied */}
+          {hasCosts && costsApplied && totalCostsPct !== undefined && grossReturnPct !== undefined && (
+            <CostImpactBar
+              grossReturnPct={grossReturnPct}
+              netReturnPct={metrics.total_return_pct}
+              totalCostsPct={totalCostsPct}
+              commissionPct={costsApplied.commission_pct}
+              slippagePct={costsApplied.slippage_pct}
+            />
+          )}
 
           {/* Trade snapshot — clarity on what actually happened */}
           <TradeSnapshot metrics={metrics} />
@@ -252,6 +281,8 @@ export default async function ResultDetailPage({ params }: PageProps) {
             risk={aiRisk}
             timeframe={aiTimeframe}
             symbol={(config.symbol as string) || undefined}
+            totalCostsPct={hasCosts ? totalCostsPct : undefined}
+            grossReturnPct={hasCosts ? grossReturnPct : undefined}
           />
 
           {/* Equity curve */}
@@ -550,6 +581,65 @@ function TradeSnapshot({ metrics }: { metrics: BacktestMetrics }) {
   );
 }
 
+function CostImpactBar({
+  grossReturnPct,
+  netReturnPct,
+  totalCostsPct,
+  commissionPct,
+  slippagePct,
+}: {
+  grossReturnPct: number;
+  netReturnPct: number;
+  totalCostsPct: number;
+  commissionPct: number;
+  slippagePct: number;
+}) {
+  const drag = grossReturnPct - netReturnPct;
+  const dragIsSignificant = grossReturnPct > 0 && drag / grossReturnPct > 0.15;
+  const edgeSurvives = netReturnPct >= 0;
+
+  return (
+    <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.02] px-5 py-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <p className="text-2xs font-semibold text-amber-400 uppercase tracking-widest shrink-0">
+          Fee Impact
+        </p>
+
+        <div className="flex items-center gap-6 flex-wrap">
+          <div className="text-center">
+            <p className="text-2xs text-text-muted mb-1">Before fees</p>
+            <p className={cn("text-base font-bold font-mono tabular-nums", pnlColor(grossReturnPct))}>
+              {grossReturnPct >= 0 ? "+" : ""}{grossReturnPct.toFixed(1)}%
+            </p>
+          </div>
+          <div className="text-text-muted text-sm">→</div>
+          <div className="text-center">
+            <p className="text-2xs text-text-muted mb-1">After fees</p>
+            <p className={cn("text-base font-bold font-mono tabular-nums", pnlColor(netReturnPct))}>
+              {netReturnPct >= 0 ? "+" : ""}{netReturnPct.toFixed(1)}%
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xs text-text-muted mb-1">Fee drag</p>
+            <p className="text-base font-bold font-mono tabular-nums text-amber-400">
+              −{totalCostsPct.toFixed(2)}%
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-xs text-text-muted mt-3 leading-relaxed">
+        {commissionPct}% commission + {slippagePct}% slippage applied per trade.{" "}
+        {!edgeSurvives
+          ? "The strategy is profitable before fees but loses money after — the edge is too small to survive real trading costs. Improve Sharpe or reduce trade frequency."
+          : dragIsSignificant
+            ? `Fees consumed ${Math.round(drag / grossReturnPct * 100)}% of gross returns. Consider reducing trade frequency or switching to a lower-cost broker.`
+            : "The strategy retains its edge after fees — cost drag is within acceptable bounds."}
+      </p>
+    </div>
+  );
+}
+
 function BenchmarkBar({
   strategyReturn,
   buyAndHoldReturn,
@@ -625,7 +715,7 @@ function sharpeLabel(v: number): { text: string; cls: string } {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function KpiHero({ metrics }: { metrics: BacktestMetrics }) {
+function KpiHero({ metrics, hasCosts }: { metrics: BacktestMetrics; hasCosts?: boolean }) {
   const isUp = metrics.total_return_pct >= 0;
   const { text: sText, cls: sCls } = sharpeLabel(metrics.sharpe_ratio);
   const TrendIcon = isUp ? TrendingUp : TrendingDown;
@@ -646,7 +736,7 @@ function KpiHero({ metrics }: { metrics: BacktestMetrics }) {
                : "bg-gradient-to-br from-loss/[0.06] via-surface-1 to-surface-1"
         )}>
           <p className="text-2xs font-semibold text-text-muted uppercase tracking-widest mb-4">
-            Total Return
+            Total Return{hasCosts && <span className="ml-1.5 text-amber-400 normal-case font-normal">after fees</span>}
           </p>
           <div className="flex items-end gap-3">
             <p className={cn(
@@ -826,14 +916,25 @@ function AiAnalysisPanel({
   risk,
   timeframe,
   symbol,
+  totalCostsPct,
+  grossReturnPct,
 }: {
   metrics: BacktestMetrics;
   risk?: RiskLevel;
   timeframe?: TimeframeHorizon;
   symbol?: string;
+  totalCostsPct?: number;
+  grossReturnPct?: number;
 }) {
   const summary     = generateSummary(metrics, { risk, timeframe, symbol });
-  const insights    = generateInsights(metrics, risk ?? "balanced", timeframe ?? "medium");
+  const insights    = generateInsights(
+    metrics,
+    risk ?? "balanced",
+    timeframe ?? "medium",
+    totalCostsPct !== undefined && grossReturnPct !== undefined
+      ? { totalCostsPct, grossReturnPct }
+      : undefined,
+  );
   const riskLabel   = generateRiskLabel(metrics);
   const conditions  = generateWhenItWorksAndFails(metrics, risk, timeframe);
   const avoidList   = generateWhenToAvoid(metrics, risk, timeframe);

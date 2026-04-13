@@ -44,16 +44,26 @@ class Portfolio:
     Tracks cash, positions, and records trades.
 
     Positions are in fractional shares.
-    All executions happen at the current bar's close price (market-on-close).
+    All executions happen at the current bar's close price (market-on-close),
+    adjusted for slippage (worse fill) and commission (cash deducted).
     """
 
-    def __init__(self, initial_capital: float = 100_000.0) -> None:
+    def __init__(
+        self,
+        initial_capital: float = 100_000.0,
+        commission_pct: float = 0.0,
+        slippage_pct: float = 0.0,
+    ) -> None:
         self.initial_capital = initial_capital
         self.cash = initial_capital
         self.positions: dict[str, float] = {}        # symbol → shares
         self._entry_prices: dict[str, float] = {}    # symbol → avg entry price
         self._current_bar: dict[str, Any] | None = None
         self.closed_trades: list[dict[str, Any]] = []  # closed round-trip trades
+        self._commission_pct = commission_pct        # per-trade leg, % of trade value
+        self._slippage_pct = slippage_pct            # one-way price slippage, %
+        self.total_commission_paid: float = 0.0      # cumulative commissions deducted
+        self.total_slippage_cost: float = 0.0        # cumulative slippage cost
 
     # ── Public API (called by strategy code) ──────────────────────────────────
 
@@ -72,44 +82,60 @@ class Portfolio:
         if self._current_bar is None:
             return
 
-        price = self._current_bar["close"]
-        if price <= 0:
+        raw_price = self._current_bar["close"]
+        if raw_price <= 0:
             return
 
         target_pct = max(0.0, min(1.0, target_pct))
 
-        total_eq   = self._total_equity(price, symbol)
+        total_eq   = self._total_equity(raw_price, symbol)
         target_val = total_eq * target_pct
         cur_shares = self.positions.get(symbol, 0.0)
-        cur_val    = cur_shares * price
+        cur_val    = cur_shares * raw_price
         diff_val   = target_val - cur_val
 
-        # Convert value difference to shares
-        diff_shares = diff_val / price
+        # Convert value difference to shares (using raw price for sizing)
+        diff_shares = diff_val / raw_price
 
-        # Clamp buy to available cash
+        # Clamp buy to available cash (conservative: uses raw price)
         if diff_shares > 0:
-            max_buy = self.cash / price
+            max_buy = self.cash / raw_price
             diff_shares = min(diff_shares, max_buy)
 
         if abs(diff_shares) < 1e-6:
             return
 
-        new_shares = max(0.0, cur_shares + diff_shares)
-        cost       = diff_shares * price   # positive = buy, negative = sell
+        # ── Apply slippage to execution price ────────────────────────────────
+        # Buys fill higher, sells fill lower — both hurt the trader.
+        slip = self._slippage_pct / 100.0
+        if diff_shares > 0:
+            exec_price = raw_price * (1.0 + slip)   # buy at a higher price
+        else:
+            exec_price = raw_price * (1.0 - slip)   # sell at a lower price
 
-        # ── Close / partial-close → record PnL ──────────────────────────────
+        slip_cost = abs(diff_shares) * raw_price * slip
+        self.total_slippage_cost += slip_cost
+
+        new_shares = max(0.0, cur_shares + diff_shares)
+        cost       = diff_shares * exec_price   # positive = buy, negative = sell
+
+        # ── Commission ───────────────────────────────────────────────────────
+        trade_value  = abs(diff_shares) * exec_price
+        commission   = trade_value * (self._commission_pct / 100.0)
+        self.total_commission_paid += commission
+
+        # ── Close / partial-close → record PnL (net of commission + slippage) ─
         if diff_shares < 0 and cur_shares > 0:
             sold_shares = min(abs(diff_shares), cur_shares)
-            entry_px    = self._entry_prices.get(symbol, price)
-            pnl         = (price - entry_px) * sold_shares
-            ret_pct     = (price / entry_px - 1) * 100 if entry_px > 0 else 0.0
+            entry_px    = self._entry_prices.get(symbol, raw_price)
+            pnl         = (exec_price - entry_px) * sold_shares - commission
+            ret_pct     = (exec_price / entry_px - 1) * 100 if entry_px > 0 else 0.0
             self.closed_trades.append(
                 {
                     "timestamp":   self._current_bar["timestamp"],
                     "symbol":      symbol,
                     "entry_price": round(entry_px, 4),
-                    "exit_price":  round(price, 4),
+                    "exit_price":  round(exec_price, 4),
                     "shares":      round(sold_shares, 6),
                     "pnl":         round(pnl, 2),
                     "return_pct":  round(ret_pct, 3),
@@ -119,15 +145,15 @@ class Portfolio:
         # ── Open / add to position → update average entry price ───────────────
         if diff_shares > 0:
             if cur_shares <= 0:
-                self._entry_prices[symbol] = price
+                self._entry_prices[symbol] = exec_price
             else:
-                prev_entry = self._entry_prices.get(symbol, price)
+                prev_entry = self._entry_prices.get(symbol, exec_price)
                 self._entry_prices[symbol] = (
-                    (cur_shares * prev_entry + diff_shares * price) / new_shares
+                    (cur_shares * prev_entry + diff_shares * exec_price) / new_shares
                 )
 
         # ── Settle cash & shares ──────────────────────────────────────────────
-        self.cash      -= cost
+        self.cash -= cost + commission   # commission is an additional outflow
         if new_shares < 1e-9:
             self.positions.pop(symbol, None)
             self._entry_prices.pop(symbol, None)
@@ -257,6 +283,8 @@ def run_backtest(
     params: dict[str, Any],
     risk: dict[str, Any],
     initial_capital: float = 100_000.0,
+    commission_pct: float = 0.0,
+    slippage_pct: float = 0.0,
 ) -> dict[str, Any]:
     """
     Execute a strategy against historical OHLC bars and return a results dict.
@@ -268,10 +296,12 @@ def run_backtest(
     params          : strategy params dict (passed to Strategy.__init__)
     risk            : risk params dict (merged into params)
     initial_capital : starting portfolio value in USD
+    commission_pct  : per-trade commission as % of trade value (e.g. 0.1 = 0.1%)
+    slippage_pct    : one-way price slippage as % (e.g. 0.05 = 0.05%)
 
     Returns
     -------
-    Dict with keys: "metrics", "equity_curve", "trades"
+    Dict with keys: "metrics", "equity_curve", "trades", "costs_applied"
     """
     if not bars:
         raise ValueError("No bars provided to the backtest engine.")
@@ -299,7 +329,7 @@ def run_backtest(
         raise ValueError(f"Strategy __init__ raised an error: {exc}") from exc
 
     # ── Run event loop ───────────────────────────────────────────────────────
-    portfolio    = Portfolio(initial_capital)
+    portfolio    = Portfolio(initial_capital, commission_pct=commission_pct, slippage_pct=slippage_pct)
     equity_curve: list[dict[str, Any]] = []
     peak_equity  = initial_capital
     max_drawdown = 0.0
@@ -344,9 +374,22 @@ def run_backtest(
         (bars[-1]["close"] / bars[0]["close"] - 1) * 100, 2
     ) if bars[0]["close"] > 0 else 0.0
 
+    # Total cost as % of initial capital (for display in UI)
+    total_costs_pct = round(
+        (portfolio.total_commission_paid + portfolio.total_slippage_cost) / initial_capital * 100, 3
+    )
+    # Estimate gross return before costs were deducted
+    gross_return_pct = round(metrics["total_return_pct"] + total_costs_pct, 2)
+
     return {
         "metrics":                  metrics,
         "equity_curve":             equity_curve,
-        "trades":                   [],  # detailed trades omitted from frontend payload for now
+        "trades":                   [],
         "buy_and_hold_return_pct":  buy_and_hold_return_pct,
+        "costs_applied": {
+            "commission_pct": commission_pct,
+            "slippage_pct":   slippage_pct,
+        },
+        "total_costs_pct":          total_costs_pct,
+        "gross_return_pct":         gross_return_pct,
     }

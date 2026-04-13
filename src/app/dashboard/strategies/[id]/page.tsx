@@ -1,8 +1,12 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
+import { Play } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { StrategyForm } from "@/components/dashboard/strategy-form";
 import { AiAlerts } from "@/components/dashboard/ai-alerts";
 import { TrendBadge } from "@/components/dashboard/run-comparison";
+import { StrategyRunHistory } from "@/components/dashboard/strategy-run-history";
+import type { StrategyRunRow } from "@/components/dashboard/strategy-run-history";
 import { generateAlerts } from "@/lib/alerts";
 import { computeStrategyTrend } from "@/lib/trends";
 
@@ -36,7 +40,7 @@ export default async function StrategyEditorPage({ params }: PageProps) {
     notFound();
   }
 
-  // Fetch completed runs for this strategy to generate alerts
+  // Fetch completed runs for this strategy
   const { data: strategyRuns } = await supabase
     .from("backtest_runs")
     .select("id, results, completed_at, started_at, config")
@@ -44,60 +48,99 @@ export default async function StrategyEditorPage({ params }: PageProps) {
     .eq("status", "completed")
     .order("completed_at", { ascending: true });
 
-  const alertRunInputs = (strategyRuns ?? []).flatMap((r) => {
+  // Build typed run rows for StrategyRunHistory
+  const runRows: StrategyRunRow[] = (strategyRuns ?? []).flatMap((r) => {
     const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
     const cfg = r.config as Record<string, unknown> | null;
-    if (!m || m.total_return_pct === undefined || m.sharpe_ratio === undefined) return [];
+    if (!m || m.total_return_pct === undefined) return [];
     return [{
       id: r.id as string,
-      strategyId: params.id,
-      strategyName: strategy.name,
+      name: (cfg?.name as string) || (cfg?.symbol as string) || "Run",
       symbol: (cfg?.symbol as string) || "—",
+      interval: (cfg?.interval as string) || "—",
       completedAt: (r.completed_at as string) || (r.started_at as string) || new Date().toISOString(),
       returnPct: m.total_return_pct,
-      sharpe: m.sharpe_ratio,
+      sharpe: m.sharpe_ratio ?? 0,
       drawdown: Math.abs(m.max_drawdown_pct ?? 0),
-      trades: m.total_trades ?? 0,
       winRate: m.win_rate_pct ?? 0,
+      trades: m.total_trades ?? 0,
     }];
   });
-  const strategyAlerts = generateAlerts(alertRunInputs);
 
-  const trendSnapshots = alertRunInputs.map((r) => ({
-    returnPct: r.returnPct, sharpe: r.sharpe, drawdown: r.drawdown,
-    winRate: r.winRate, trades: r.trades,
+  // Alerts + trend from same data
+  const alertInputs = runRows.map((r) => ({
+    id: r.id,
+    strategyId: params.id,
+    strategyName: strategy.name,
+    symbol: r.symbol,
+    completedAt: r.completedAt,
+    returnPct: r.returnPct,
+    sharpe: r.sharpe,
+    drawdown: r.drawdown,
+    trades: r.trades,
+    winRate: r.winRate,
   }));
-  const trend = computeStrategyTrend(trendSnapshots);
+  const strategyAlerts = generateAlerts(alertInputs);
+  const trend = computeStrategyTrend(
+    runRows.map((r) => ({
+      returnPct: r.returnPct,
+      sharpe: r.sharpe,
+      drawdown: r.drawdown,
+      winRate: r.winRate,
+      trades: r.trades,
+    }))
+  );
 
   return (
-    <div className="space-y-5">
-      {/* Strategy header with trend */}
+    <div className="space-y-6 animate-fade-in max-w-4xl">
+
+      {/* ── Header ─────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-text-primary">
             {(strategy as Record<string, unknown> & { name?: string }).name ?? "Strategy"}
           </h1>
           <p className="text-sm text-text-muted mt-0.5">
-            {alertRunInputs.length > 0
-              ? `${alertRunInputs.length} completed ${alertRunInputs.length === 1 ? "run" : "runs"}`
+            {runRows.length > 0
+              ? `${runRows.length} completed ${runRows.length === 1 ? "run" : "runs"}`
               : "No completed runs yet"}
           </p>
         </div>
-        {trend && <TrendBadge trend={trend} />}
+        <div className="flex items-center gap-3">
+          {trend && <TrendBadge trend={trend} />}
+          <Link
+            href={`/dashboard/backtests?strategy=${params.id}`}
+            className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover transition-colors"
+          >
+            <Play size={14} />
+            Run Backtest
+          </Link>
+        </div>
       </div>
 
+      {/* ── Alerts ─────────────────────────────────────────────── */}
       {strategyAlerts.length > 0 && (
         <AiAlerts alerts={strategyAlerts} variant="compact" />
       )}
-      <StrategyForm
-        mode="edit"
-        strategyId={strategy.id}
-        initialData={{
-          name: strategy.name,
-          description: strategy.description,
-          code: strategy.code,
-        }}
-      />
+
+      {/* ── Performance history ─────────────────────────────────── */}
+      <StrategyRunHistory runs={runRows} strategyId={params.id} />
+
+      {/* ── Strategy editor ─────────────────────────────────────── */}
+      <div>
+        <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
+          Strategy Code
+        </p>
+        <StrategyForm
+          mode="edit"
+          strategyId={strategy.id}
+          initialData={{
+            name: strategy.name,
+            description: strategy.description,
+            code: strategy.code,
+          }}
+        />
+      </div>
     </div>
   );
 }

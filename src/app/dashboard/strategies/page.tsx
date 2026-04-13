@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Plus, Code2, Clock, Sparkles, ChevronRight, FlaskConical, BarChart3, ShieldCheck } from "lucide-react";
+import { Plus, Code2, Clock, Sparkles, ChevronRight, FlaskConical, BarChart3, ShieldCheck, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, formatPercent, pnlColor } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { generateAlerts } from "@/lib/alerts";
+import { computeStrategyTrend } from "@/lib/trends";
 
 const LIFECYCLE_STEPS = [
   { icon: Code2,       label: "Define",  desc: "Write your strategy" },
@@ -23,7 +25,7 @@ export default async function StrategiesPage() {
 
   const { data: strategies } = await supabase
     .from("strategies")
-    .select("*, backtest_runs(id, status)")
+    .select("*, backtest_runs(id, status, results, completed_at, config)")
     .eq("user_id", user!.id)
     .order("updated_at", { ascending: false });
 
@@ -100,10 +102,14 @@ export default async function StrategiesPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {items.map((strategy) => {
             const lineCount = strategy.code.split("\n").length;
-            const runs = (strategy as Record<string, unknown> & { backtest_runs?: { id: string; status: string }[] }).backtest_runs ?? [];
+            type RunEntry = { id: string; status: string; results: unknown; completed_at: string | null; config: unknown };
+            const runs = (strategy as Record<string, unknown> & { backtest_runs?: RunEntry[] }).backtest_runs ?? [];
             const runCount = runs.length;
-            const hasCompleted = runs.some((r) => r.status === "completed");
-            const hasMultiple = runs.filter((r) => r.status === "completed").length >= 2;
+            const completedRuns = runs
+              .filter((r) => r.status === "completed" && r.results)
+              .sort((a, b) => new Date(a.completed_at ?? "").getTime() - new Date(b.completed_at ?? "").getTime());
+            const hasCompleted = completedRuns.length > 0;
+            const hasMultiple = completedRuns.length >= 2;
 
             const stage =
               hasMultiple  ? { label: "Monitoring",  color: "text-profit",      bg: "bg-profit/10" } :
@@ -111,12 +117,54 @@ export default async function StrategiesPage() {
               runCount > 0 ? { label: "Running",      color: "text-amber-400",   bg: "bg-amber-400/10" } :
                              { label: "Not yet run",  color: "text-text-muted",  bg: "bg-surface-3" };
 
+            // Last completed run metrics
+            const latestRun = completedRuns[completedRuns.length - 1];
+            const latestMetrics = latestRun
+              ? ((latestRun.results as Record<string, unknown>)?.metrics as Record<string, number> | null)
+              : null;
+            const lastReturn = latestMetrics?.total_return_pct;
+            const lastSharpe = latestMetrics?.sharpe_ratio;
+
+            // Trend from last two runs
+            const trendSnapshots = completedRuns.flatMap((r) => {
+              const m = ((r.results as Record<string, unknown>)?.metrics as Record<string, number> | null);
+              if (!m) return [];
+              return [{ returnPct: m.total_return_pct, sharpe: m.sharpe_ratio ?? 0, drawdown: Math.abs(m.max_drawdown_pct ?? 0), winRate: m.win_rate_pct ?? 0, trades: m.total_trades ?? 0 }];
+            });
+            const trend = computeStrategyTrend(trendSnapshots);
+
+            // Alerts for this strategy
+            const alertInputs = completedRuns.flatMap((r) => {
+              const m = ((r.results as Record<string, unknown>)?.metrics as Record<string, number> | null);
+              const cfg = r.config as Record<string, unknown> | null;
+              if (!m) return [];
+              return [{
+                id: r.id, strategyId: strategy.id, strategyName: strategy.name,
+                symbol: (cfg?.symbol as string) || "—",
+                completedAt: r.completed_at || new Date().toISOString(),
+                returnPct: m.total_return_pct, sharpe: m.sharpe_ratio ?? 0,
+                drawdown: Math.abs(m.max_drawdown_pct ?? 0), trades: m.total_trades ?? 0, winRate: m.win_rate_pct ?? 0,
+              }];
+            });
+            const alerts = generateAlerts(alertInputs);
+            const criticalCount = alerts.filter((a) => a.severity === "critical" || a.severity === "warning").length;
+
+            const trendStyles: Record<string, { text: string; dot: string }> = {
+              improving: { text: "text-profit", dot: "bg-profit" },
+              stable:    { text: "text-text-muted", dot: "bg-surface-3" },
+              "at-risk": { text: "text-yellow-400", dot: "bg-yellow-400" },
+              declining: { text: "text-loss", dot: "bg-loss" },
+            };
+            const trendStyle = trend ? trendStyles[trend] : null;
+
             return (
               <Link key={strategy.id} href={`/dashboard/strategies/${strategy.id}`} className="group">
                 <div className={cn(
-                  "relative h-full rounded-2xl border border-border bg-surface-1 overflow-hidden",
-                  "hover:border-border-hover hover:bg-surface-2/40 transition-all duration-150",
-                  "flex flex-col"
+                  "relative h-full rounded-2xl border bg-surface-1 overflow-hidden",
+                  "transition-all duration-150 flex flex-col",
+                  criticalCount > 0
+                    ? "border-yellow-400/30 hover:border-yellow-400/50"
+                    : "border-border hover:border-border-hover hover:bg-surface-2/40"
                 )}>
                   {/* Top accent line */}
                   <div className="absolute top-0 left-5 right-5 h-px bg-accent/50" />
@@ -125,8 +173,13 @@ export default async function StrategiesPage() {
                     {/* Title row */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
+                        <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0 relative">
                           <Code2 size={15} className="text-accent" />
+                          {criticalCount > 0 && (
+                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-yellow-400 flex items-center justify-center">
+                              <AlertTriangle size={8} className="text-black" />
+                            </span>
+                          )}
                         </div>
                         <div className="min-w-0">
                           <h3 className="text-sm font-semibold text-text-primary group-hover:text-accent transition-colors truncate leading-snug">
@@ -152,12 +205,52 @@ export default async function StrategiesPage() {
                       <p className="text-xs text-text-muted/50 italic">No description</p>
                     )}
 
-                    {/* Code preview */}
-                    <div className="flex-1 rounded-lg bg-surface-0 border border-border p-3 overflow-hidden">
-                      <pre className="text-2xs text-text-muted/75 font-mono leading-relaxed line-clamp-5 whitespace-pre-wrap">
-                        {strategy.code.slice(0, 260)}
-                      </pre>
-                    </div>
+                    {/* Last run metrics — replaces code preview when runs exist */}
+                    {lastReturn !== undefined && latestMetrics ? (
+                      <div className="flex-1 rounded-lg bg-surface-0 border border-border p-3">
+                        <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-2">
+                          Latest Run
+                        </p>
+                        <div className="flex items-end justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              {lastReturn >= 0
+                                ? <TrendingUp size={13} className="text-profit" />
+                                : <TrendingDown size={13} className="text-loss" />}
+                              <span className={cn("text-xl font-bold font-mono tabular-nums", pnlColor(lastReturn))}>
+                                {formatPercent(lastReturn)}
+                              </span>
+                            </div>
+                            <p className="text-2xs text-text-muted mt-0.5">Total return</p>
+                          </div>
+                          {lastSharpe !== undefined && (
+                            <div className="text-right">
+                              <p className="text-sm font-mono font-semibold text-text-primary tabular-nums">
+                                {lastSharpe.toFixed(2)}
+                              </p>
+                              <p className="text-2xs text-text-muted">Sharpe</p>
+                            </div>
+                          )}
+                          {trendStyle && trend && (
+                            <div className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <span className={cn("w-1.5 h-1.5 rounded-full", trendStyle.dot)} />
+                                <span className={cn("text-xs font-medium capitalize", trendStyle.text)}>
+                                  {trend}
+                                </span>
+                              </div>
+                              <p className="text-2xs text-text-muted">vs prev run</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex-1 rounded-lg bg-surface-0 border border-border p-3 overflow-hidden">
+                        <pre className="text-2xs text-text-muted/75 font-mono leading-relaxed line-clamp-5 whitespace-pre-wrap">
+                          {strategy.code.slice(0, 260)}
+                        </pre>
+                      </div>
+                    )}
 
                     {/* Footer */}
                     <div className="flex items-center justify-between pt-0.5">

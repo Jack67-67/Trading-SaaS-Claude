@@ -37,6 +37,8 @@ export interface BacktestConfig {
   entry: Record<string, unknown>;
   risk: Record<string, unknown>;
   params: Record<string, unknown>;
+  commission_pct?: number;
+  slippage_pct?: number;
 }
 
 /**
@@ -53,6 +55,8 @@ export interface BacktestRunRequest {
   risk: Record<string, unknown>;
   params: Record<string, unknown>;
   name: string;
+  commission_pct?: number;
+  slippage_pct?: number;
 }
 
 export interface BacktestRun {
@@ -85,6 +89,13 @@ export interface BacktestMetrics {
   buy_and_hold_return_pct?: number;
 }
 
+/** Cost model fields returned at top level of BacktestResult (not inside metrics) */
+export interface BacktestCosts {
+  costs_applied: { commission_pct: number; slippage_pct: number };
+  total_costs_pct: number;   // (commission + slippage) as % of initial capital
+  gross_return_pct: number;  // estimated return before costs
+}
+
 export interface EquityCurvePoint {
   timestamp: string;
   equity: number;
@@ -110,6 +121,10 @@ export interface BacktestResult {
   metrics?: BacktestMetrics;
   equity_curve?: EquityCurvePoint[];
   trades?: Trade[];
+  buy_and_hold_return_pct?: number;
+  costs_applied?: { commission_pct: number; slippage_pct: number };
+  total_costs_pct?: number;
+  gross_return_pct?: number;
   [key: string]: unknown;
 }
 
