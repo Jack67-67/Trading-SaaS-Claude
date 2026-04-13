@@ -8,6 +8,7 @@ import {
   FlaskConical,
   BarChart3,
   Sparkles,
+  Layers2,
   Settings,
   ChevronsLeft,
   ChevronsRight,
@@ -22,10 +23,12 @@ const iconMap = {
   FlaskConical,
   BarChart3,
   Sparkles,
+  Layers2,
 } as const;
 
 const navItems = [
   { label: "Overview",      href: "/dashboard",             icon: "LayoutDashboard" as const, badge: null },
+  { label: "Portfolio",     href: "/dashboard/portfolio",   icon: "Layers2" as const,         badge: null },
   { label: "Strategies",    href: "/dashboard/strategies",  icon: "Code2" as const,           badge: null },
   { label: "Backtests",     href: "/dashboard/backtests",   icon: "FlaskConical" as const,    badge: null },
   { label: "Results",       href: "/dashboard/results",     icon: "BarChart3" as const,       badge: null },
