@@ -19,7 +19,7 @@ import {
 } from "@/lib/ai-strategy";
 import { compareTwoRuns } from "@/lib/trends";
 import { RunComparisonPanel } from "@/components/dashboard/run-comparison";
-import type { RiskLevel, TimeframeHorizon } from "@/lib/ai-strategy";
+import type { RiskLevel, TimeframeHorizon, ConfidenceSignal } from "@/lib/ai-strategy";
 import type { BacktestStatus, BacktestMetrics, EquityCurvePoint } from "@/types";
 
 interface PageProps {
@@ -201,14 +201,24 @@ export default async function ResultDetailPage({ params }: PageProps) {
           : null;
 
         const verdict = generateVerdict(metrics);
+        const confidence = computeConfidence(metrics);
+        const aiRisk = (config.ai_risk as RiskLevel) || undefined;
+        const aiTimeframe = (config.ai_timeframe as TimeframeHorizon) || undefined;
+        const nextSteps = generateWhatToDoNow(metrics, aiRisk, aiTimeframe);
 
         return (
         <>
-          {/* Verdict banner — strategy quality at a glance */}
-          <VerdictBanner verdict={verdict} />
+          {/* Verdict + confidence at a glance */}
+          <VerdictBanner verdict={verdict} confidence={confidence} />
+
+          {/* Next steps — what to do now */}
+          <NextStepsCard steps={nextSteps} />
 
           {/* KPI hero — unified card */}
           <KpiHero metrics={metrics} />
+
+          {/* Trade snapshot — clarity on what actually happened */}
+          <TradeSnapshot metrics={metrics} />
 
           {/* Benchmark comparison */}
           {metrics.buy_and_hold_return_pct !== undefined && (
@@ -227,8 +237,8 @@ export default async function ResultDetailPage({ params }: PageProps) {
           {/* AI Analysis panel */}
           <AiAnalysisPanel
             metrics={metrics}
-            risk={(config.ai_risk as RiskLevel) || undefined}
-            timeframe={(config.ai_timeframe as TimeframeHorizon) || undefined}
+            risk={aiRisk}
+            timeframe={aiTimeframe}
             symbol={(config.symbol as string) || undefined}
           />
 
@@ -316,7 +326,7 @@ export default async function ResultDetailPage({ params }: PageProps) {
 
 import type { VerdictResult } from "@/lib/ai-strategy";
 
-function VerdictBanner({ verdict }: { verdict: VerdictResult }) {
+function VerdictBanner({ verdict, confidence }: { verdict: VerdictResult; confidence: ConfidenceSignal }) {
   const colorMap = {
     profit: {
       border: "border-profit/20",
@@ -349,9 +359,16 @@ function VerdictBanner({ verdict }: { verdict: VerdictResult }) {
   };
   const s = colorMap[verdict.color];
 
+  const confLabel = confidence.level === "good" ? "High" : confidence.level === "neutral" ? "Medium" : "Low";
+  const confCls = {
+    good:    "text-profit bg-profit/10 border-profit/20",
+    neutral: "text-accent bg-accent/10 border-accent/20",
+    risky:   "text-amber-400 bg-amber-400/10 border-amber-400/20",
+  }[confidence.level];
+
   return (
     <div className={cn("rounded-2xl border overflow-hidden bg-gradient-to-br", s.border, s.bg)}>
-      {/* Top row: verdict label + tagline pill */}
+      {/* Top row: verdict label + confidence + tagline pill */}
       <div className="px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2.5">
           <span className={cn("w-2 h-2 rounded-full shrink-0", s.dot)} />
@@ -364,9 +381,14 @@ function VerdictBanner({ verdict }: { verdict: VerdictResult }) {
             </p>
           </div>
         </div>
-        <span className={cn("text-xs font-semibold border rounded-full px-3 py-1 shrink-0", s.badge)}>
-          {verdict.tagline}
-        </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={cn("text-xs font-semibold border rounded-full px-3 py-1 shrink-0", confCls)}>
+            {confLabel} confidence · {confidence.score}/100
+          </span>
+          <span className={cn("text-xs font-semibold border rounded-full px-3 py-1 shrink-0", s.badge)}>
+            {verdict.tagline}
+          </span>
+        </div>
       </div>
 
       {/* TL;DR — the most important line, always visible */}
@@ -376,10 +398,102 @@ function VerdictBanner({ verdict }: { verdict: VerdictResult }) {
         </p>
       </div>
 
-      {/* Explanation — fuller context */}
+      {/* Explanation + confidence reason */}
       <div className="px-6 py-3 border-t border-border/40 bg-surface-1/30">
         <p className="text-xs text-text-muted leading-relaxed">{verdict.explanation}</p>
+        <p className="text-xs text-text-muted/70 leading-relaxed mt-1.5 border-t border-border/30 pt-1.5">
+          {confidence.reason}
+        </p>
       </div>
+    </div>
+  );
+}
+
+function NextStepsCard({ steps }: { steps: string[] }) {
+  return (
+    <div className="rounded-2xl border border-accent/20 bg-accent/[0.03] px-6 py-5">
+      <div className="flex items-center gap-2 mb-4">
+        <ListChecks size={14} className="text-accent shrink-0" />
+        <p className="text-sm font-semibold text-text-primary">What to do next</p>
+        <span className="text-2xs text-text-muted ml-auto">Prioritised by impact</span>
+      </div>
+      <div className="space-y-2.5">
+        {steps.map((step, i) => (
+          <div key={i} className="flex items-start gap-3 rounded-xl bg-surface-1 border border-border px-4 py-3">
+            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-accent text-surface-0 text-2xs font-bold flex items-center justify-center mt-0.5">
+              {i + 1}
+            </span>
+            <p className="text-sm text-text-secondary leading-relaxed">{step}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TradeSnapshot({ metrics }: { metrics: BacktestMetrics }) {
+  if (metrics.total_trades === 0) return null;
+
+  const trades = metrics.total_trades;
+  const avgReturn = metrics.avg_trade_return_pct;
+  const pf = metrics.profit_factor;
+  const wins = Math.round(trades * metrics.win_rate_pct / 100);
+  const losses = trades - wins;
+
+  const contextLine =
+    trades < 15
+      ? `Only ${trades} trades — too few for statistical confidence. Results may reflect luck rather than repeatable edge.`
+      : pf >= 1.5
+        ? `Each trade averaged ${avgReturn >= 0 ? "+" : ""}${avgReturn.toFixed(2)}%. Profit factor above 1.5 indicates genuine edge.`
+        : pf >= 1.2
+          ? `Each trade averaged ${avgReturn >= 0 ? "+" : ""}${avgReturn.toFixed(2)}%. Positive edge, but thin margins — fees and slippage could erode this.`
+          : `Each trade averaged ${avgReturn >= 0 ? "+" : ""}${avgReturn.toFixed(2)}%. Profit factor near 1.0 — barely above break-even.`;
+
+  return (
+    <div className="rounded-xl border border-border bg-surface-1 px-5 py-4">
+      <p className="text-2xs font-semibold text-text-muted uppercase tracking-widest mb-3">
+        Trade Activity
+      </p>
+      <div className="flex items-center gap-6 flex-wrap">
+        <div>
+          <p className="text-3xl font-bold font-mono tabular-nums text-text-primary leading-none">
+            {trades}
+          </p>
+          <p className="text-xs text-text-muted mt-1">trades executed</p>
+        </div>
+        <div className="w-px h-9 bg-border shrink-0" />
+        <div>
+          <p className={cn("text-2xl font-bold font-mono tabular-nums leading-none", pnlColor(avgReturn))}>
+            {avgReturn >= 0 ? "+" : ""}{avgReturn.toFixed(2)}%
+          </p>
+          <p className="text-xs text-text-muted mt-1">avg per trade</p>
+        </div>
+        <div className="w-px h-9 bg-border shrink-0" />
+        <div>
+          <p className={cn("text-2xl font-bold font-mono tabular-nums leading-none", pnlColor(pf - 1))}>
+            {pf.toFixed(2)}×
+          </p>
+          <p className="text-xs text-text-muted mt-1">profit factor</p>
+        </div>
+        <div className="w-px h-9 bg-border shrink-0 hidden sm:block" />
+        <div className="hidden sm:block">
+          <p className="text-sm font-mono text-text-secondary leading-none">
+            <span className="text-profit font-semibold">{wins}W</span>
+            {" / "}
+            <span className="text-loss font-semibold">{losses}L</span>
+          </p>
+          <p className="text-xs text-text-muted mt-1">win / loss count</p>
+        </div>
+        {trades < 15 && (
+          <div className="flex items-center gap-1.5 ml-auto text-amber-400">
+            <TriangleAlert size={13} className="shrink-0" />
+            <p className="text-xs font-semibold">Low sample</p>
+          </div>
+        )}
+      </div>
+      <p className="text-xs text-text-muted mt-3 leading-relaxed border-t border-border pt-3">
+        {contextLine}
+      </p>
     </div>
   );
 }
@@ -666,12 +780,10 @@ function AiAnalysisPanel({
   timeframe?: TimeframeHorizon;
   symbol?: string;
 }) {
-  const confidence  = computeConfidence(metrics);
   const summary     = generateSummary(metrics, { risk, timeframe, symbol });
   const insights    = generateInsights(metrics, risk ?? "balanced", timeframe ?? "medium");
   const riskLabel   = generateRiskLabel(metrics);
   const conditions  = generateWhenItWorksAndFails(metrics, risk, timeframe);
-  const steps       = generateWhatToDoNow(metrics, risk, timeframe);
   const avoidList   = generateWhenToAvoid(metrics, risk, timeframe);
 
   // ── Style maps ────────────────────────────────────────────────────────────
@@ -680,25 +792,7 @@ function AiAnalysisPanel({
     good:    "border-profit/20 bg-profit/[0.03]",
     neutral: "border-accent/20 bg-accent/[0.03]",
     risky:   "border-yellow-400/20 bg-yellow-400/[0.03]",
-  }[confidence.level];
-
-  const confBar = {
-    good:    "bg-profit",
-    neutral: "bg-accent",
-    risky:   "bg-yellow-400",
-  }[confidence.level];
-
-  const confText = {
-    good:    "text-profit",
-    neutral: "text-accent",
-    risky:   "text-yellow-400",
-  }[confidence.level];
-
-  const confIcon = {
-    good:    <CheckCircle2 size={13} className="text-profit shrink-0" />,
-    neutral: <Info         size={13} className="text-accent shrink-0" />,
-    risky:   <AlertTriangle size={13} className="text-yellow-400 shrink-0" />,
-  }[confidence.level];
+  }[computeConfidence(metrics).level];
 
   const riskBadgeCls = {
     low:    "bg-profit/10 text-profit border-profit/20",
@@ -724,34 +818,6 @@ function AiAnalysisPanel({
         <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border", riskBadgeCls)}>
           {riskLabel.label}
         </span>
-      </div>
-
-      {/* ── Confidence score bar ─────────────────────────────────────────── */}
-      <div className="rounded-xl bg-surface-2 border border-border px-4 py-3 space-y-2">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider">
-            Confidence Score
-          </p>
-          <div className="flex items-center gap-1.5">
-            {confIcon}
-            <span className={cn("text-xs font-semibold", confText)}>{confidence.label}</span>
-            <span className="text-lg font-bold font-mono text-text-primary leading-none">
-              {confidence.score}
-              <span className="text-xs font-normal text-text-muted">/100</span>
-            </span>
-          </div>
-        </div>
-        {/* Bar */}
-        <div className="h-2 bg-surface-3 rounded-full overflow-hidden">
-          <div
-            className={cn("h-full rounded-full transition-all duration-500", confBar)}
-            style={{ width: `${confidence.score}%` }}
-          />
-        </div>
-        <p className="text-xs text-text-muted leading-relaxed">{confidence.reason}</p>
-        <p className="text-xs text-text-secondary leading-relaxed border-t border-border/60 pt-2 mt-1">
-          {confidence.explanation}
-        </p>
       </div>
 
       {/* ── Summary ──────────────────────────────────────────────────────── */}
@@ -811,28 +877,6 @@ function AiAnalysisPanel({
               </div>
             );
           })}
-        </div>
-      </div>
-
-      <div className="border-t border-border" />
-
-      {/* ── What to do now ───────────────────────────────────────────────── */}
-      <div className="space-y-2.5">
-        <div className="flex items-center gap-1.5">
-          <ListChecks size={13} className="text-accent shrink-0" />
-          <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider">
-            What to do now
-          </p>
-        </div>
-        <div className="space-y-2">
-          {steps.map((step, i) => (
-            <div key={i} className="flex items-start gap-3 rounded-xl bg-surface-2 border border-border px-4 py-3">
-              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-accent text-surface-0 text-2xs font-bold flex items-center justify-center mt-0.5">
-                {i + 1}
-              </span>
-              <p className="text-sm text-text-secondary leading-relaxed">{step}</p>
-            </div>
-          ))}
         </div>
       </div>
 
