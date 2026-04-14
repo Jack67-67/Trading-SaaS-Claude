@@ -29,6 +29,7 @@ export async function createPaperTradingSession(
   const { data, error } = await supabase
     .from("paper_trade_sessions")
     .insert({
+      user_id:         session.user.id,
       strategy_id:     input.strategyId,
       name:            input.name,
       symbol:          input.symbol.toUpperCase(),

@@ -120,7 +120,7 @@ export function NewPaperSessionForm({ strategies }: Props) {
               name="initialCapital"
               type="number"
               min="100"
-              step="1000"
+              step="100"
               defaultValue="100000"
               className={fieldClass}
               disabled={pending}
