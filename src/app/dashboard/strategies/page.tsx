@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Plus, Code2, Clock, Sparkles, ChevronRight, FlaskConical, BarChart3, ShieldCheck, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
+import { Plus, Code2, Clock, Sparkles, ChevronRight, FlaskConical, BarChart3, ShieldCheck, TrendingUp, TrendingDown, AlertTriangle, MessageSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { formatDateTime, formatPercent, pnlColor } from "@/lib/utils";
@@ -42,13 +42,18 @@ export default async function StrategiesPage() {
             Define and manage your Python trading strategies.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {items.length > 0 && (
-            <p className="text-sm text-text-muted">
+            <p className="text-sm text-text-muted mr-1">
               <span className="font-mono font-semibold text-text-primary">{items.length}</span>{" "}
               {items.length === 1 ? "strategy" : "strategies"}
             </p>
           )}
+          <Link href="/dashboard/strategies/describe">
+            <Button variant="secondary" size="sm">
+              <MessageSquare size={14} />Describe Strategy
+            </Button>
+          </Link>
           <Link href="/dashboard/strategies/new">
             <Button size="sm">
               <Plus size={15} />New Strategy
@@ -77,23 +82,34 @@ export default async function StrategiesPage() {
 
       {/* ── Empty state ────────────────────────────────────────── */}
       {items.length === 0 && (
-        <div className="rounded-2xl bg-surface-1 border border-border flex flex-col items-center justify-center py-20 text-center">
+        <div className="rounded-2xl bg-surface-1 border border-border flex flex-col items-center justify-center py-16 text-center px-6">
           <div className="w-12 h-12 rounded-full bg-surface-3 flex items-center justify-center mb-4">
             <Code2 className="w-6 h-6 text-text-muted" />
           </div>
           <p className="text-sm font-semibold text-text-secondary mb-1">No strategies yet</p>
-          <p className="text-xs text-text-muted max-w-xs mb-5 leading-relaxed">
+          <p className="text-xs text-text-muted max-w-xs mb-6 leading-relaxed">
             A strategy is a set of rules that decide when to buy and sell.
-            Let AI write one for you, or code it yourself in Python.
+            Have an idea? Describe it. Want AI to suggest one? Use the generator.
           </p>
-          <div className="flex items-center gap-3 flex-wrap justify-center">
-            <Link href="/dashboard/strategies/new">
-              <Button size="sm"><Plus size={14} />Write a Strategy</Button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-sm">
+            <Link href="/dashboard/strategies/describe">
+              <div className="rounded-xl border border-accent/30 bg-accent/[0.05] hover:bg-accent/[0.09] p-4 text-left transition-colors cursor-pointer">
+                <MessageSquare size={14} className="text-accent mb-2" />
+                <p className="text-xs font-bold text-text-primary mb-0.5">Describe your idea</p>
+                <p className="text-2xs text-text-muted leading-relaxed">Type your strategy in plain English — AI codes and backtests it.</p>
+              </div>
             </Link>
             <Link href="/dashboard/ai-strategy">
-              <Button variant="secondary" size="sm"><Sparkles size={14} />Generate with AI</Button>
+              <div className="rounded-xl border border-border bg-surface-2 hover:bg-surface-3 p-4 text-left transition-colors cursor-pointer">
+                <Sparkles size={14} className="text-text-muted mb-2" />
+                <p className="text-xs font-bold text-text-primary mb-0.5">AI Generator</p>
+                <p className="text-2xs text-text-muted leading-relaxed">Pick a risk profile and frequency — AI picks the strategy.</p>
+              </div>
             </Link>
           </div>
+          <Link href="/dashboard/strategies/new" className="mt-4">
+            <Button variant="ghost" size="sm"><Code2 size={13} />Write code manually</Button>
+          </Link>
         </div>
       )}
 

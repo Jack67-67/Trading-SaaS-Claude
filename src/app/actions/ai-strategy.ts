@@ -6,6 +6,45 @@ import { generateStrategy } from "@/lib/ai-strategy";
 import type { RiskLevel, TimeframeHorizon } from "@/lib/ai-strategy";
 import type { BacktestRunRequest } from "@/types";
 
+// ── Keyword inference ────────────────────────────────────────────────────────
+
+function inferStrategyParams(goal: string): { risk: RiskLevel; timeframe: TimeframeHorizon } {
+  const t = goal.toLowerCase();
+
+  let timeframe: TimeframeHorizon = "medium";
+  if (/\b(scalp|1m|5m|15m|intraday|day.?trad|hourly|1h)\b/.test(t)) timeframe = "short";
+  else if (/\b(weekly|1w|long.?term|invest|months?|yearly|position.?trad)\b/.test(t)) timeframe = "long";
+
+  let risk: RiskLevel = "balanced";
+  if (/\b(conservative|safe|low.?risk|protect|capital.?preserv|small.?pos|slow)\b/.test(t)) risk = "conservative";
+  else if (/\b(aggressive|bold|high.?risk|max(imum)?|scalp|breakout|volatile|momentum)\b/.test(t)) risk = "aggressive";
+
+  return { risk, timeframe };
+}
+
+// ── "Describe" entry point ───────────────────────────────────────────────────
+// Accepts plain-English goal + symbol + optional interval override.
+// Infers risk/timeframe from keywords so the user never has to pick them.
+
+export async function describeStrategyAction(formData: FormData) {
+  const goal = (formData.get("goal") as string) || "";
+  const symbol = (formData.get("symbol") as string) || "SPY";
+  const intervalOverride = (formData.get("interval") as string) || null;
+
+  const { risk, timeframe } = inferStrategyParams(goal);
+
+  const enriched = new FormData();
+  enriched.set("risk", risk);
+  enriched.set("timeframe", timeframe);
+  enriched.set("symbol", symbol);
+  enriched.set("goal", goal);
+  if (intervalOverride) enriched.set("interval_override", intervalOverride);
+
+  return generateAndTestStrategyAction(enriched);
+}
+
+// ── Main generation action ───────────────────────────────────────────────────
+
 export async function generateAndTestStrategyAction(formData: FormData) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -15,9 +54,11 @@ export async function generateAndTestStrategyAction(formData: FormData) {
   const timeframe = (formData.get("timeframe") as TimeframeHorizon) || "medium";
   const symbol = (formData.get("symbol") as string) || "SPY";
   const goal = (formData.get("goal") as string) || "";
+  const intervalOverride = (formData.get("interval_override") as string) || null;
 
   // ── Generate strategy config ────────────────────────────────────────────
   const generated = generateStrategy(risk, timeframe);
+  const effectiveInterval = intervalOverride || generated.interval;
   const runName = `AI: ${generated.name} on ${symbol}`;
 
   // ── Create a strategy row so the user keeps it ──────────────────────────
@@ -41,7 +82,7 @@ export async function generateAndTestStrategyAction(formData: FormData) {
     strategy_id: strategy.id,
     name: runName,
     symbol,
-    interval: generated.interval,
+    interval: effectiveInterval,
     start: null,
     end: null,
     entry: generated.entry,
@@ -76,7 +117,7 @@ export async function generateAndTestStrategyAction(formData: FormData) {
   const payload: BacktestRunRequest = {
     run_id: run.id,
     symbol,
-    interval: generated.interval,
+    interval: effectiveInterval,
     start: null,
     end: null,
     entry: generated.entry,

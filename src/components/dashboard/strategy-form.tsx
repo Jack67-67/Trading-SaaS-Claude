@@ -4,7 +4,7 @@ import { useState, useTransition, useCallback } from "react";
 import Link from "next/link";
 import {
   Save, Trash2, Play, ArrowLeft, RotateCcw,
-  Sparkles, ChevronRight, Code2, BookOpen, ChevronDown,
+  Sparkles, ChevronRight, Code2, BookOpen, ChevronDown, MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -246,35 +246,54 @@ export function StrategyForm({ mode, strategyId, initialData }: StrategyFormProp
           </div>
         </div>
 
-        {/* AI — primary path */}
-        <Link href="/dashboard/ai-strategy">
-          <div className={cn(
-            "group relative rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/[0.08] via-surface-1 to-surface-1",
-            "hover:border-accent/50 hover:from-accent/[0.12] transition-all duration-150",
-            "p-6 cursor-pointer overflow-hidden"
-          )}>
-            {/* Recommended badge */}
-            <span className="absolute top-4 right-4 text-2xs font-semibold px-2 py-0.5 rounded-full bg-accent/20 text-accent border border-accent/30">
-              Recommended
-            </span>
+        {/* Two primary paths */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center shrink-0">
-                <Sparkles size={18} className="text-accent" />
+          {/* Path 1: Describe your strategy (primary) */}
+          <Link href="/dashboard/strategies/describe">
+            <div className={cn(
+              "group relative rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/[0.08] via-surface-1 to-surface-1",
+              "hover:border-accent/50 hover:from-accent/[0.12] transition-all duration-150",
+              "p-5 cursor-pointer overflow-hidden h-full flex flex-col"
+            )}>
+              <span className="absolute top-3.5 right-3.5 text-2xs font-semibold px-2 py-0.5 rounded-full bg-accent/20 text-accent border border-accent/30">
+                Fastest
+              </span>
+              <div className="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center mb-3 shrink-0">
+                <MessageSquare size={16} className="text-accent" />
               </div>
-              <div className="flex-1 min-w-0 pr-20">
-                <h2 className="text-base font-bold text-text-primary mb-1">Generate with AI</h2>
-                <p className="text-sm text-text-secondary leading-relaxed">
-                  Describe your trading idea in plain English. AI writes working Python code in seconds — no coding required.
-                </p>
-                <p className="text-xs text-accent font-medium mt-3 flex items-center gap-1">
-                  Try it — &quot;buy SPY when it&#39;s trending up&quot;
-                  <ChevronRight size={12} />
-                </p>
-              </div>
+              <h2 className="text-sm font-bold text-text-primary mb-1.5">Describe your strategy</h2>
+              <p className="text-xs text-text-secondary leading-relaxed flex-1">
+                Have a specific idea? Write it in plain English. AI interprets it, picks the right approach, and runs a backtest — no configuration needed.
+              </p>
+              <p className="text-xs text-accent font-medium mt-3 flex items-center gap-1">
+                &ldquo;Buy when RSI crosses below 30&rdquo;
+                <ChevronRight size={11} />
+              </p>
             </div>
-          </div>
-        </Link>
+          </Link>
+
+          {/* Path 2: AI Strategy Generator */}
+          <Link href="/dashboard/ai-strategy">
+            <div className={cn(
+              "group relative rounded-2xl border border-border bg-surface-1",
+              "hover:border-border-hover hover:bg-surface-2/40 transition-all duration-150",
+              "p-5 cursor-pointer h-full flex flex-col"
+            )}>
+              <div className="w-9 h-9 rounded-xl bg-surface-3 flex items-center justify-center mb-3 shrink-0">
+                <Sparkles size={16} className="text-text-muted" />
+              </div>
+              <h2 className="text-sm font-bold text-text-primary mb-1.5">AI Strategy Generator</h2>
+              <p className="text-xs text-text-secondary leading-relaxed flex-1">
+                Let AI suggest a strategy. Choose your risk profile (conservative / balanced / aggressive) and trading frequency.
+              </p>
+              <p className="text-xs text-text-muted font-medium mt-3 flex items-center gap-1">
+                Pick a style, get a working strategy
+                <ChevronRight size={11} />
+              </p>
+            </div>
+          </Link>
+        </div>
 
         {/* Templates — secondary path */}
         <div>
