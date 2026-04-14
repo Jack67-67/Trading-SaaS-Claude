@@ -41,49 +41,60 @@ function StatCell({ label, value, sub, valueClass }: {
   );
 }
 
-function getImprovementSuggestions(metrics: Metrics): Array<{ title: string; body: string }> {
-  const suggestions: Array<{ title: string; body: string }> = [];
+interface Suggestion { title: string; body: string; prompt: string }
+
+function getImprovementSuggestions(
+  metrics: Metrics,
+  sessionName: string,
+  symbol: string,
+): Suggestion[] {
+  const suggestions: Suggestion[] = [];
 
   if (metrics.total_return_pct < 0) {
     suggestions.push({
-      title: "Extend the backtest window",
-      body: "Negative returns over a short window can be market noise. Try starting the simulation 2–3 years earlier to get a clearer picture of the strategy's edge.",
+      title: "Switch to a longer timeframe",
+      body: "Negative returns over a short window can be market noise. A weekly or monthly signal filters out the chop and reveals the real edge.",
+      prompt: `Improve this strategy by switching to a longer timeframe. The session "${sessionName}" on ${symbol} is showing negative returns — redesign it to use weekly or monthly signals instead of daily so short-term noise has less impact.`,
     });
   }
 
   if ((metrics.sharpe_ratio ?? 0) < 0.5) {
     suggestions.push({
-      title: "Lower your position size",
-      body: "A Sharpe ratio below 0.5 means you're taking on too much risk relative to return. Try capping positions at 20–30% of capital to smooth the equity curve.",
+      title: "Reduce risk and position size",
+      body: "A Sharpe ratio below 0.5 means too much risk for the return. Cap positions at 20–30% of capital and add a volatility filter to smooth the equity curve.",
+      prompt: `Improve this strategy's risk profile. The session "${sessionName}" on ${symbol} has a Sharpe ratio below 0.5 — redesign it with smaller position sizes (20–30% of capital max) and a volatility filter to improve risk-adjusted returns.`,
     });
   }
 
   if ((metrics.max_drawdown_pct ?? 0) > 20) {
     suggestions.push({
       title: "Add a drawdown circuit-breaker",
-      body: "A 20%+ drawdown is steep for a paper strategy. Consider adding logic that exits all positions if the portfolio falls more than 10–15% from its recent peak.",
+      body: "A 20%+ drawdown is steep. Add logic that exits all positions if the portfolio drops more than 10–15% from its recent peak.",
+      prompt: `Improve this strategy by adding a drawdown stop. The session "${sessionName}" on ${symbol} has a max drawdown over 20% — redesign it to automatically exit all positions when the portfolio falls more than 10–15% from its recent peak.`,
     });
   }
 
   if ((metrics.win_rate_pct ?? 50) < 42) {
     suggestions.push({
-      title: "Tighten your entry signal",
-      body: "Fewer than 42% of trades are profitable. Try adding a secondary filter — for example, only entering when price is above its 50-day moving average.",
+      title: "Add a secondary entry confirmation",
+      body: "Under 42% win rate means most trades lose. A second filter — like requiring price above its 50-day MA — can cut the bad entries significantly.",
+      prompt: `Improve this strategy by tightening the entry signal. The session "${sessionName}" on ${symbol} has a win rate below 42% — redesign it with a secondary confirmation filter, such as only entering when price is above its 50-day moving average.`,
     });
   }
 
   if ((metrics.total_trades ?? 0) > 80 && metrics.total_return_pct < 10) {
     suggestions.push({
-      title: "Reduce trade frequency",
-      body: "High trade count with modest returns usually means transaction costs are a major drag. Add a minimum hold period or a stricter exit condition.",
+      title: "Lower trade frequency",
+      body: "High trade count with modest returns usually means fees are the real drag. A stricter exit or minimum hold period can fix this.",
+      prompt: `Improve this strategy by reducing trade frequency. The session "${sessionName}" on ${symbol} has high trade count but modest returns — redesign it with a minimum hold period or stricter exit condition to reduce the impact of transaction costs.`,
     });
   }
 
   return suggestions;
 }
 
-function ImprovementCTA({ metrics }: { metrics: Metrics }) {
-  const suggestions = getImprovementSuggestions(metrics);
+function ImprovementCTA({ metrics, sessionName, symbol }: { metrics: Metrics; sessionName: string; symbol: string }) {
+  const suggestions = getImprovementSuggestions(metrics, sessionName, symbol);
   if (suggestions.length === 0) return null;
 
   return (
@@ -97,17 +108,19 @@ function ImprovementCTA({ metrics }: { metrics: Metrics }) {
       </div>
       <div className="divide-y divide-border bg-surface-0">
         {suggestions.map((s, i) => (
-          <div key={i} className="px-5 py-3.5">
-            <p className="text-sm font-semibold text-text-primary">{s.title}</p>
-            <p className="text-xs text-text-muted leading-relaxed mt-0.5">{s.body}</p>
+          <div key={i} className="px-5 py-4 flex items-start gap-4">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-text-primary">{s.title}</p>
+              <p className="text-xs text-text-muted leading-relaxed mt-0.5">{s.body}</p>
+            </div>
+            <a
+              href={`/dashboard/ai-strategy?goal=${encodeURIComponent(s.prompt)}`}
+              className="shrink-0 text-xs font-semibold text-accent hover:text-accent-hover transition-colors whitespace-nowrap mt-0.5"
+            >
+              Try this fix →
+            </a>
           </div>
         ))}
-      </div>
-      <div className="px-5 py-3 bg-surface-1 border-t border-border flex items-center justify-between">
-        <p className="text-xs text-text-muted">Want AI to generate a revised strategy?</p>
-        <a href="/dashboard/ai-strategy" className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors">
-          Try AI Strategy →
-        </a>
       </div>
     </div>
   );
@@ -373,7 +386,7 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
           </div>
 
           {/* ── Improvement CTA ──────────────────────────────────────────── */}
-          {hasResults && <ImprovementCTA metrics={metrics!} />}
+          {hasResults && <ImprovementCTA metrics={metrics!} sessionName={sessName} symbol={sessSymbol} />}
 
           {/* ── Disclaimer ───────────────────────────────────────────────── */}
           <div className="flex items-start gap-2.5 rounded-xl border border-yellow-400/20 bg-yellow-400/[0.02] px-4 py-3.5">
