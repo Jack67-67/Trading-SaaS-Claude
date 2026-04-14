@@ -25,14 +25,17 @@ export async function createPaperTradingSession(
   const supabase = createClient();
 
   // getUser() validates the JWT server-side — required in server actions
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  const getUserResult = await supabase.auth.getUser();
+  const user = getUserResult.data?.user ?? null;
+  const userError = getUserResult.error;
   if (userError || !user) {
     console.error("[paper-trading] getUser failed:", userError?.message);
     return { error: "Not authenticated" };
   }
 
   // Need the session token to forward to the backend
-  const { data: { session } } = await supabase.auth.getSession();
+  const getSessionResult = await supabase.auth.getSession();
+  const session = getSessionResult.data?.session ?? null;
   if (!session) return { error: "No active session" };
 
   console.log("[paper-trading] inserting session for user:", user.id);
@@ -56,8 +59,9 @@ export async function createPaperTradingSession(
     .single();
 
   if (error || !data) {
-    console.error("[paper-trading] insert error:", error?.message, error?.details);
-    return { error: error?.message ?? "Failed to create session" };
+    const msg = `${error?.code ?? "INSERT_ERROR"}: ${error?.message ?? "Failed to create session"} | hint: ${error?.hint ?? "none"} | details: ${error?.details ?? "none"}`;
+    console.error("[paper-trading] insert error:", msg);
+    return { error: msg };
   }
 
   console.log("[paper-trading] session created:", data.id);
@@ -96,9 +100,14 @@ export async function refreshPaperTradingSession(
   sessionId: string
 ): Promise<{ error: string } | undefined> {
   const supabase = createClient();
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+  const getUserResult = await supabase.auth.getUser();
+  const user = getUserResult.data?.user ?? null;
+  const userError = getUserResult.error;
   if (userError || !user) return { error: "Not authenticated" };
-  const { data: { session } } = await supabase.auth.getSession();
+
+  const getSessionResult = await supabase.auth.getSession();
+  const session = getSessionResult.data?.session ?? null;
   if (!session) return { error: "No active session" };
 
   const { data: sess, error: sessErr } = await supabase
@@ -109,29 +118,38 @@ export async function refreshPaperTradingSession(
 
   if (sessErr || !sess) return { error: sessErr?.message ?? "Session not found" };
 
-  const res = await fetch(`${BACKEND_URL}/paper-trade/run`, {
-    method:  "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization:  `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({
-      session_id:      sessionId,
-      strategy_id:     sess.strategy_id,
-      symbol:          sess.symbol,
-      interval:        sess.interval,
-      start:           sess.start_date,
-      params:          sess.params ?? {},
-      risk:            sess.risk ?? {},
-      commission_pct:  sess.commission_pct,
-      slippage_pct:    sess.slippage_pct,
-      initial_capital: sess.initial_capital,
-    }),
-  });
+  // Wrap the fetch — if the backend is unreachable, fetch throws TypeError: fetch failed.
+  // Without a try/catch, that throw propagates through startTransition to the error boundary.
+  let res: Response;
+  try {
+    res = await fetch(`${BACKEND_URL}/paper-trade/run`, {
+      method:  "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization:  `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        session_id:      sessionId,
+        strategy_id:     sess.strategy_id,
+        symbol:          sess.symbol,
+        interval:        sess.interval,
+        start:           sess.start_date,
+        params:          sess.params ?? {},
+        risk:            sess.risk ?? {},
+        commission_pct:  sess.commission_pct,
+        slippage_pct:    sess.slippage_pct,
+        initial_capital: sess.initial_capital,
+      }),
+    });
+  } catch (fetchErr) {
+    const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+    console.error("[paper-trading] refresh fetch failed:", BACKEND_URL, msg);
+    return { error: `Backend unreachable (${BACKEND_URL}): ${msg}` };
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { detail?: string };
-    return { error: body.detail ?? "Refresh failed" };
+    return { error: body.detail ?? `Refresh failed (HTTP ${res.status})` };
   }
 
   revalidatePath(`/dashboard/paper-trading/${sessionId}`);
