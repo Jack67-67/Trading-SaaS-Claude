@@ -381,10 +381,30 @@ def run_backtest(
     # Estimate gross return before costs were deducted
     gross_return_pct = round(metrics["total_return_pct"] + total_costs_pct, 2)
 
+    # Open positions with unrealized PnL (priced at last bar's close)
+    last_price = bars[-1]["close"] if bars else 0.0
+    last_bar_date = bars[-1]["timestamp"] if bars else None
+    open_positions = []
+    for sym, shares in portfolio.positions.items():
+        entry_px = portfolio._entry_prices.get(sym, last_price)
+        unrealized_pnl = (last_price - entry_px) * shares
+        unrealized_pct = (last_price / entry_px - 1) * 100 if entry_px > 0 else 0.0
+        open_positions.append({
+            "symbol":          sym,
+            "shares":          round(shares, 6),
+            "entry_price":     round(entry_px, 4),
+            "current_price":   round(last_price, 4),
+            "unrealized_pnl":  round(unrealized_pnl, 2),
+            "unrealized_pct":  round(unrealized_pct, 3),
+            "market_value":    round(shares * last_price, 2),
+        })
+
     return {
         "metrics":                  metrics,
         "equity_curve":             equity_curve,
-        "trades":                   [],
+        "trades":                   portfolio.closed_trades,
+        "open_positions":           open_positions,
+        "last_bar_date":            last_bar_date,
         "buy_and_hold_return_pct":  buy_and_hold_return_pct,
         "costs_applied": {
             "commission_pct": commission_pct,

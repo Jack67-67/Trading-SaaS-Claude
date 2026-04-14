@@ -287,6 +287,112 @@ def health() -> Dict[str, str]:
     }
 
 
+class PaperTradeRunRequest(BaseModel):
+    session_id:     str
+    strategy_id:    str
+    symbol:         str
+    interval:       str
+    start:          str          # ISO date, e.g. "2024-01-01"
+    params:         Dict[str, Any] = {}
+    risk:           Dict[str, Any] = {}
+    commission_pct: float = 0.0
+    slippage_pct:   float = 0.0
+    initial_capital: float = 100_000.0
+
+
+def _patch_session(session_id: str, token: str, data: Dict[str, Any]) -> None:
+    """PATCH a single paper_trade_sessions row via PostgREST."""
+    headers = {**_supabase_headers(token), "Prefer": "return=minimal"}
+    url = f"{POSTGREST_URL}/paper_trade_sessions?id=eq.{session_id}"
+    response = httpx.patch(url, json=data, headers=headers, timeout=10)
+    response.raise_for_status()
+
+
+def _fetch_strategy_code_by_id(strategy_id: str, token: str) -> str:
+    """Fetch strategy code directly by strategy ID."""
+    headers = _supabase_headers(token)
+    r = httpx.get(
+        f"{POSTGREST_URL}/strategies?id=eq.{strategy_id}&select=code",
+        headers=headers,
+        timeout=10,
+    )
+    r.raise_for_status()
+    strategies = r.json()
+    if not strategies:
+        raise ValueError(f"Strategy {strategy_id} not found.")
+    code = strategies[0].get("code", "").strip()
+    if not code:
+        raise ValueError(f"Strategy {strategy_id} has no code saved.")
+    return code
+
+
+def _execute_paper_trade_sync(payload: PaperTradeRunRequest, token: str) -> Dict[str, Any]:
+    """
+    Run paper trade synchronously (end=today).
+    Returns results dict on success, raises on error.
+    """
+    from datetime import date
+
+    end_date = date.today().isoformat()
+
+    strategy_code = _fetch_strategy_code_by_id(payload.strategy_id, token)
+
+    bars = fetch_ohlc(
+        payload.symbol,
+        payload.interval,
+        payload.start,
+        end_date,
+        POLYGON_API_KEY,
+    )
+
+    results = run_backtest(
+        strategy_code,
+        bars,
+        payload.params,
+        payload.risk,
+        payload.initial_capital,
+        payload.commission_pct,
+        payload.slippage_pct,
+    )
+    return results
+
+
+@app.post("/paper-trade/run")
+async def run_paper_trade_endpoint(
+    payload: PaperTradeRunRequest,
+    authorization: str = Header(...),
+) -> Dict[str, Any]:
+    """
+    Synchronous paper-trade refresh. Runs strategy from start_date to today,
+    then patches last_results + last_refreshed_at on the session row.
+    Returns full results so the frontend can update immediately.
+    """
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+
+    try:
+        results = await asyncio.to_thread(_execute_paper_trade_sync, payload, token)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    # Persist to Supabase
+    try:
+        _patch_session(
+            payload.session_id,
+            token,
+            {
+                "last_results":      results,
+                "last_refreshed_at": _now(),
+                "status":            "active",
+            },
+        )
+    except Exception:
+        pass  # Don't fail the response if caching fails
+
+    return {"results": results, "refreshed_at": _now()}
+
+
 @app.post("/backtests/run", status_code=202)
 async def run_backtest_endpoint(
     payload: BacktestRunRequest,
