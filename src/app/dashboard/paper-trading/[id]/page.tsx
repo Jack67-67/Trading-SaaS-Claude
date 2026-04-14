@@ -99,7 +99,22 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
     );
   }
 
-  if (!sess) notFound();
+  // Do NOT call notFound() here — in Next.js 14.2, notFound() thrown outside
+  // a try/catch in a server component can be misrouted to error.tsx instead of
+  // the 404 page. Render an inline message instead.
+  if (!sess) {
+    return (
+      <div className="space-y-4 animate-fade-in">
+        <Link href="/dashboard/paper-trading" className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors">
+          <ArrowLeft size={12} /> All Sessions
+        </Link>
+        <div className="rounded-2xl border border-border bg-surface-1 px-5 py-10 text-center">
+          <p className="text-sm font-semibold text-text-secondary">Session not found</p>
+          <p className="text-xs text-text-muted mt-1">This session may have been deleted or does not belong to your account.</p>
+        </div>
+      </div>
+    );
+  }
 
   // ── Parse data ────────────────────────────────────────────────────────────
   const results = (sess.last_results ?? null) as Record<string, unknown> | null;
@@ -190,7 +205,7 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-text-primary">{pos.symbol}</p>
                       <p className="text-2xs text-text-muted mt-0.5">
-                        {pos.shares.toFixed(4)} shares · entry ${pos.entry_price.toFixed(2)} → now ${pos.current_price.toFixed(2)}
+                        {(pos.shares ?? 0).toFixed(4)} shares · entry ${(pos.entry_price ?? 0).toFixed(2)} → now ${(pos.current_price ?? 0).toFixed(2)}
                       </p>
                     </div>
                     <div className="text-right">
@@ -201,9 +216,9 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
                     </div>
                     <div className="text-right">
                       <p className="text-2xs text-text-muted">Unrealized P&amp;L</p>
-                      <p className={cn("text-sm font-mono font-bold tabular-nums", pnlColor(pos.unrealized_pnl))}>
-                        {pos.unrealized_pnl >= 0 ? "+" : ""}${Math.abs(pos.unrealized_pnl).toFixed(2)}
-                        <span className="text-xs ml-1">({formatPercent(pos.unrealized_pct)})</span>
+                      <p className={cn("text-sm font-mono font-bold tabular-nums", pnlColor(pos.unrealized_pnl ?? 0))}>
+                        {(pos.unrealized_pnl ?? 0) >= 0 ? "+" : ""}${Math.abs(pos.unrealized_pnl ?? 0).toFixed(2)}
+                        <span className="text-xs ml-1">({formatPercent(pos.unrealized_pct ?? 0)})</span>
                       </p>
                     </div>
                   </div>
@@ -220,15 +235,15 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
                 value={`$${totalEquity.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
                 sub={`Started $${initialCapital.toLocaleString()}`}
               />
-              <StatCell label="Total Return" value={formatPercent(metrics!.total_return_pct)} valueClass={pnlColor(metrics!.total_return_pct)} />
+              <StatCell label="Total Return" value={formatPercent(metrics!.total_return_pct ?? 0)} valueClass={pnlColor(metrics!.total_return_pct ?? 0)} />
               <StatCell
                 label="Sharpe"
-                value={metrics!.sharpe_ratio.toFixed(2)}
-                valueClass={metrics!.sharpe_ratio >= 1 ? "text-profit" : metrics!.sharpe_ratio < 0.5 ? "text-loss" : "text-text-primary"}
+                value={(metrics!.sharpe_ratio ?? 0).toFixed(2)}
+                valueClass={(metrics!.sharpe_ratio ?? 0) >= 1 ? "text-profit" : (metrics!.sharpe_ratio ?? 0) < 0.5 ? "text-loss" : "text-text-primary"}
               />
-              <StatCell label="Max Drawdown" value={`-${metrics!.max_drawdown_pct.toFixed(1)}%`} valueClass="text-loss" />
-              <StatCell label="Win Rate" value={`${metrics!.win_rate_pct.toFixed(0)}%`} />
-              <StatCell label="Trades" value={String(metrics!.total_trades)} sub={`PF ${metrics!.profit_factor.toFixed(2)}`} />
+              <StatCell label="Max Drawdown" value={`-${(metrics!.max_drawdown_pct ?? 0).toFixed(1)}%`} valueClass="text-loss" />
+              <StatCell label="Win Rate" value={`${(metrics!.win_rate_pct ?? 0).toFixed(0)}%`} />
+              <StatCell label="Trades" value={String(metrics!.total_trades ?? 0)} sub={`PF ${(metrics!.profit_factor ?? 0).toFixed(2)}`} />
             </div>
           </div>
 
@@ -262,17 +277,17 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
                       </p>
                     </div>
                     <p className="text-xs font-mono text-text-muted text-right hidden sm:block tabular-nums">
-                      ${trade.entry_price.toFixed(2)}
+                      ${(trade.entry_price ?? 0).toFixed(2)}
                     </p>
                     <p className="text-xs font-mono text-text-muted text-right hidden sm:block tabular-nums">
-                      ${trade.exit_price.toFixed(2)}
+                      ${(trade.exit_price ?? 0).toFixed(2)}
                     </p>
                     <div className="text-right">
-                      <p className={cn("text-xs font-mono font-bold tabular-nums", pnlColor(trade.pnl))}>
-                        {trade.pnl >= 0 ? "+" : ""}${Math.abs(trade.pnl).toFixed(2)}
+                      <p className={cn("text-xs font-mono font-bold tabular-nums", pnlColor(trade.pnl ?? 0))}>
+                        {(trade.pnl ?? 0) >= 0 ? "+" : ""}${Math.abs(trade.pnl ?? 0).toFixed(2)}
                       </p>
-                      <p className={cn("text-2xs font-mono tabular-nums", pnlColor(trade.return_pct))}>
-                        {formatPercent(trade.return_pct)}
+                      <p className={cn("text-2xs font-mono tabular-nums", pnlColor(trade.return_pct ?? 0))}>
+                        {formatPercent(trade.return_pct ?? 0)}
                       </p>
                     </div>
                   </div>
