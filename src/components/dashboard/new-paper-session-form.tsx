@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createPaperTradingSession } from "@/app/actions/paper-trading";
 import { Loader2 } from "lucide-react";
 
@@ -11,6 +12,7 @@ interface Props {
 export function NewPaperSessionForm({ strategies }: Props) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   // Default start = 1 year ago
   const defaultStart = new Date();
@@ -22,19 +24,27 @@ export function NewPaperSessionForm({ strategies }: Props) {
     const fd = new FormData(e.currentTarget);
 
     startTransition(async () => {
-      const res = await createPaperTradingSession({
-        strategyId:     fd.get("strategyId") as string,
-        name:           fd.get("name") as string,
-        symbol:         fd.get("symbol") as string,
-        interval:       fd.get("interval") as string,
-        startDate:      fd.get("startDate") as string,
-        params:         {},
-        risk:           {},
-        commissionPct:  parseFloat(fd.get("commissionPct") as string) || 0,
-        slippagePct:    parseFloat(fd.get("slippagePct") as string) || 0,
-        initialCapital: parseFloat(fd.get("initialCapital") as string) || 100000,
-      });
-      if (res?.error) setError(res.error);
+      try {
+        const res = await createPaperTradingSession({
+          strategyId:     fd.get("strategyId") as string,
+          name:           fd.get("name") as string,
+          symbol:         fd.get("symbol") as string,
+          interval:       fd.get("interval") as string,
+          startDate:      fd.get("startDate") as string,
+          params:         {},
+          risk:           {},
+          commissionPct:  parseFloat(fd.get("commissionPct") as string) || 0,
+          slippagePct:    parseFloat(fd.get("slippagePct") as string) || 0,
+          initialCapital: parseFloat(fd.get("initialCapital") as string) || 100000,
+        });
+        if ("error" in res) {
+          setError(res.error);
+        } else {
+          router.push(`/dashboard/paper-trading/${res.sessionId}`);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unexpected error");
+      }
     });
   }
 

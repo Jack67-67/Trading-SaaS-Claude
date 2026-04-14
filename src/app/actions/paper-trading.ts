@@ -21,15 +21,26 @@ export interface CreateSessionInput {
 
 export async function createPaperTradingSession(
   input: CreateSessionInput
-): Promise<{ error: string } | undefined> {
+): Promise<{ error: string } | { sessionId: string }> {
   const supabase = createClient();
+
+  // getUser() validates the JWT server-side — required in server actions
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    console.error("[paper-trading] getUser failed:", userError?.message);
+    return { error: "Not authenticated" };
+  }
+
+  // Need the session token to forward to the backend
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return { error: "Not authenticated" };
+  if (!session) return { error: "No active session" };
+
+  console.log("[paper-trading] inserting session for user:", user.id);
 
   const { data, error } = await supabase
     .from("paper_trade_sessions")
     .insert({
-      user_id:         session.user.id,
+      user_id:         user.id,
       strategy_id:     input.strategyId,
       name:            input.name,
       symbol:          input.symbol.toUpperCase(),
@@ -44,9 +55,14 @@ export async function createPaperTradingSession(
     .select("id")
     .single();
 
-  if (error || !data) return { error: error?.message ?? "Failed to create session" };
+  if (error || !data) {
+    console.error("[paper-trading] insert error:", error?.message, error?.details);
+    return { error: error?.message ?? "Failed to create session" };
+  }
 
-  // Trigger first refresh immediately
+  console.log("[paper-trading] session created:", data.id);
+
+  // Trigger first refresh immediately — non-fatal if it fails
   try {
     await fetch(`${BACKEND_URL}/paper-trade/run`, {
       method:  "POST",
@@ -67,20 +83,23 @@ export async function createPaperTradingSession(
         initial_capital: input.initialCapital,
       }),
     });
-  } catch {
-    // If first refresh fails the session still exists; user can retry
+  } catch (fetchErr) {
+    console.error("[paper-trading] initial refresh failed (non-fatal):", fetchErr);
   }
 
   revalidatePath("/dashboard/paper-trading");
-  redirect(`/dashboard/paper-trading/${data.id}`);
+  // Return ID to client — client handles navigation to avoid redirect() throwing in useTransition
+  return { sessionId: data.id };
 }
 
 export async function refreshPaperTradingSession(
   sessionId: string
 ): Promise<{ error: string } | undefined> {
   const supabase = createClient();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) return { error: "Not authenticated" };
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return { error: "Not authenticated" };
+  if (!session) return { error: "No active session" };
 
   const { data: sess, error: sessErr } = await supabase
     .from("paper_trade_sessions")
