@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, Activity, TrendingUp, TrendingDown,
@@ -60,13 +60,19 @@ function StatCell({
 export default async function PaperSessionDetailPage({ params }: { params: { id: string } }) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/auth/login");
 
-  const { data: sess } = await supabase
+  // No embedded join — avoids PostgREST schema-cache dependency on the new FK
+  const { data: sess, error: sessError } = await supabase
     .from("paper_trade_sessions")
-    .select("*, strategies(name)")
+    .select("*")
     .eq("id", params.id)
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .single();
+
+  if (sessError) {
+    console.error("[paper-trading/detail] query error:", sessError.message, sessError.details, sessError.code);
+  }
 
   if (!sess) notFound();
 
@@ -76,12 +82,15 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
   const closedTrades: ClosedTrade[] = (results?.trades as ClosedTrade[]) ?? [];
   const equityCurve: { timestamp: string; equity: number }[] = (results?.equity_curve as { timestamp: string; equity: number }[]) ?? [];
   const lastBarDate: string | null = (results?.last_bar_date as string) ?? null;
-  const stratName = (sess.strategies as { name?: string } | null)?.name ?? "Unknown strategy";
+  // Strategy name: use the session name or symbol since we removed the join
+  const stratName = String(sess.name ?? sess.symbol ?? "");
 
   const hasResults = metrics !== null;
+  // Supabase returns numeric columns as strings — parse explicitly
+  const initialCapital = Number(sess.initial_capital) || 100_000;
   const totalEquity = equityCurve.length > 0
     ? equityCurve[equityCurve.length - 1].equity
-    : (sess.initial_capital as number);
+    : initialCapital;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -189,7 +198,7 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
               <StatCell
                 label="Portfolio Value"
                 value={`$${totalEquity.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                sub={`Started $${(sess.initial_capital as number).toLocaleString()}`}
+                sub={`Started $${initialCapital.toLocaleString()}`}
               />
               <StatCell
                 label="Total Return"

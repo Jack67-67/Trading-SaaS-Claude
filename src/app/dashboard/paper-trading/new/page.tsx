@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ArrowLeft, Activity } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { NewPaperSessionForm } from "@/components/dashboard/new-paper-session-form";
@@ -9,12 +10,17 @@ export const metadata: Metadata = { title: "New Paper Trading Session" };
 export default async function NewPaperSessionPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/auth/login");
 
-  const { data: strategies } = await supabase
+  const { data: strategies, error: strategiesError } = await supabase
     .from("strategies")
     .select("id, name")
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .order("updated_at", { ascending: false });
+
+  if (strategiesError) {
+    console.error("[paper-trading/new] strategies query error:", strategiesError.message);
+  }
 
   const strategyList = (strategies ?? []) as { id: string; name: string }[];
 

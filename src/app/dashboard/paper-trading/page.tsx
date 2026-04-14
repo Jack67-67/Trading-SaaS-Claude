@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Plus, TrendingUp, TrendingDown, Minus, Activity, RefreshCw } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatPercent, pnlColor } from "@/lib/utils";
@@ -10,12 +11,18 @@ export const metadata: Metadata = { title: "Paper Trading" };
 export default async function PaperTradingPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/auth/login");
 
-  const { data: sessions } = await supabase
+  // No embedded join — avoids PostgREST schema-cache dependency on the new FK
+  const { data: sessions, error: sessionsError } = await supabase
     .from("paper_trade_sessions")
-    .select("id, name, symbol, interval, status, last_results, last_refreshed_at, created_at, start_date, initial_capital, strategies(name)")
-    .eq("user_id", user!.id)
+    .select("id, name, symbol, interval, status, last_results, last_refreshed_at, created_at, start_date, initial_capital, strategy_id")
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false });
+
+  if (sessionsError) {
+    console.error("[paper-trading/list] query error:", sessionsError.message, sessionsError.details);
+  }
 
   const list = sessions ?? [];
 
@@ -43,8 +50,15 @@ export default async function PaperTradingPage() {
         </Link>
       </div>
 
+      {/* Query error banner */}
+      {sessionsError && (
+        <div className="rounded-xl border border-loss/30 bg-loss/5 px-4 py-3 text-sm text-loss">
+          Could not load sessions: {sessionsError.message}
+        </div>
+      )}
+
       {/* Empty state */}
-      {list.length === 0 && (
+      {list.length === 0 && !sessionsError && (
         <div className="rounded-2xl border border-border border-dashed bg-surface-1 px-8 py-14 text-center">
           <Activity size={32} className="mx-auto text-text-muted/30 mb-4" />
           <p className="text-sm font-semibold text-text-secondary mb-1">No paper trading sessions yet</p>
@@ -68,9 +82,7 @@ export default async function PaperTradingPage() {
             const results = sess.last_results as Record<string, unknown> | null;
             const metrics = results?.metrics as { total_return_pct?: number } | undefined;
             const returnPct: number | null = metrics?.total_return_pct ?? null;
-            const stratName = (sess.strategies as { name?: string } | null)?.name ?? "Unknown strategy";
 
-            // Open position
             const openPositions: unknown[] = (results?.open_positions as unknown[]) ?? [];
             const hasPosition = openPositions.length > 0;
 
@@ -97,7 +109,6 @@ export default async function PaperTradingPage() {
                     <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">
                       {sess.interval}
                     </span>
-                    <span className="text-2xs text-text-muted/60">{stratName}</span>
                     {hasPosition && (
                       <span className="text-2xs font-semibold text-profit">● In position</span>
                     )}
