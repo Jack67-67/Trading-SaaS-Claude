@@ -2,13 +2,14 @@ export const APP_NAME = "Quanterra";
 export const APP_DESCRIPTION = "Institutional-grade backtesting infrastructure for systematic traders.";
 
 export const TIMEFRAMES = [
-  { value: "1m", label: "1 Minute" },
-  { value: "5m", label: "5 Minutes" },
-  { value: "15m", label: "15 Minutes" },
-  { value: "1h", label: "1 Hour" },
-  { value: "4h", label: "4 Hours" },
-  { value: "1d", label: "1 Day" },
-  { value: "1w", label: "1 Week" },
+  { value: "1m",  label: "1 Minute  (1m)" },
+  { value: "5m",  label: "5 Minutes (5m)" },
+  { value: "15m", label: "15 Minutes (15m)" },
+  { value: "30m", label: "30 Minutes (30m)" },
+  { value: "1h",  label: "1 Hour  (1h)" },
+  { value: "4h",  label: "4 Hours (4h)" },
+  { value: "1d",  label: "Daily   (1d)" },
+  { value: "1w",  label: "Weekly  (1w)" },
 ] as const;
 
 export const SUPPORTED_SYMBOLS = [

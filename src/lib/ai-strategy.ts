@@ -135,8 +135,8 @@ class Strategy:
     short: {
       name: "MACD Crossover",
       description:
-        "Uses the MACD line and signal line crossover to time entries and exits. Balances trend-following with momentum detection for medium-frequency intraday trading.",
-      interval: "4h",
+        "Uses the MACD line and signal line crossover to time entries and exits. Balances trend-following with momentum detection on hourly bars for intraday swing trading.",
+      interval: "1h",
       entry: { signal: "macd_crossover", fast: 12, slow: 26, signal_period: 9 },
       risk: { stop_loss_pct: 2.5, take_profit_pct: 7, max_position_pct: 70 },
       params: { fast_period: 12, slow_period: 26, signal_period: 9 },
@@ -274,8 +274,8 @@ class Strategy:
     short: {
       name: "Bollinger Band Breakout",
       description:
-        "Trades price breakouts beyond the upper Bollinger Band. Designed for highly volatile assets — enters on momentum expansion and exits on band contraction.",
-      interval: "1h",
+        "Trades price breakouts beyond the upper Bollinger Band on 15-minute bars. Designed for highly volatile assets — enters on momentum expansion and exits on band contraction. Best for intraday scalping and day trading.",
+      interval: "15m",
       entry: { signal: "bb_breakout", period: 20, std_dev: 2.0 },
       risk: { stop_loss_pct: 3, take_profit_pct: 9, max_position_pct: 90 },
       params: { bb_period: 20, std_dev_multiplier: 2.0 },

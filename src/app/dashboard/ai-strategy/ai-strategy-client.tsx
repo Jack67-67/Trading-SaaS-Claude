@@ -36,7 +36,7 @@ const TIMEFRAME_OPTIONS: { value: TimeframeHorizon; label: string; sub: string; 
   {
     value: "short",
     label: "Short-term",
-    sub: "Intraday to daily signals. Captures momentum and breakout moves.",
+    sub: "15m–1h signals. Intraday and day-trading. Best for volatile assets.",
     icon: <Clock size={18} />,
   },
   {
@@ -97,7 +97,17 @@ export function AiStrategyClient({ initialGoal }: { initialGoal: string }) {
   const signalDesc = SIGNAL_DESCRIPTIONS[preview.name] ?? "trend signals";
   const riskLabel = { conservative: "conservative", balanced: "balanced", aggressive: "aggressive" }[risk];
   const horizonLabel = { short: "short-term", medium: "medium-term", long: "long-term" }[timeframe];
-  const intervalLabel = preview.interval === "1h" ? "hourly" : preview.interval === "4h" ? "4-hour" : preview.interval === "1d" ? "daily" : "weekly";
+
+  const INTERVAL_LABELS: Record<string, string> = {
+    "1m": "1-minute", "5m": "5-minute", "15m": "15-minute", "30m": "30-minute",
+    "1h": "hourly", "4h": "4-hour", "1d": "daily", "1w": "weekly",
+  };
+  const CONTEXT_TIMEFRAME: Record<string, string> = {
+    "1m": "15m", "5m": "30m", "15m": "1h", "30m": "4h",
+    "1h": "4h", "4h": "1d", "1d": "1w",
+  };
+  const intervalLabel = INTERVAL_LABELS[preview.interval] ?? preview.interval;
+  const contextInterval = CONTEXT_TIMEFRAME[preview.interval];
 
   return (
     <div className="max-w-2xl space-y-8 animate-fade-in">
@@ -164,15 +174,27 @@ export function AiStrategyClient({ initialGoal }: { initialGoal: string }) {
       </div>
 
       {/* ── Recommended timeframe badge ──────────────────────────── */}
-      <div className="flex items-center gap-2 p-3 rounded-lg bg-surface-1 border border-border">
-        <Clock size={14} className="text-accent shrink-0" />
-        <span className="text-xs text-text-secondary">
-          Recommended timeframe:{" "}
-          <span className="font-semibold text-text-primary capitalize">{intervalLabel} bars ({preview.interval})</span>
-        </span>
-        <span className="text-xs text-text-muted ml-auto">
-          Based on your settings below
-        </span>
+      <div className="flex items-start gap-2 p-3 rounded-lg bg-surface-1 border border-border">
+        <Clock size={14} className="text-accent shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-xs text-text-secondary">
+              Execute on{" "}
+              <span className="font-semibold text-text-primary font-mono">{preview.interval}</span>
+              <span className="text-text-muted"> ({intervalLabel} bars)</span>
+            </span>
+            {contextInterval && (
+              <>
+                <span className="text-text-muted/40 text-xs">·</span>
+                <span className="text-xs text-text-muted">
+                  Higher context:{" "}
+                  <span className="font-semibold text-text-secondary font-mono">{contextInterval}</span>
+                </span>
+              </>
+            )}
+          </div>
+          <p className="text-2xs text-text-muted mt-0.5">Based on your risk and frequency settings</p>
+        </div>
       </div>
 
       {/* ── Secondary config ─────────────────────────────────────── */}

@@ -3,6 +3,7 @@
 import { useTransition, useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createPaperTradingSession } from "@/app/actions/paper-trading";
+import { TIMEFRAMES } from "@/lib/constants";
 import { Loader2, ChevronDown } from "lucide-react";
 
 interface Props {
@@ -198,9 +199,9 @@ export function NewPaperSessionForm({ strategies }: Props) {
         <div>
           <label htmlFor="interval" className={labelClass}>Interval</label>
           <select id="interval" name="interval" className={fieldClass} disabled={pending} defaultValue="1d">
-            <option value="1d">Daily (1d)</option>
-            <option value="1h">Hourly (1h)</option>
-            <option value="4h">4-Hour (4h)</option>
+            {TIMEFRAMES.map((tf) => (
+              <option key={tf.value} value={tf.value}>{tf.label}</option>
+            ))}
           </select>
         </div>
       </div>
