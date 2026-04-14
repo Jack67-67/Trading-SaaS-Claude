@@ -10,6 +10,7 @@ import { generateVerdict, generateRiskLabel, computeConfidence } from "@/lib/ai-
 import { generateAlerts } from "@/lib/alerts";
 import { computeStrategyTrend, compareTwoRuns } from "@/lib/trends";
 import { formatPercent, pnlColor, cn } from "@/lib/utils";
+import { timeAgo } from "@/components/dashboard/daily-update";
 import type { BacktestMetrics } from "@/types";
 import type { TrendLabel } from "@/lib/trends";
 import type { AppAlert } from "@/lib/alerts";
@@ -29,6 +30,8 @@ interface StrategyRow {
   alerts: AppAlert[];
   lastSymbol: string | null;
   runCount: number;
+  returnDelta: number | null;
+  lastAnalyzedAt: string | null;
 }
 
 // ── Health badge ────────────────────────────────────────────────────────────
@@ -156,6 +159,16 @@ export default async function PortfolioPage() {
     });
     const alerts = generateAlerts(alertInputs);
 
+    // Return delta vs previous run
+    const prevRun = completed.length >= 2 ? completed[completed.length - 2] : null;
+    const prevMetrics = prevRun
+      ? ((prevRun.results as Record<string, unknown>)?.metrics as BacktestMetrics | null) ?? null
+      : null;
+    const returnDelta =
+      latestMetrics && prevMetrics
+        ? latestMetrics.total_return_pct - prevMetrics.total_return_pct
+        : null;
+
     return {
       id: s.id as string,
       name: s.name as string,
@@ -167,6 +180,8 @@ export default async function PortfolioPage() {
       alerts,
       lastSymbol,
       runCount: completed.length,
+      returnDelta,
+      lastAnalyzedAt: latestRun?.completed_at ?? null,
     };
   });
 
@@ -464,6 +479,11 @@ function StrategyTableRow({ row }: { row: StrategyRow }) {
                 ? `${row.runCount} ${row.runCount === 1 ? "run" : "runs"}`
                 : "No runs yet"}
             </span>
+            {row.lastAnalyzedAt && (
+              <span className="text-2xs text-text-muted/50">
+                · {timeAgo(row.lastAnalyzedAt)}
+              </span>
+            )}
           </div>
           {/* Alert message on mobile / small screens */}
           {activeAlert && (
@@ -474,20 +494,32 @@ function StrategyTableRow({ row }: { row: StrategyRow }) {
         </div>
       </div>
 
-      {/* Return */}
+      {/* Return + delta */}
       <div className="lg:text-right w-full lg:w-auto">
         <p className="text-2xs text-text-muted lg:hidden mb-0.5">Return</p>
         {metrics ? (
-          <div className="flex items-center lg:justify-end gap-1">
-            {metrics.total_return_pct >= 0.5
-              ? <TrendingUp size={11} className="text-profit" />
-              : metrics.total_return_pct <= -0.5
-              ? <TrendingDown size={11} className="text-loss" />
-              : <Minus size={11} className="text-text-muted" />}
-            <span className={cn("text-base font-bold font-mono tabular-nums", pnlColor(metrics.total_return_pct))}>
-              {formatPercent(metrics.total_return_pct)}
-            </span>
-          </div>
+          <>
+            <div className="flex items-center lg:justify-end gap-1">
+              {metrics.total_return_pct >= 0.5
+                ? <TrendingUp size={11} className="text-profit" />
+                : metrics.total_return_pct <= -0.5
+                ? <TrendingDown size={11} className="text-loss" />
+                : <Minus size={11} className="text-text-muted" />}
+              <span className={cn("text-base font-bold font-mono tabular-nums", pnlColor(metrics.total_return_pct))}>
+                {formatPercent(metrics.total_return_pct)}
+              </span>
+            </div>
+            {row.returnDelta !== null && (
+              <p className={cn(
+                "text-2xs font-mono tabular-nums mt-0.5",
+                row.returnDelta > 0.5  ? "text-profit" :
+                row.returnDelta < -0.5 ? "text-loss" :
+                "text-text-muted/50"
+              )}>
+                {row.returnDelta > 0 ? "+" : ""}{row.returnDelta.toFixed(1)}pp vs prev
+              </p>
+            )}
+          </>
         ) : (
           <span className="text-sm text-text-muted/40">—</span>
         )}

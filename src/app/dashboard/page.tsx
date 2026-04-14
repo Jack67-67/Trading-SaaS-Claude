@@ -20,6 +20,8 @@ import { generateNextActions } from "@/lib/next-actions";
 import { pnlColor, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { BacktestMetrics } from "@/types";
+import { DailyUpdate } from "@/components/dashboard/daily-update";
+import type { StrategyDailyUpdate } from "@/components/dashboard/daily-update";
 
 export default async function DashboardPage() {
   const supabase = createClient();
@@ -176,6 +178,7 @@ export default async function DashboardPage() {
   }
 
   const strategyOverviewCards: StrategyOverviewCard[] = [];
+  const strategyDailyUpdates: StrategyDailyUpdate[] = [];
 
   for (const [sid, sRuns] of strategyRunMap) {
     const sorted = [...sRuns].sort((a, b) => a.completedAt.localeCompare(b.completedAt));
@@ -191,12 +194,16 @@ export default async function DashboardPage() {
 
     // 1-line summary: comparison text if prev run exists, otherwise first-run blurb
     let summary: string;
+    let returnDelta: number | null = null;
+    let sharpeDelta: number | null = null;
     if (prev) {
       const comp = compareTwoRuns(
         { returnPct: latest.returnPct, sharpe: latest.sharpe, drawdown: latest.drawdown, winRate: latest.winRate, trades: latest.trades },
         { returnPct: prev.returnPct,   sharpe: prev.sharpe,   drawdown: prev.drawdown,   winRate: prev.winRate,   trades: prev.trades },
       );
       summary = comp.summary;
+      returnDelta = latest.returnPct - prev.returnPct;
+      sharpeDelta = latest.sharpe - prev.sharpe;
     } else {
       summary = firstRunSummary(latest.returnPct, latest.sharpe);
     }
@@ -205,6 +212,19 @@ export default async function DashboardPage() {
       sorted.map((r) => ({ returnPct: r.returnPct, sharpe: r.sharpe, drawdown: r.drawdown, winRate: r.winRate, trades: r.trades }))
     );
     const stratAlerts = dashboardAlerts.filter((a) => a.strategyId === sid);
+
+    strategyDailyUpdates.push({
+      strategyId: sid,
+      strategyName: stratName,
+      symbol,
+      latestRunId: latest.id,
+      lastAnalyzedAt: latest.completedAt || null,
+      returnPct: latest.returnPct,
+      returnDelta,
+      sharpeDelta,
+      trend,
+      isFirstRun: sorted.length === 1,
+    });
 
     strategyOverviewCards.push({
       strategyId: sid,
@@ -355,7 +375,16 @@ export default async function DashboardPage() {
         <WelcomePanel name={displayName} />
       ) : (
         <>
-          {/* ── Portfolio Health (leads the page) ────────────────── */}
+          {/* ── Today's Update ────────────────────────────────────── */}
+          {(strategyDailyUpdates.length > 0 || (strategyCount ?? 0) > 0) && (
+            <DailyUpdate
+              updates={strategyDailyUpdates}
+              alerts={dashboardAlerts}
+              lastUpdatedAt={lastRunAt}
+            />
+          )}
+
+          {/* ── Portfolio Health ───────────────────────────────────── */}
           {aiRunSummaries.length > 0 ? (
             <AiPortfolioOverview runs={aiRunSummaries} lastRunAt={lastRunAt} trends={runTrends} />
           ) : (
