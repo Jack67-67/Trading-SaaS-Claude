@@ -8,23 +8,66 @@ import { timeAgo } from "@/components/dashboard/daily-update";
 
 export const metadata: Metadata = { title: "Paper Trading" };
 
+function DbErrorBanner({ message }: { message: string }) {
+  return (
+    <div className="rounded-xl border border-loss/40 bg-loss/5 px-4 py-3 space-y-1">
+      <p className="text-xs font-bold text-loss uppercase tracking-wider">Error — paper_trade_sessions</p>
+      <p className="text-xs font-mono text-text-secondary break-all">{message}</p>
+      <p className="text-2xs text-text-muted pt-1">
+        Ensure migration <code className="bg-surface-3 px-1 rounded">00003_paper_trading.sql</code> was applied in Supabase → SQL Editor.
+      </p>
+    </div>
+  );
+}
+
 export default async function PaperTradingPage() {
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
+  // Everything inside one try/catch — createClient, getUser, and the query
+  // can all throw in production; we need to catch them and render the error
+  // in the page instead of crashing to the error boundary.
+  let renderError: string | null = null;
 
-  // No embedded join — avoids PostgREST schema-cache dependency on the new FK
-  const { data: sessions, error: sessionsError } = await supabase
-    .from("paper_trade_sessions")
-    .select("id, name, symbol, interval, status, last_results, last_refreshed_at, created_at, start_date, initial_capital, strategy_id")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
+  type SessionRow = {
+    id: string; name: string; symbol: string; interval: string;
+    status: string; last_results: unknown; last_refreshed_at: string | null;
+    created_at: string; start_date: string; initial_capital: unknown;
+    strategy_id: string;
+  };
+  let sessions: SessionRow[] = [];
 
-  if (sessionsError) {
-    console.error("[paper-trading/list] query error:", sessionsError.message, sessionsError.details);
+  try {
+    const supabase = createClient();
+
+    const getUserResult = await supabase.auth.getUser();
+    const authError = getUserResult.error;
+    const user = getUserResult.data?.user ?? null;
+
+    if (authError) {
+      console.error("[paper/list] getUser error:", authError.message);
+    }
+
+    if (!user) {
+      redirect("/auth/login");
+    }
+
+    const { data, error } = await supabase
+      .from("paper_trade_sessions")
+      .select("id, name, symbol, interval, status, last_results, last_refreshed_at, created_at, start_date, initial_capital, strategy_id")
+      .eq("user_id", user!.id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[paper/list] query error:", error.code, error.message, error.details, error.hint);
+      renderError = `${error.code ?? "DB_ERROR"}: ${error.message}`;
+    } else {
+      sessions = (data ?? []) as SessionRow[];
+    }
+  } catch (e) {
+    // Re-throw Next.js navigation errors (redirect / notFound digest)
+    if (e != null && typeof e === "object" && "digest" in e) throw e;
+    const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    console.error("[paper/list] unexpected throw:", msg);
+    renderError = msg;
   }
-
-  const list = sessions ?? [];
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -50,20 +93,14 @@ export default async function PaperTradingPage() {
         </Link>
       </div>
 
-      {/* Query error banner */}
-      {sessionsError && (
-        <div className="rounded-xl border border-loss/30 bg-loss/5 px-4 py-3 text-sm text-loss">
-          Could not load sessions: {sessionsError.message}
-        </div>
-      )}
+      {renderError && <DbErrorBanner message={renderError} />}
 
-      {/* Empty state */}
-      {list.length === 0 && !sessionsError && (
+      {!renderError && sessions.length === 0 && (
         <div className="rounded-2xl border border-border border-dashed bg-surface-1 px-8 py-14 text-center">
           <Activity size={32} className="mx-auto text-text-muted/30 mb-4" />
           <p className="text-sm font-semibold text-text-secondary mb-1">No paper trading sessions yet</p>
           <p className="text-xs text-text-muted mb-5 max-w-xs mx-auto">
-            Create a session to simulate how a strategy would perform running from a past date to today — no real money involved.
+            Create a session to simulate how a strategy would perform running from a past date to today.
           </p>
           <Link
             href="/dashboard/paper-trading/new"
@@ -75,14 +112,12 @@ export default async function PaperTradingPage() {
         </div>
       )}
 
-      {/* Session cards */}
-      {list.length > 0 && (
+      {sessions.length > 0 && (
         <div className="space-y-3">
-          {list.map((sess) => {
+          {sessions.map((sess) => {
             const results = sess.last_results as Record<string, unknown> | null;
             const metrics = results?.metrics as { total_return_pct?: number } | undefined;
             const returnPct: number | null = metrics?.total_return_pct ?? null;
-
             const openPositions: unknown[] = (results?.open_positions as unknown[]) ?? [];
             const hasPosition = openPositions.length > 0;
 
@@ -92,7 +127,6 @@ export default async function PaperTradingPage() {
                 href={`/dashboard/paper-trading/${sess.id}`}
                 className="group flex items-center gap-4 rounded-2xl border border-border bg-surface-1 px-5 py-4 hover:bg-surface-2 transition-colors"
               >
-                {/* Left: name + meta */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-2xs font-bold px-1.5 py-0.5 rounded bg-yellow-400/15 text-yellow-400 leading-none uppercase tracking-wider">
@@ -103,19 +137,11 @@ export default async function PaperTradingPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">
-                      {sess.symbol}
-                    </span>
-                    <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">
-                      {sess.interval}
-                    </span>
-                    {hasPosition && (
-                      <span className="text-2xs font-semibold text-profit">● In position</span>
-                    )}
+                    <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">{sess.symbol}</span>
+                    <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">{sess.interval}</span>
+                    {hasPosition && <span className="text-2xs font-semibold text-profit">● In position</span>}
                   </div>
                 </div>
-
-                {/* Return */}
                 <div className="text-right shrink-0">
                   {returnPct !== null ? (
                     <>
@@ -128,8 +154,6 @@ export default async function PaperTradingPage() {
                     <p className="text-xs text-text-muted/40">Pending</p>
                   )}
                 </div>
-
-                {/* Last refreshed */}
                 <div className="text-right shrink-0 hidden sm:block">
                   <p className="text-2xs text-text-muted">Last checked</p>
                   <div className="flex items-center gap-1 justify-end mt-0.5">
@@ -139,8 +163,6 @@ export default async function PaperTradingPage() {
                     </p>
                   </div>
                 </div>
-
-                {/* Trend arrow */}
                 <div className="shrink-0">
                   {returnPct === null ? (
                     <Minus size={14} className="text-text-muted/30" />

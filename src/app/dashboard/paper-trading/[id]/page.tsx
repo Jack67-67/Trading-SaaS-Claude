@@ -13,39 +13,22 @@ import { RefreshPaperSessionButton } from "@/components/dashboard/refresh-paper-
 export const metadata: Metadata = { title: "Paper Session" };
 
 interface OpenPosition {
-  symbol: string;
-  shares: number;
-  entry_price: number;
-  current_price: number;
-  unrealized_pnl: number;
-  unrealized_pct: number;
-  market_value: number;
+  symbol: string; shares: number; entry_price: number;
+  current_price: number; unrealized_pnl: number;
+  unrealized_pct: number; market_value: number;
 }
-
 interface ClosedTrade {
-  timestamp: string;
-  symbol: string;
-  entry_price: number;
-  exit_price: number;
-  shares: number;
-  pnl: number;
-  return_pct: number;
+  timestamp: string; symbol: string; entry_price: number;
+  exit_price: number; shares: number; pnl: number; return_pct: number;
 }
-
 interface Metrics {
-  total_return_pct: number;
-  annualized_return_pct: number;
-  sharpe_ratio: number;
-  max_drawdown_pct: number;
-  win_rate_pct: number;
-  total_trades: number;
-  profit_factor: number;
-  volatility_pct: number;
+  total_return_pct: number; annualized_return_pct: number;
+  sharpe_ratio: number; max_drawdown_pct: number;
+  win_rate_pct: number; total_trades: number;
+  profit_factor: number; volatility_pct: number;
 }
 
-function StatCell({
-  label, value, sub, valueClass,
-}: {
+function StatCell({ label, value, sub, valueClass }: {
   label: string; value: string; sub?: string; valueClass?: string;
 }) {
   return (
@@ -58,44 +41,90 @@ function StatCell({
 }
 
 export default async function PaperSessionDetailPage({ params }: { params: { id: string } }) {
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
+  type SessRow = Record<string, unknown>;
+  let sess: SessRow | null = null;
+  let dbError: string | null = null;
 
-  // No embedded join — avoids PostgREST schema-cache dependency on the new FK
-  const { data: sess, error: sessError } = await supabase
-    .from("paper_trade_sessions")
-    .select("*")
-    .eq("id", params.id)
-    .eq("user_id", user.id)
-    .single();
+  try {
+    // createClient() and getUser() must be inside the try/catch — both can throw
+    // in production; any uncaught throw propagates to the error boundary.
+    const supabase = createClient();
 
-  if (sessError) {
-    console.error("[paper-trading/detail] query error:", sessError.message, sessError.details, sessError.code);
+    const getUserResult = await supabase.auth.getUser();
+    const authError = getUserResult.error;
+    const user = getUserResult.data?.user ?? null;
+    if (authError) console.error("[paper/detail] auth error:", authError.message);
+    if (!user) redirect("/auth/login");
+
+    const { data, error } = await supabase
+      .from("paper_trade_sessions")
+      .select("*")
+      .eq("id", params.id)
+      .eq("user_id", user!.id)
+      .single();
+
+    if (error) {
+      console.error("[paper/detail] query error:", error.code, error.message, error.details);
+      // PGRST116 = "no rows returned" (notFound), everything else is a real error
+      if (error.code === "PGRST116") {
+        notFound();
+      }
+      dbError = `${error.code ?? "DB_ERROR"}: ${error.message}`;
+    }
+    sess = data as SessRow | null;
+  } catch (e) {
+    // Re-throw Next.js navigation errors (redirect / notFound)
+    if (e != null && typeof e === "object" && "digest" in e) throw e;
+    const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    console.error("[paper/detail] unexpected throw:", msg);
+    dbError = msg;
+  }
+
+  // ── Show error in UI instead of crashing ──────────────────────────────────
+  if (dbError) {
+    return (
+      <div className="space-y-4 animate-fade-in">
+        <Link href="/dashboard/paper-trading" className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors">
+          <ArrowLeft size={12} /> All Sessions
+        </Link>
+        <div className="rounded-2xl border border-loss/40 bg-loss/5 px-5 py-5 space-y-2">
+          <p className="text-sm font-bold text-loss">Could not load paper trading session</p>
+          <p className="text-xs font-mono text-text-secondary break-all">{dbError}</p>
+          <p className="text-2xs text-text-muted pt-1">
+            This may mean the <code className="bg-surface-3 px-1 rounded">paper_trade_sessions</code> table does not exist yet.
+            Run migration <code className="bg-surface-3 px-1 rounded">00003_paper_trading.sql</code> in Supabase → SQL Editor.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   if (!sess) notFound();
 
-  const results = sess.last_results as Record<string, unknown> | null;
+  // ── Parse data ────────────────────────────────────────────────────────────
+  const results = (sess.last_results ?? null) as Record<string, unknown> | null;
   const metrics: Metrics | null = (results?.metrics as Metrics) ?? null;
   const openPositions: OpenPosition[] = (results?.open_positions as OpenPosition[]) ?? [];
   const closedTrades: ClosedTrade[] = (results?.trades as ClosedTrade[]) ?? [];
-  const equityCurve: { timestamp: string; equity: number }[] = (results?.equity_curve as { timestamp: string; equity: number }[]) ?? [];
+  const equityCurve: { timestamp: string; equity: number }[] =
+    (results?.equity_curve as { timestamp: string; equity: number }[]) ?? [];
   const lastBarDate: string | null = (results?.last_bar_date as string) ?? null;
-  // Strategy name: use the session name or symbol since we removed the join
-  const stratName = String(sess.name ?? sess.symbol ?? "");
 
   const hasResults = metrics !== null;
-  // Supabase returns numeric columns as strings — parse explicitly
   const initialCapital = Number(sess.initial_capital) || 100_000;
   const totalEquity = equityCurve.length > 0
     ? equityCurve[equityCurve.length - 1].equity
     : initialCapital;
 
+  const sessName = String(sess.name ?? "");
+  const sessSymbol = String(sess.symbol ?? "");
+  const sessInterval = String(sess.interval ?? "");
+  const sessLastRefreshed = sess.last_refreshed_at as string | null;
+
   return (
     <div className="space-y-6 animate-fade-in">
 
-      {/* ── Header ──────────────────────────────────────────────────── */}
+      {/* ── Header ───────────────────────────────────────────────────────── */}
       <div>
         <Link
           href="/dashboard/paper-trading"
@@ -113,29 +142,23 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
                 PAPER / Virtual
               </span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-text-primary">{sess.name as string}</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-text-primary">{sessName}</h1>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">
-                {sess.symbol as string}
-              </span>
-              <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">
-                {sess.interval as string}
-              </span>
-              <span className="text-2xs text-text-muted/60">{stratName}</span>
-              {sess.last_refreshed_at && (
+              <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">{sessSymbol}</span>
+              <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">{sessInterval}</span>
+              {sessLastRefreshed && (
                 <span className="flex items-center gap-1 text-2xs text-text-muted/50">
                   <Clock size={9} />
-                  Last checked {timeAgo(sess.last_refreshed_at as string)}
+                  Last checked {timeAgo(sessLastRefreshed)}
                 </span>
               )}
             </div>
           </div>
-
           <RefreshPaperSessionButton sessionId={params.id} />
         </div>
       </div>
 
-      {/* ── No results yet ───────────────────────────────────────────── */}
+      {/* ── No results yet ───────────────────────────────────────────────── */}
       {!hasResults && (
         <div className="rounded-2xl border border-border border-dashed bg-surface-1 px-8 py-12 text-center">
           <Activity size={28} className="mx-auto text-text-muted/30 mb-3" />
@@ -146,18 +169,15 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
 
       {hasResults && (
         <>
-          {/* ── Current Position ────────────────────────────────────────── */}
+          {/* ── Current Position ─────────────────────────────────────────── */}
           <div className={cn(
             "rounded-2xl border overflow-hidden",
             openPositions.length > 0 ? "border-profit/30 bg-profit/[0.02]" : "border-border bg-surface-1"
           )}>
             <div className="px-5 py-3.5 border-b border-inherit flex items-center justify-between">
               <p className="text-sm font-semibold text-text-primary">Current Position</p>
-              {lastBarDate && (
-                <span className="text-2xs text-text-muted/60">as of {lastBarDate}</span>
-              )}
+              {lastBarDate && <span className="text-2xs text-text-muted/60">as of {lastBarDate}</span>}
             </div>
-
             {openPositions.length === 0 ? (
               <div className="px-5 py-5 flex items-center gap-3">
                 <Minus size={14} className="text-text-muted/40" />
@@ -192,7 +212,7 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
             )}
           </div>
 
-          {/* ── Summary metrics ─────────────────────────────────────────── */}
+          {/* ── Summary metrics ──────────────────────────────────────────── */}
           <div className="rounded-2xl border border-border bg-surface-1 px-5 py-5">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-5">
               <StatCell
@@ -200,52 +220,33 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
                 value={`$${totalEquity.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
                 sub={`Started $${initialCapital.toLocaleString()}`}
               />
-              <StatCell
-                label="Total Return"
-                value={formatPercent(metrics!.total_return_pct)}
-                valueClass={pnlColor(metrics!.total_return_pct)}
-              />
+              <StatCell label="Total Return" value={formatPercent(metrics!.total_return_pct)} valueClass={pnlColor(metrics!.total_return_pct)} />
               <StatCell
                 label="Sharpe"
                 value={metrics!.sharpe_ratio.toFixed(2)}
                 valueClass={metrics!.sharpe_ratio >= 1 ? "text-profit" : metrics!.sharpe_ratio < 0.5 ? "text-loss" : "text-text-primary"}
               />
-              <StatCell
-                label="Max Drawdown"
-                value={`-${metrics!.max_drawdown_pct.toFixed(1)}%`}
-                valueClass="text-loss"
-              />
-              <StatCell
-                label="Win Rate"
-                value={`${metrics!.win_rate_pct.toFixed(0)}%`}
-              />
-              <StatCell
-                label="Trades"
-                value={String(metrics!.total_trades)}
-                sub={`PF ${metrics!.profit_factor.toFixed(2)}`}
-              />
+              <StatCell label="Max Drawdown" value={`-${metrics!.max_drawdown_pct.toFixed(1)}%`} valueClass="text-loss" />
+              <StatCell label="Win Rate" value={`${metrics!.win_rate_pct.toFixed(0)}%`} />
+              <StatCell label="Trades" value={String(metrics!.total_trades)} sub={`PF ${metrics!.profit_factor.toFixed(2)}`} />
             </div>
           </div>
 
-          {/* ── Trade log ───────────────────────────────────────────────── */}
+          {/* ── Trade log ────────────────────────────────────────────────── */}
           <div className="rounded-2xl border border-border overflow-hidden">
             <div className="px-5 py-3.5 bg-surface-1 border-b border-border flex items-center gap-2">
               <BarChart3 size={14} className="text-text-muted" />
-              <p className="text-sm font-semibold text-text-primary">
-                Trade Log
-              </p>
+              <p className="text-sm font-semibold text-text-primary">Trade Log</p>
               <span className="text-2xs text-text-muted/60 ml-auto">
                 {closedTrades.length} closed {closedTrades.length === 1 ? "trade" : "trades"}
               </span>
             </div>
-
             {closedTrades.length === 0 ? (
               <div className="px-5 py-8 text-center">
                 <p className="text-sm text-text-muted">No closed trades yet.</p>
               </div>
             ) : (
               <div className="divide-y divide-border bg-surface-0">
-                {/* Header row */}
                 <div className="grid grid-cols-5 gap-3 px-5 py-2.5 text-2xs font-semibold text-text-muted uppercase tracking-wider">
                   <span className="col-span-2">Date / Symbol</span>
                   <span className="text-right hidden sm:block">Entry</span>
@@ -280,12 +281,12 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
             )}
           </div>
 
-          {/* ── Disclaimer ─────────────────────────────────────────────── */}
+          {/* ── Disclaimer ───────────────────────────────────────────────── */}
           <div className="flex items-start gap-2.5 rounded-xl border border-yellow-400/20 bg-yellow-400/[0.02] px-4 py-3.5">
             <AlertTriangle size={13} className="text-yellow-400 shrink-0 mt-0.5" />
             <p className="text-xs text-text-muted leading-relaxed">
               <strong className="text-yellow-400">Paper trading only.</strong>{" "}
-              This simulation uses historical data replayed to today. It does not involve real money, real orders, or live market feeds. Past simulation results do not guarantee future performance.
+              This simulation uses historical data replayed to today. It does not involve real money, real orders, or live market feeds.
             </p>
           </div>
         </>

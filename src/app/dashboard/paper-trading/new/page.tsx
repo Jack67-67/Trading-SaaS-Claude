@@ -8,26 +8,40 @@ import { NewPaperSessionForm } from "@/components/dashboard/new-paper-session-fo
 export const metadata: Metadata = { title: "New Paper Trading Session" };
 
 export default async function NewPaperSessionPage() {
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
+  // ── Data fetch ───────────────────────────────────────────────────────────
+  let strategyList: { id: string; name: string }[] = [];
+  let dbError: string | null = null;
 
-  const { data: strategies, error: strategiesError } = await supabase
-    .from("strategies")
-    .select("id, name")
-    .eq("user_id", user.id)
-    .order("updated_at", { ascending: false });
+  try {
+    const supabase = createClient();
 
-  if (strategiesError) {
-    console.error("[paper-trading/new] strategies query error:", strategiesError.message);
+    const getUserResult = await supabase.auth.getUser();
+    const authError = getUserResult.error;
+    const user = getUserResult.data?.user ?? null;
+    if (authError) console.error("[paper/new] auth error:", authError.message);
+    if (!user) redirect("/auth/login");
+
+    const { data, error } = await supabase
+      .from("strategies")
+      .select("id, name")
+      .eq("user_id", user!.id)
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      console.error("[paper/new] strategies error:", error.code, error.message);
+      dbError = `${error.code ?? "DB_ERROR"}: ${error.message}`;
+    }
+    strategyList = (data ?? []) as { id: string; name: string }[];
+  } catch (e) {
+    if (e != null && typeof e === "object" && "digest" in e) throw e;
+    const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    console.error("[paper/new] unexpected throw:", msg);
+    dbError = msg;
   }
 
-  const strategyList = (strategies ?? []) as { id: string; name: string }[];
-
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="max-w-xl space-y-6 animate-fade-in">
-
-      {/* Header */}
       <div>
         <Link
           href="/dashboard/paper-trading"
@@ -46,7 +60,14 @@ export default async function NewPaperSessionPage() {
         </p>
       </div>
 
-      {strategyList.length === 0 ? (
+      {dbError && (
+        <div className="rounded-xl border border-loss/40 bg-loss/5 px-4 py-3 space-y-1">
+          <p className="text-xs font-bold text-loss uppercase tracking-wider">Could not load strategies</p>
+          <p className="text-xs font-mono text-text-secondary break-all">{dbError}</p>
+        </div>
+      )}
+
+      {!dbError && strategyList.length === 0 && (
         <div className="rounded-2xl border border-border bg-surface-1 px-6 py-10 text-center">
           <p className="text-sm font-medium text-text-secondary mb-1">No strategies yet</p>
           <p className="text-xs text-text-muted mb-4">Create a strategy first, then come back to start a paper session.</p>
@@ -57,7 +78,9 @@ export default async function NewPaperSessionPage() {
             Go to Strategies
           </Link>
         </div>
-      ) : (
+      )}
+
+      {!dbError && strategyList.length > 0 && (
         <NewPaperSessionForm strategies={strategyList} />
       )}
     </div>
