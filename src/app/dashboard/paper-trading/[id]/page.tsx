@@ -3,12 +3,13 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, Activity, TrendingUp, TrendingDown,
-  Minus, Clock, BarChart3, AlertTriangle,
+  Minus, Clock, BarChart3, AlertTriangle, Lightbulb,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatPercent, pnlColor } from "@/lib/utils";
 import { timeAgo } from "@/components/dashboard/daily-update";
 import { RefreshPaperSessionButton } from "@/components/dashboard/refresh-paper-session-button";
+import { DeletePaperSessionButton } from "@/components/dashboard/delete-paper-session-button";
 
 export const metadata: Metadata = { title: "Paper Session" };
 
@@ -36,6 +37,78 @@ function StatCell({ label, value, sub, valueClass }: {
       <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold">{label}</p>
       <p className={cn("text-lg font-bold font-mono tabular-nums mt-0.5", valueClass ?? "text-text-primary")}>{value}</p>
       {sub && <p className="text-2xs text-text-muted/60 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function getImprovementSuggestions(metrics: Metrics): Array<{ title: string; body: string }> {
+  const suggestions: Array<{ title: string; body: string }> = [];
+
+  if (metrics.total_return_pct < 0) {
+    suggestions.push({
+      title: "Extend the backtest window",
+      body: "Negative returns over a short window can be market noise. Try starting the simulation 2–3 years earlier to get a clearer picture of the strategy's edge.",
+    });
+  }
+
+  if ((metrics.sharpe_ratio ?? 0) < 0.5) {
+    suggestions.push({
+      title: "Lower your position size",
+      body: "A Sharpe ratio below 0.5 means you're taking on too much risk relative to return. Try capping positions at 20–30% of capital to smooth the equity curve.",
+    });
+  }
+
+  if ((metrics.max_drawdown_pct ?? 0) > 20) {
+    suggestions.push({
+      title: "Add a drawdown circuit-breaker",
+      body: "A 20%+ drawdown is steep for a paper strategy. Consider adding logic that exits all positions if the portfolio falls more than 10–15% from its recent peak.",
+    });
+  }
+
+  if ((metrics.win_rate_pct ?? 50) < 42) {
+    suggestions.push({
+      title: "Tighten your entry signal",
+      body: "Fewer than 42% of trades are profitable. Try adding a secondary filter — for example, only entering when price is above its 50-day moving average.",
+    });
+  }
+
+  if ((metrics.total_trades ?? 0) > 80 && metrics.total_return_pct < 10) {
+    suggestions.push({
+      title: "Reduce trade frequency",
+      body: "High trade count with modest returns usually means transaction costs are a major drag. Add a minimum hold period or a stricter exit condition.",
+    });
+  }
+
+  return suggestions;
+}
+
+function ImprovementCTA({ metrics }: { metrics: Metrics }) {
+  const suggestions = getImprovementSuggestions(metrics);
+  if (suggestions.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl border border-yellow-400/20 overflow-hidden">
+      <div className="px-5 py-3.5 bg-surface-1 border-b border-yellow-400/20 flex items-center gap-2">
+        <Lightbulb size={14} className="text-yellow-400 shrink-0" />
+        <p className="text-sm font-semibold text-text-primary">How to improve this strategy</p>
+        <span className="ml-auto text-2xs text-text-muted">
+          {suggestions.length} suggestion{suggestions.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+      <div className="divide-y divide-border bg-surface-0">
+        {suggestions.map((s, i) => (
+          <div key={i} className="px-5 py-3.5">
+            <p className="text-sm font-semibold text-text-primary">{s.title}</p>
+            <p className="text-xs text-text-muted leading-relaxed mt-0.5">{s.body}</p>
+          </div>
+        ))}
+      </div>
+      <div className="px-5 py-3 bg-surface-1 border-t border-border flex items-center justify-between">
+        <p className="text-xs text-text-muted">Want AI to generate a revised strategy?</p>
+        <a href="/dashboard/ai-strategy" className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors">
+          Try AI Strategy →
+        </a>
+      </div>
     </div>
   );
 }
@@ -169,7 +242,10 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
               )}
             </div>
           </div>
-          <RefreshPaperSessionButton sessionId={params.id} />
+          <div className="flex items-center gap-2">
+              <RefreshPaperSessionButton sessionId={params.id} />
+              <DeletePaperSessionButton sessionId={params.id} />
+            </div>
         </div>
       </div>
 
@@ -295,6 +371,9 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
               </div>
             )}
           </div>
+
+          {/* ── Improvement CTA ──────────────────────────────────────────── */}
+          {hasResults && <ImprovementCTA metrics={metrics!} />}
 
           {/* ── Disclaimer ───────────────────────────────────────────────── */}
           <div className="flex items-start gap-2.5 rounded-xl border border-yellow-400/20 bg-yellow-400/[0.02] px-4 py-3.5">

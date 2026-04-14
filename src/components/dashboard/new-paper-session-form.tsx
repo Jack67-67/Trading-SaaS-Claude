@@ -1,20 +1,130 @@
 "use client";
 
-import { useTransition, useState } from "react";
+import { useTransition, useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createPaperTradingSession } from "@/app/actions/paper-trading";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronDown } from "lucide-react";
 
 interface Props {
   strategies: { id: string; name: string }[];
 }
+
+// ── Symbol data ──────────────────────────────────────────────────────────────
+
+const SYMBOL_GROUPS = [
+  {
+    label: "US Stocks",
+    symbols: ["SPY", "QQQ", "AAPL", "MSFT", "TSLA", "AMZN", "NVDA", "META", "GOOGL", "AMD", "NFLX"],
+  },
+  {
+    label: "Crypto",
+    symbols: ["BTC/USDT", "ETH/USDT"],
+  },
+  {
+    label: "Forex",
+    symbols: ["EUR/USD", "GBP/USD", "USD/JPY"],
+  },
+];
+
+const ALL_SYMBOLS = SYMBOL_GROUPS.flatMap((g) => g.symbols);
+
+// ── Symbol Picker ────────────────────────────────────────────────────────────
+
+function SymbolPicker({ disabled, fieldClass }: { disabled: boolean; fieldClass: string }) {
+  const [value, setValue] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
+
+  const query = value.toUpperCase();
+  const filtered = SYMBOL_GROUPS.map((g) => ({
+    label: g.label,
+    symbols: g.symbols.filter((s) => s.includes(query)),
+  })).filter((g) => g.symbols.length > 0);
+
+  const isCustom = value !== "" && !ALL_SYMBOLS.includes(value.toUpperCase());
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        name="symbol"
+        required
+        autoComplete="off"
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value.toUpperCase());
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        placeholder="SPY, AAPL, BTC/USDT…"
+        className={fieldClass + " pr-8"}
+        disabled={disabled}
+      />
+      <ChevronDown
+        size={14}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted/40 pointer-events-none"
+      />
+
+      {open && !disabled && (
+        <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl border border-border bg-surface-2 shadow-lg max-h-60 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <p className="px-3 py-3 text-xs text-text-muted">
+              No matching symbol —{" "}
+              <span className="font-mono text-text-secondary">{value}</span>{" "}
+              will be sent to the backend directly.
+            </p>
+          ) : (
+            filtered.map((group) => (
+              <div key={group.label}>
+                <p className="px-3 pt-2.5 pb-1 text-2xs font-semibold text-text-muted uppercase tracking-wider">
+                  {group.label}
+                </p>
+                <div className="flex flex-wrap gap-1.5 px-3 pb-2.5">
+                  {group.symbols.map((sym) => (
+                    <button
+                      key={sym}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault(); // keep input focused
+                        setValue(sym);
+                        setOpen(false);
+                      }}
+                      className="text-xs font-mono px-2 py-1 rounded-lg bg-surface-3 text-text-secondary hover:bg-accent/20 hover:text-accent transition-colors"
+                    >
+                      {sym}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+          {isCustom && (
+            <p className="px-3 pb-2.5 text-2xs text-text-muted border-t border-border pt-2">
+              <span className="font-mono text-text-secondary">{value}</span> will be passed to the backend as-is
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main form ────────────────────────────────────────────────────────────────
 
 export function NewPaperSessionForm({ strategies }: Props) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  // Default start = 1 year ago
   const defaultStart = new Date();
   defaultStart.setFullYear(defaultStart.getFullYear() - 1);
   const defaultStartStr = defaultStart.toISOString().slice(0, 10);
@@ -48,7 +158,8 @@ export function NewPaperSessionForm({ strategies }: Props) {
     });
   }
 
-  const fieldClass = "w-full rounded-xl bg-surface-1 border border-border px-3.5 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent transition-colors";
+  const fieldClass =
+    "w-full rounded-xl bg-surface-1 border border-border px-3.5 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent transition-colors";
   const labelClass = "block text-xs font-semibold text-text-secondary mb-1.5";
 
   return (
@@ -82,14 +193,7 @@ export function NewPaperSessionForm({ strategies }: Props) {
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label htmlFor="symbol" className={labelClass}>Symbol</label>
-          <input
-            id="symbol"
-            name="symbol"
-            required
-            placeholder="AAPL"
-            className={fieldClass}
-            disabled={pending}
-          />
+          <SymbolPicker disabled={pending} fieldClass={fieldClass} />
         </div>
         <div>
           <label htmlFor="interval" className={labelClass}>Interval</label>

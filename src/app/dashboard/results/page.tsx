@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 import { compareTwoRuns } from "@/lib/trends";
 import type { TrendLabel } from "@/lib/trends";
 import { TrendBadge } from "@/components/dashboard/run-comparison";
+import { DeleteButton } from "@/components/dashboard/delete-button";
+import { deleteBacktestRun } from "@/app/actions/delete";
 
 export const metadata: Metadata = {
   title: "Results",
@@ -166,124 +168,129 @@ export default async function ResultsPage() {
               const td = runTrendMap.get(run.id as string);
 
               return (
-                <Link
-                  key={run.id}
-                  href={`/dashboard/results/${run.id}`}
-                  className={cn(
-                    "relative grid grid-cols-[minmax(200px,2fr)_minmax(120px,1fr)_130px_100px_100px_80px_120px] items-center px-5 py-3.5 gap-4 hover:bg-surface-1 transition-colors group",
-                    td?.trend === "improving" && "hover:bg-profit/[0.02]",
-                    td?.trend === "at-risk"   && "hover:bg-amber-400/[0.02]",
-                    td?.trend === "declining" && "hover:bg-loss/[0.02]",
-                  )}
-                >
+                <div key={run.id} className="relative group">
                   {/* Left-edge trend accent */}
                   {td && (
                     <span className={cn(
-                      "absolute left-0 inset-y-0 w-0.5 rounded-r-full",
+                      "absolute left-0 inset-y-0 w-0.5 rounded-r-full z-10",
                       td.trend === "improving" ? "bg-profit/50"
                       : td.trend === "at-risk"  ? "bg-amber-400/50"
                       : td.trend === "declining" ? "bg-loss/50"
                       : "bg-accent/20"
                     )} />
                   )}
-                  {/* Run name */}
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-text-primary group-hover:text-accent transition-colors truncate">
-                      {runName}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                      <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">
-                        {symbol}
-                      </span>
-                      {interval && (
+                  <Link
+                    href={`/dashboard/results/${run.id}`}
+                    className={cn(
+                      "grid grid-cols-[minmax(200px,2fr)_minmax(120px,1fr)_130px_100px_100px_80px_120px] items-center px-5 py-3.5 gap-4 hover:bg-surface-1 transition-colors",
+                      td?.trend === "improving" && "hover:bg-profit/[0.02]",
+                      td?.trend === "at-risk"   && "hover:bg-amber-400/[0.02]",
+                      td?.trend === "declining" && "hover:bg-loss/[0.02]",
+                    )}
+                  >
+                    {/* Run name */}
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-text-primary group-hover:text-accent transition-colors truncate">
+                        {runName}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">
-                          {interval}
+                          {symbol}
                         </span>
-                      )}
-                      {td && <TrendBadge trend={td.trend} size="sm" />}
-                    </div>
-                  </div>
-
-                  {/* Strategy */}
-                  <p className="text-sm text-text-secondary truncate hidden sm:block">{strategyName}</p>
-
-                  {/* Return + bar */}
-                  <div className="text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      {isUp !== null && (
-                        isUp
-                          ? <TrendingUp size={12} className="text-profit shrink-0" />
-                          : <TrendingDown size={12} className="text-loss shrink-0" />
-                      )}
-                      <span className={cn(
-                        "text-sm font-mono font-bold tabular-nums",
-                        returnPct !== undefined ? pnlColor(returnPct) : "text-text-muted"
-                      )}>
-                        {returnPct !== undefined ? formatPercent(returnPct) : "—"}
-                      </span>
-                    </div>
-                    {returnPct !== undefined && (
-                      <div className="mt-1.5 h-1 bg-surface-3 rounded-full overflow-hidden">
-                        <div
-                          className={cn("h-full rounded-full transition-all", isUp ? "bg-profit/70" : "bg-loss/70")}
-                          style={{ width: `${barWidth}%` }}
-                        />
+                        {interval && (
+                          <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">
+                            {interval}
+                          </span>
+                        )}
+                        {td && <TrendBadge trend={td.trend} size="sm" />}
                       </div>
-                    )}
-                    {td && returnPct !== undefined && Math.abs(td.returnDelta) > 0.1 && (
-                      <p className={cn("text-2xs font-mono mt-0.5", td.returnDelta > 0 ? "text-profit/70" : "text-loss/70")}>
-                        {td.returnDelta > 0 ? "+" : ""}{td.returnDelta.toFixed(1)}pp
-                      </p>
-                    )}
-                  </div>
+                    </div>
 
-                  {/* Sharpe */}
-                  <div className="text-right hidden md:block">
-                    <span className={cn(
-                      "text-sm font-mono font-semibold tabular-nums",
-                      sharpe !== undefined ? pnlColor(sharpe - 1) : "text-text-muted"
-                    )}>
-                      {sharpe !== undefined ? sharpe.toFixed(2) : "—"}
-                    </span>
-                    {td && sharpe !== undefined && Math.abs(td.sharpeDelta) > 0.01 && (
-                      <p className={cn("text-2xs font-mono mt-0.5", td.sharpeDelta > 0 ? "text-profit/70" : "text-loss/70")}>
-                        {td.sharpeDelta > 0 ? "+" : ""}{td.sharpeDelta.toFixed(2)}
-                      </p>
-                    )}
-                  </div>
+                    {/* Strategy */}
+                    <p className="text-sm text-text-secondary truncate hidden sm:block">{strategyName}</p>
 
-                  {/* Win Rate */}
-                  <div className="text-right hidden md:block">
-                    {winRate !== undefined ? (
-                      <>
+                    {/* Return + bar */}
+                    <div className="text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {isUp !== null && (
+                          isUp
+                            ? <TrendingUp size={12} className="text-profit shrink-0" />
+                            : <TrendingDown size={12} className="text-loss shrink-0" />
+                        )}
                         <span className={cn(
-                          "text-sm font-mono font-semibold tabular-nums",
-                          pnlColor(winRate - 50)
+                          "text-sm font-mono font-bold tabular-nums",
+                          returnPct !== undefined ? pnlColor(returnPct) : "text-text-muted"
                         )}>
-                          {winRate.toFixed(1)}%
+                          {returnPct !== undefined ? formatPercent(returnPct) : "—"}
                         </span>
+                      </div>
+                      {returnPct !== undefined && (
                         <div className="mt-1.5 h-1 bg-surface-3 rounded-full overflow-hidden">
                           <div
-                            className={cn("h-full rounded-full", winRate >= 50 ? "bg-profit/70" : "bg-loss/70")}
-                            style={{ width: `${winRate}%` }}
+                            className={cn("h-full rounded-full transition-all", isUp ? "bg-profit/70" : "bg-loss/70")}
+                            style={{ width: `${barWidth}%` }}
                           />
                         </div>
-                      </>
-                    ) : (
-                      <span className="text-sm font-mono text-text-muted">—</span>
-                    )}
+                      )}
+                      {td && returnPct !== undefined && Math.abs(td.returnDelta) > 0.1 && (
+                        <p className={cn("text-2xs font-mono mt-0.5", td.returnDelta > 0 ? "text-profit/70" : "text-loss/70")}>
+                          {td.returnDelta > 0 ? "+" : ""}{td.returnDelta.toFixed(1)}pp
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Sharpe */}
+                    <div className="text-right hidden md:block">
+                      <span className={cn(
+                        "text-sm font-mono font-semibold tabular-nums",
+                        sharpe !== undefined ? pnlColor(sharpe - 1) : "text-text-muted"
+                      )}>
+                        {sharpe !== undefined ? sharpe.toFixed(2) : "—"}
+                      </span>
+                      {td && sharpe !== undefined && Math.abs(td.sharpeDelta) > 0.01 && (
+                        <p className={cn("text-2xs font-mono mt-0.5", td.sharpeDelta > 0 ? "text-profit/70" : "text-loss/70")}>
+                          {td.sharpeDelta > 0 ? "+" : ""}{td.sharpeDelta.toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Win Rate */}
+                    <div className="text-right hidden md:block">
+                      {winRate !== undefined ? (
+                        <>
+                          <span className={cn(
+                            "text-sm font-mono font-semibold tabular-nums",
+                            pnlColor(winRate - 50)
+                          )}>
+                            {winRate.toFixed(1)}%
+                          </span>
+                          <div className="mt-1.5 h-1 bg-surface-3 rounded-full overflow-hidden">
+                            <div
+                              className={cn("h-full rounded-full", winRate >= 50 ? "bg-profit/70" : "bg-loss/70")}
+                              style={{ width: `${winRate}%` }}
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-sm font-mono text-text-muted">—</span>
+                      )}
+                    </div>
+
+                    {/* Trades */}
+                    <p className="text-sm font-mono text-text-secondary text-right hidden lg:block">
+                      {totalTrades !== undefined ? String(totalTrades) : "—"}
+                    </p>
+
+                    {/* Completed */}
+                    <p className="text-2xs text-text-muted text-right hidden lg:block">
+                      {run.completed_at ? formatDateTime(run.completed_at) : "—"}
+                    </p>
+                  </Link>
+                  {/* Delete button */}
+                  <div className="absolute right-5 top-1/2 -translate-y-1/2 z-10">
+                    <DeleteButton onDelete={deleteBacktestRun.bind(null, run.id as string)} />
                   </div>
-
-                  {/* Trades */}
-                  <p className="text-sm font-mono text-text-secondary text-right hidden lg:block">
-                    {totalTrades !== undefined ? String(totalTrades) : "—"}
-                  </p>
-
-                  {/* Completed */}
-                  <p className="text-2xs text-text-muted text-right hidden lg:block">
-                    {run.completed_at ? formatDateTime(run.completed_at) : "—"}
-                  </p>
-                </Link>
+                </div>
               );
             })}
           </div>
