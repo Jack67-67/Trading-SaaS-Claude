@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, MessageSquare } from "lucide-react";
+import { ArrowRight, MessageSquare, Code2, FlaskConical, BarChart3, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardStats } from "@/components/dashboard/dashboard-stats";
 import { RecentBacktests } from "@/components/dashboard/recent-backtests";
@@ -417,10 +417,32 @@ export default async function DashboardPage() {
 
               <TryExampleButton size="default" className="flex-1 w-full" />
             </div>
+          </div>
 
-            <p className="text-2xs text-text-muted/50 tracking-widest uppercase">
-              Describe · Test · Analyze · Improve
+          {/* ── How it works ────────────────────────────── */}
+          <div className="border-t border-border px-6 py-5">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-widest mb-4 text-center">
+              How it works
             </p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {([
+                { icon: Code2,        step: "1", label: "Define a strategy",    desc: "Describe your idea in plain English — AI writes the code for you" },
+                { icon: FlaskConical, step: "2", label: "Run a backtest",       desc: "Test against real historical data in seconds" },
+                { icon: BarChart3,    step: "3", label: "Read the AI analysis", desc: "AI explains why the strategy worked or struggled" },
+                { icon: ShieldCheck,  step: "4", label: "Monitor over time",    desc: "Compare runs and track whether your edge is improving" },
+              ] as const).map(({ icon: Icon, step, label, desc }) => (
+                <div key={step} className="rounded-xl border border-border bg-surface-0 p-4 flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xs font-mono font-bold text-accent/50 w-4">{step}</span>
+                    <Icon size={13} className="text-accent/70" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-text-primary">{label}</p>
+                    <p className="text-2xs text-text-muted mt-0.5 leading-relaxed">{desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       ) : (
