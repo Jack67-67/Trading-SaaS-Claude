@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { APP_NAME } from "@/lib/constants";
 
@@ -8,9 +9,9 @@ interface LogoProps {
 }
 
 const sizeMap = {
-  sm: "w-7 h-7",
-  md: "w-8 h-8",
-  lg: "w-10 h-10",
+  sm: 28,
+  md: 32,
+  lg: 40,
 };
 
 const textSizeMap = {
@@ -20,18 +21,17 @@ const textSizeMap = {
 };
 
 export function Logo({ size = "md", showText = true, className }: LogoProps) {
+  const px = sizeMap[size];
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
-      {/* Geometric logo mark — two overlapping bars forming a stylized Q */}
-      <div className={cn("relative shrink-0", sizeMap[size])}>
-        <div className="absolute inset-0 rounded-lg bg-accent rotate-6" />
-        <div className="absolute inset-0 rounded-lg bg-accent/60 -rotate-6" />
-        <div className="absolute inset-[3px] rounded-md bg-surface-0 flex items-center justify-center">
-          <span className="text-accent font-mono font-bold text-xs leading-none">
-            Q
-          </span>
-        </div>
-      </div>
+      <Image
+        src="/logo.png"
+        alt={APP_NAME}
+        width={px}
+        height={px}
+        className="shrink-0 rounded-lg"
+        priority
+      />
       {showText && (
         <span
           className={cn(
