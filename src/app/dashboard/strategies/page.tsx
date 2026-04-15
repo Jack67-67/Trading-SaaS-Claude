@@ -88,8 +88,8 @@ export default async function StrategiesPage() {
           </div>
           <p className="text-sm font-semibold text-text-secondary mb-1">No strategies yet</p>
           <p className="text-xs text-text-muted max-w-xs mb-6 leading-relaxed">
-            A strategy is a set of rules that decide when to buy and sell.
-            Have an idea? Describe it. Want AI to suggest one? Use the generator.
+            A strategy is a clear set of rules — not a gut feeling. Describe your idea,
+            let AI test it, and find out if your edge is real before you risk money.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-sm">
             <Link href="/dashboard/strategies/describe">

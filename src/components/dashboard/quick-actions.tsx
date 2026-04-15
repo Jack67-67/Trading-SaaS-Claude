@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 const actions = [
   {
     label: "AI Strategy",
-    description: "No code needed — describe your idea",
+    description: "Describe your idea — AI builds and tests it",
     href: "/dashboard/ai-strategy",
     icon: Sparkles,
     color: "text-accent",
@@ -25,7 +25,7 @@ const actions = [
   },
   {
     label: "Run Backtest",
-    description: "Test a strategy against historical data",
+    description: "Test before you risk real money",
     href: "/dashboard/backtests",
     icon: Play,
     color: "text-profit",

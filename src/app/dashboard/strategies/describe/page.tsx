@@ -26,9 +26,9 @@ export default function DescribeStrategyPage() {
           Describe your strategy
         </h1>
         <p className="text-sm text-text-secondary mt-1">
-          Write your idea in plain English. The AI interprets it, picks the right
-          template, and runs a backtest immediately — no risk profile or timeframe
-          to configure.
+          Write your idea in plain English. The AI turns it into a working strategy
+          and tests it against real historical data — so you know if your edge is
+          real before risking money.
         </p>
       </div>
 

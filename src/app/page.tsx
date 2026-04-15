@@ -9,7 +9,7 @@ import { APP_NAME } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 export const metadata = {
-  title: `${APP_NAME} — AI-powered backtesting for systematic traders`,
+  title: `${APP_NAME} — Test your strategy before you risk real money`,
 };
 
 export default function LandingPage() {
@@ -17,6 +17,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-surface-0 text-text-primary overflow-x-hidden">
       <Navbar />
       <Hero />
+      <WhyItMatters />
       <Benefits />
       <HowItWorks />
       <CtaBanner />
@@ -77,14 +78,14 @@ function Hero() {
             {/* Headline */}
             <div className="space-y-4">
               <h1 className="text-4xl lg:text-5xl font-bold tracking-tight leading-[1.15]">
-                AI that builds, tests and monitors{" "}
-                <span className="text-accent">trading strategies</span>{" "}
-                for you.
+                Stop trading on emotion.{" "}
+                <span className="text-accent">Test your strategy</span>{" "}
+                before you risk real money.
               </h1>
               <p className="text-lg text-text-secondary leading-relaxed max-w-lg">
-                Describe your idea or let the AI generate a complete strategy.
-                Run a backtest in seconds, then get ongoing performance monitoring
-                and alerts — all in one place.
+                Most traders act on gut feeling, social media tips, and unverified
+                strategies. {APP_NAME} gives you real data — so you know if your
+                idea actually works before a single dollar goes in.
               </p>
             </div>
 
@@ -95,10 +96,7 @@ function Hero() {
                 className="group h-11 px-6 rounded-xl text-sm font-semibold bg-accent hover:bg-accent-hover text-white transition-colors flex items-center gap-2"
               >
                 <Sparkles size={14} />
-                Use AI strategy
-                <span className="text-2xs font-bold bg-white/20 rounded px-1.5 py-0.5 leading-none">
-                  Recommended
-                </span>
+                Describe my strategy
               </Link>
               <Link
                 href="/auth/register"
@@ -210,52 +208,100 @@ function KpiCell({ label, value, positive }: { label: string; value: string; pos
 
 // ── Benefits ──────────────────────────────────────────────────────────────────
 
+const WHY_IT_MATTERS = [
+  {
+    stat: "~70%",
+    label: "of retail traders lose money",
+    detail: "Not because markets are impossible — because most traders act on emotion, not evidence.",
+  },
+  {
+    stat: "Untested",
+    label: "strategies feel like they work",
+    detail: "Strategies that look good on paper often fail in practice. The only way to know is to test them on real data.",
+  },
+  {
+    stat: "One tool",
+    label: "to remove the guesswork",
+    detail: "Describe your idea, run the backtest, read the data. Make decisions based on evidence — not fear or greed.",
+  },
+];
+
 const BENEFITS = [
   {
     icon: Sparkles,
-    title: "AI insights on every backtest",
-    desc: "After each run, the AI explains what worked, what didn't, and why — in plain language. No manual interpretation required.",
+    title: "Plain-language AI analysis",
+    desc: "After every run, the AI explains what the numbers actually mean — what worked, what failed, and what to look at next. No guessing required.",
     accent: "text-accent",
     bg: "bg-accent/10",
     border: "border-accent/20",
   },
   {
     icon: LineChart,
-    title: "Performance monitoring",
-    desc: "Compare results across runs automatically. See whether your strategy is improving, stable, or declining over time.",
+    title: "Track whether your edge is real",
+    desc: "Compare results across runs automatically. See whether performance holds across different date ranges — or if it was just luck.",
     accent: "text-profit",
     bg: "bg-profit/10",
     border: "border-profit/20",
   },
   {
     icon: BellRing,
-    title: "Intelligent alerts",
-    desc: "Get notified when drawdown spikes, returns drop, or your strategy shows signs of stress — before you go live.",
+    title: "Early warning before you go live",
+    desc: "Get alerted when drawdown spikes, returns collapse, or risk creeps up. Know when a strategy is showing stress — before it costs you.",
     accent: "text-amber-400",
     bg: "bg-amber-400/10",
     border: "border-amber-400/20",
   },
   {
     icon: TrendingUp,
-    title: "Strategy improvement suggestions",
-    desc: "The AI identifies weak areas in your strategy — thin trade counts, poor Sharpe, elevated risk — and tells you what to review.",
+    title: "Specific improvement suggestions",
+    desc: "The AI flags weak spots — low trade count, poor risk-adjusted return, high drawdown — and tells you exactly what to review and adjust.",
     accent: "text-violet-400",
     bg: "bg-violet-400/10",
     border: "border-violet-400/20",
   },
 ];
 
+function WhyItMatters() {
+  return (
+    <section className="py-16 px-6 lg:px-10 border-y border-border bg-surface-1/30">
+      <div className="max-w-7xl mx-auto space-y-10">
+        <div className="text-center space-y-3 max-w-xl mx-auto">
+          <p className="text-xs font-semibold text-accent uppercase tracking-widest">Why this matters</p>
+          <h2 className="text-2xl lg:text-3xl font-bold tracking-tight">
+            Most traders lose because they never actually test
+          </h2>
+          <p className="text-text-secondary leading-relaxed text-sm">
+            Fear, greed, and overconfidence are the real reasons accounts blow up.
+            {APP_NAME} adds structure and data so you can trade with clarity instead of emotion.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {WHY_IT_MATTERS.map(({ stat, label, detail }) => (
+            <div key={stat} className="rounded-2xl border border-border bg-surface-1 p-6 space-y-2">
+              <p className="text-2xl font-bold font-mono text-accent">{stat}</p>
+              <p className="text-sm font-semibold text-text-primary">{label}</p>
+              <p className="text-sm text-text-secondary leading-relaxed">{detail}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Benefits() {
   return (
     <section id="benefits" className="py-24 px-6 lg:px-10">
       <div className="max-w-7xl mx-auto space-y-12">
         <div className="text-center space-y-3 max-w-2xl mx-auto">
-          <p className="text-xs font-semibold text-accent uppercase tracking-widest">Why {APP_NAME}</p>
+          <p className="text-xs font-semibold text-accent uppercase tracking-widest">What you get</p>
           <h2 className="text-3xl lg:text-4xl font-bold tracking-tight">
-            More than a backtest runner
+            Structure and clarity — not hype
           </h2>
           <p className="text-text-secondary leading-relaxed">
-            Most tools just run the numbers. {APP_NAME} explains them, tracks them over time, and tells you when to pay attention.
+            {APP_NAME} is a decision-support tool. It helps you validate ideas, understand risk,
+            and avoid the emotional mistakes that cost most traders money.
           </p>
         </div>
 
@@ -284,26 +330,26 @@ const STEPS = [
   {
     n: "01",
     icon: Sparkles,
-    title: "Define or generate a strategy",
-    desc: "Write a Python strategy class, pick from templates, or describe your idea and let the AI generate one for you.",
+    title: "Define your strategy",
+    desc: "Describe your idea in plain English — AI turns it into working code. No guesswork, no blank-page paralysis.",
   },
   {
     n: "02",
     icon: Zap,
     title: "Run the backtest",
-    desc: "Pick a symbol, timeframe, and date range. Results come back in seconds with a full analytics report.",
+    desc: "Test against real historical data in seconds. See exactly how your strategy would have performed — before any money is on the line.",
   },
   {
     n: "03",
     icon: BarChart3,
-    title: "Get AI analysis",
-    desc: "The AI reads your results and gives you a plain-language summary: what's working, what to watch, and what to improve.",
+    title: "Understand the results",
+    desc: "The AI gives you a plain-language read of what worked, what didn't, and where the risk actually is. No spreadsheet required.",
   },
   {
     n: "04",
     icon: Activity,
-    title: "Monitor over time",
-    desc: "Run again after tweaking your strategy. Track whether performance is improving, stable, or declining across runs.",
+    title: "Refine and validate",
+    desc: "Adjust your rules, run again, compare results. Build confidence in your edge — one test at a time — before going live.",
   },
 ];
 
@@ -314,10 +360,10 @@ function HowItWorks() {
         <div className="text-center space-y-3 max-w-2xl mx-auto">
           <p className="text-xs font-semibold text-accent uppercase tracking-widest">How it works</p>
           <h2 className="text-3xl lg:text-4xl font-bold tracking-tight">
-            From idea to insight in minutes
+            From idea to validated strategy
           </h2>
           <p className="text-text-secondary leading-relaxed">
-            Four steps from strategy concept to ongoing performance monitoring.
+            Four steps to test whether your edge is real — without risking a dollar.
           </p>
         </div>
 
@@ -356,10 +402,10 @@ function CtaBanner() {
       <div className="relative z-10 max-w-2xl mx-auto text-center space-y-7">
         <div className="space-y-3">
           <h2 className="text-3xl lg:text-4xl font-bold tracking-tight">
-            Start building smarter strategies
+            Stop guessing. Start testing.
           </h2>
           <p className="text-text-secondary leading-relaxed">
-            Free to start. No credit card required. Your first AI-generated strategy is one click away.
+            Test your first strategy in minutes. Free to start — no credit card required.
           </p>
         </div>
 

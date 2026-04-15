@@ -45,7 +45,7 @@ export default async function BacktestsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-text-primary">Backtests</h1>
           <p className="text-sm text-text-secondary mt-1">
-            Run strategies against historical market data.
+            Test your strategy on real historical data before risking money.
           </p>
         </div>
         {runList.length > 0 && (

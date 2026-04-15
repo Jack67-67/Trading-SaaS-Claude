@@ -97,7 +97,7 @@ export default function RegisterPage() {
           Create your account
         </h2>
         <p className="text-sm text-text-muted mt-1.5">
-          Start backtesting with {APP_NAME} for free
+          Test your strategies before risking real money. Free to start.
         </p>
       </div>
 

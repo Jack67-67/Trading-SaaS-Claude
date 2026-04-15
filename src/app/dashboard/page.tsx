@@ -366,7 +366,7 @@ export default async function DashboardPage() {
             {displayName}
           </h1>
           <p className="text-2xs text-text-muted/50 mt-1.5 font-medium tracking-widest uppercase">
-            Describe · Test · Analyze · Improve
+            No emotion. No guesswork. Just data.
           </p>
         </div>
         <div className="text-right">
@@ -424,10 +424,10 @@ export default async function DashboardPage() {
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {([
-                { icon: Code2,        step: "1", label: "Define a strategy",    desc: "Describe your idea in plain English — AI writes the code for you" },
-                { icon: FlaskConical, step: "2", label: "Run a backtest",       desc: "Test against real historical data in seconds" },
-                { icon: BarChart3,    step: "3", label: "Read the AI analysis", desc: "AI explains why the strategy worked or struggled" },
-                { icon: ShieldCheck,  step: "4", label: "Monitor over time",    desc: "Compare runs and track whether your edge is improving" },
+                { icon: Code2,        step: "1", label: "Define a strategy",    desc: "Describe your idea — AI writes the code" },
+                { icon: FlaskConical, step: "2", label: "Run a backtest",       desc: "Test on real data before risking money" },
+                { icon: BarChart3,    step: "3", label: "Read the AI analysis", desc: "Understand what worked, what failed, and why" },
+                { icon: ShieldCheck,  step: "4", label: "Refine and validate",  desc: "Build confidence in your edge one test at a time" },
               ] as const).map(({ icon: Icon, step, label, desc }) => (
                 <div key={step} className="rounded-xl border border-border bg-surface-0 p-4 flex flex-col gap-2">
                   <div className="flex items-center gap-2">
