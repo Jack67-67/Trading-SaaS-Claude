@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { redirect } from "next/navigation";
+import { ArrowRight, MessageSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardStats } from "@/components/dashboard/dashboard-stats";
 import { RecentBacktests } from "@/components/dashboard/recent-backtests";
@@ -7,9 +8,9 @@ import { QuickActions } from "@/components/dashboard/quick-actions";
 import { AiPortfolioOverview } from "@/components/dashboard/ai-portfolio-overview";
 import { AiStatusBar } from "@/components/dashboard/ai-status-bar";
 import { AiAlerts } from "@/components/dashboard/ai-alerts";
-import { WelcomePanel } from "@/components/dashboard/welcome-panel";
 import { AiActivityFeed } from "@/components/dashboard/ai-activity-feed";
 import type { ActivityEvent } from "@/components/dashboard/ai-activity-feed";
+import { TryExampleButton } from "@/components/dashboard/try-example-button";
 import { generateAlerts } from "@/lib/alerts";
 import { computeStrategyTrend, compareTwoRuns } from "@/lib/trends";
 import type { TrendLabel } from "@/lib/trends";
@@ -27,32 +28,44 @@ export default async function DashboardPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const [
-    { count: strategyCount },
-    { count: backtestCount },
-    { data: recentRuns },
-    { data: completedRuns },
-  ] = await Promise.all([
-    supabase
-      .from("strategies")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", user!.id),
-    supabase
-      .from("backtest_runs")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", user!.id),
-    supabase
-      .from("backtest_runs")
-      .select("*, strategies(name)")
-      .eq("user_id", user!.id)
-      .order("created_at", { ascending: false })
-      .limit(6),
-    supabase
-      .from("backtest_runs")
-      .select("id, strategy_id, results, started_at, completed_at, config, strategies(name)")
-      .eq("user_id", user!.id)
-      .eq("status", "completed"),
-  ]);
+  if (!user) redirect("/auth/login");
+
+  let strategyCount: number | null = 0;
+  let backtestCount: number | null = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let recentRuns: any[] | null = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let completedRuns: any[] | null = [];
+
+  try {
+    const [sc, bc, rr, cr] = await Promise.all([
+      supabase
+        .from("strategies")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id),
+      supabase
+        .from("backtest_runs")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id),
+      supabase
+        .from("backtest_runs")
+        .select("*, strategies(name)")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(6),
+      supabase
+        .from("backtest_runs")
+        .select("id, strategy_id, results, started_at, completed_at, config, strategies(name)")
+        .eq("user_id", user.id)
+        .eq("status", "completed"),
+    ]);
+    strategyCount = sc.count;
+    backtestCount = bc.count;
+    recentRuns = rr.data;
+    completedRuns = cr.data;
+  } catch {
+    // Data fetch failed — treat as empty state so new users see onboarding
+  }
 
   // Compute aggregate stats
   let bestSharpe: string | null = null;
@@ -370,9 +383,46 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* ── New user: welcome panel ────────────────────────────── */}
+      {/* ── New user: onboarding ──────────────────────────────── */}
       {(strategyCount ?? 0) === 0 && (backtestCount ?? 0) === 0 ? (
-        <WelcomePanel name={displayName} />
+        <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden">
+          <div className="h-px bg-gradient-to-r from-transparent via-accent/50 to-transparent" />
+          <div className="px-6 pt-10 pb-8 flex flex-col items-center text-center gap-6 max-w-lg mx-auto">
+            <div>
+              <p className="text-xs font-semibold text-accent uppercase tracking-widest mb-2">
+                Get started
+              </p>
+              <h2 className="text-2xl font-bold tracking-tight text-text-primary mb-3">
+                Welcome, {displayName}
+              </h2>
+              <p className="text-sm text-text-secondary leading-relaxed">
+                Describe your strategy, run a backtest, and see if it actually works.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-sm">
+              <Link
+                href="/dashboard/strategies/describe"
+                className={cn(
+                  "flex-1 w-full group rounded-xl border border-accent/30 bg-accent/[0.06]",
+                  "hover:border-accent/60 hover:bg-accent/[0.11] transition-all duration-150",
+                  "flex items-center justify-center gap-2.5 px-5 py-3"
+                )}
+              >
+                <MessageSquare size={15} className="text-accent shrink-0" />
+                <span className="text-sm font-semibold text-text-primary group-hover:text-accent transition-colors">
+                  Describe strategy
+                </span>
+              </Link>
+
+              <TryExampleButton size="default" className="flex-1 w-full" />
+            </div>
+
+            <p className="text-2xs text-text-muted/50 tracking-widest uppercase">
+              Describe · Test · Analyze · Improve
+            </p>
+          </div>
+        </div>
       ) : (
         <>
           {/* ── Today's Update ────────────────────────────────────── */}
