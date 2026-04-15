@@ -32,9 +32,7 @@ export default async function DashboardPage() {
 
   let strategyCount: number | null = 0;
   let backtestCount: number | null = 0;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let recentRuns: any[] | null = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let completedRuns: any[] | null = [];
 
   try {
