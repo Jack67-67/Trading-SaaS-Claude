@@ -333,9 +333,9 @@ export default async function OverviewPage() {
           <div className="h-px bg-gradient-to-r from-transparent via-accent/50 to-transparent" />
           <div className="px-6 py-12 flex flex-col items-center text-center gap-5 max-w-sm mx-auto">
             <div>
-              <p className="text-xs font-semibold text-accent uppercase tracking-widest mb-2">Nothing here yet</p>
+              <p className="text-xs font-semibold text-accent uppercase tracking-widest mb-2">No activity yet</p>
               <h2 className="text-lg font-bold tracking-tight text-text-primary mb-2">
-                Get started by describing your first strategy
+                Describe your first strategy or run an example to start seeing results.
               </h2>
               <p className="text-sm text-text-secondary leading-relaxed">
                 Once you run a backtest, your results and performance data will appear here.

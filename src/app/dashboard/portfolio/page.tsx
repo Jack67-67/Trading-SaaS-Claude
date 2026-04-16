@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   TrendingUp, TrendingDown, Minus, ArrowRight, Play,
   TriangleAlert, ShieldCheck, Layers2, Activity,
@@ -90,11 +91,19 @@ export default async function PortfolioPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { data: strategies } = await supabase
-    .from("strategies")
-    .select("id, name, description, backtest_runs(id, status, results, completed_at, config)")
-    .eq("user_id", user!.id)
-    .order("updated_at", { ascending: false });
+  if (!user) redirect("/auth/login");
+
+  let strategies: any[] | null = null;
+  try {
+    const { data } = await supabase
+      .from("strategies")
+      .select("id, name, description, backtest_runs(id, status, results, completed_at, config)")
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false });
+    strategies = data;
+  } catch {
+    // fetch failed — treat as no data
+  }
 
   // ── Build per-strategy rows ─────────────────────────────────────────────
 
@@ -244,29 +253,29 @@ export default async function PortfolioPage() {
 
       {/* ── Empty state ─────────────────────────────────────────── */}
       {noStrategies && (
-        <div className="rounded-2xl border border-border bg-surface-1 flex flex-col items-center justify-center py-20 text-center">
+        <div className="rounded-2xl border border-border bg-surface-1 flex flex-col items-center justify-center py-20 text-center px-6">
           <div className="w-12 h-12 rounded-2xl bg-surface-3 flex items-center justify-center mb-4">
             <Layers2 size={20} className="text-text-muted" />
           </div>
           <h2 className="text-base font-bold text-text-primary mb-2">
-            No strategies yet
+            No portfolio data yet
           </h2>
           <p className="text-sm text-text-secondary leading-relaxed mb-6 max-w-xs">
-            Create strategies and run backtests. Your portfolio overview will
-            appear here once you have results.
+            Run your first backtest or paper trading session to see positions,
+            performance, and allocation here.
           </p>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap justify-center">
             <Link
-              href="/dashboard/ai-strategy"
+              href="/dashboard/backtests"
               className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:bg-accent-hover transition-colors"
             >
-              Generate with AI
+              Run first backtest
             </Link>
             <Link
-              href="/dashboard/strategies/new"
+              href="/dashboard/paper-trading"
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm font-medium text-text-primary hover:bg-surface-3 transition-colors"
             >
-              Write my own
+              Open paper trading
             </Link>
           </div>
         </div>
