@@ -93,131 +93,143 @@ export default async function PortfolioPage() {
 
   if (!user) redirect("/auth/login");
 
-  let strategies: any[] | null = null;
+  // ── Safe defaults ─────────────────────────────────────────────────────────
+  let rows: StrategyRow[] = [];
+  let analyzed: StrategyRow[] = [];
+  let avgReturn: number | null = null;
+  let avgSharpe: number | null = null;
+  let bestRow: StrategyRow | null = null;
+  let worstRow: StrategyRow | null = null;
+  let health: HealthLevel = "no-data";
+  let healthConf = HEALTH_CONFIG["no-data"];
+  let allAlerts: AppAlert[] = [];
+  let critCount = 0;
+  let warnCount = 0;
+  let alertTotal = 0;
+  let trendCounts = { improving: 0, stable: 0, atRisk: 0, declining: 0 };
+
   try {
+    // ── Fetch ──────────────────────────────────────────────────────────────
     const { data } = await supabase
       .from("strategies")
       .select("id, name, description, backtest_runs(id, status, results, completed_at, config)")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false });
-    strategies = data;
-  } catch {
-    // fetch failed — treat as no data
-  }
 
-  // ── Build per-strategy rows ─────────────────────────────────────────────
+    const strategies: any[] = data ?? [];
 
-  const rows: StrategyRow[] = (strategies ?? []).map((s) => {
-    type RunEntry = {
-      id: string;
-      status: string;
-      results: unknown;
-      completed_at: string | null;
-      config: unknown;
-    };
-    const allRuns = (
-      (s as Record<string, unknown> & { backtest_runs?: RunEntry[] }).backtest_runs ?? []
-    );
-    const completed = allRuns
-      .filter((r) => r.status === "completed" && r.results)
-      .sort(
-        (a, b) =>
-          new Date(a.completed_at ?? "").getTime() -
-          new Date(b.completed_at ?? "").getTime()
+    // ── Build per-strategy rows ────────────────────────────────────────────
+    rows = strategies.map((s) => {
+      type RunEntry = {
+        id: string;
+        status: string;
+        results: unknown;
+        completed_at: string | null;
+        config: unknown;
+      };
+      const allRuns = (
+        (s as Record<string, unknown> & { backtest_runs?: RunEntry[] }).backtest_runs ?? []
       );
+      const completed = allRuns
+        .filter((r) => r.status === "completed" && r.results)
+        .sort(
+          (a, b) =>
+            new Date(a.completed_at ?? "").getTime() -
+            new Date(b.completed_at ?? "").getTime()
+        );
 
-    const latestRun = completed[completed.length - 1] ?? null;
-    const latestMetrics = latestRun
-      ? ((latestRun.results as Record<string, unknown>)?.metrics as BacktestMetrics | null) ?? null
-      : null;
-    const lastSymbol = latestRun
-      ? ((latestRun.config as Record<string, unknown>)?.symbol as string) ?? null
-      : null;
-
-    // Trend from last 2 runs
-    const snapshots = completed.flatMap((r) => {
-      const m = (r.results as Record<string, unknown>)?.metrics as BacktestMetrics | null;
-      if (!m) return [];
-      return [{
-        returnPct: m.total_return_pct,
-        sharpe: m.sharpe_ratio ?? 0,
-        drawdown: Math.abs(m.max_drawdown_pct ?? 0),
-        winRate: m.win_rate_pct ?? 0,
-        trades: m.total_trades ?? 0,
-      }];
-    });
-    const trend = computeStrategyTrend(snapshots);
-
-    // Alerts
-    const alertInputs = completed.flatMap((r) => {
-      const m = (r.results as Record<string, unknown>)?.metrics as BacktestMetrics | null;
-      const cfg = r.config as Record<string, unknown> | null;
-      if (!m) return [];
-      return [{
-        id: r.id,
-        strategyId: s.id as string,
-        strategyName: s.name as string,
-        symbol: (cfg?.symbol as string) || "—",
-        completedAt: r.completed_at || new Date().toISOString(),
-        returnPct: m.total_return_pct,
-        sharpe: m.sharpe_ratio ?? 0,
-        drawdown: Math.abs(m.max_drawdown_pct ?? 0),
-        trades: m.total_trades ?? 0,
-        winRate: m.win_rate_pct ?? 0,
-      }];
-    });
-    const alerts = generateAlerts(alertInputs);
-
-    // Return delta vs previous run
-    const prevRun = completed.length >= 2 ? completed[completed.length - 2] : null;
-    const prevMetrics = prevRun
-      ? ((prevRun.results as Record<string, unknown>)?.metrics as BacktestMetrics | null) ?? null
-      : null;
-    const returnDelta =
-      latestMetrics && prevMetrics
-        ? latestMetrics.total_return_pct - prevMetrics.total_return_pct
+      const latestRun = completed[completed.length - 1] ?? null;
+      const latestMetrics = latestRun
+        ? ((latestRun.results as Record<string, unknown>)?.metrics as BacktestMetrics | null) ?? null
+        : null;
+      const lastSymbol = latestRun
+        ? ((latestRun.config as Record<string, unknown>)?.symbol as string) ?? null
         : null;
 
-    return {
-      id: s.id as string,
-      name: s.name as string,
-      description: (s.description as string | null) ?? null,
-      hasRuns: completed.length > 0,
-      latestRunId: latestRun?.id ?? null,
-      metrics: latestMetrics,
-      trend,
-      alerts,
-      lastSymbol,
-      runCount: completed.length,
-      returnDelta,
-      lastAnalyzedAt: latestRun?.completed_at ?? null,
+      const snapshots = completed.flatMap((r) => {
+        const m = (r.results as Record<string, unknown>)?.metrics as BacktestMetrics | null;
+        if (!m) return [];
+        return [{
+          returnPct: m.total_return_pct ?? 0,
+          sharpe: m.sharpe_ratio ?? 0,
+          drawdown: Math.abs(m.max_drawdown_pct ?? 0),
+          winRate: m.win_rate_pct ?? 0,
+          trades: m.total_trades ?? 0,
+        }];
+      });
+      const trend = computeStrategyTrend(snapshots);
+
+      const alertInputs = completed.flatMap((r) => {
+        const m = (r.results as Record<string, unknown>)?.metrics as BacktestMetrics | null;
+        const cfg = r.config as Record<string, unknown> | null;
+        if (!m) return [];
+        return [{
+          id: r.id,
+          strategyId: s.id as string,
+          strategyName: s.name as string,
+          symbol: (cfg?.symbol as string) || "—",
+          completedAt: r.completed_at || new Date().toISOString(),
+          returnPct: m.total_return_pct ?? 0,
+          sharpe: m.sharpe_ratio ?? 0,
+          drawdown: Math.abs(m.max_drawdown_pct ?? 0),
+          trades: m.total_trades ?? 0,
+          winRate: m.win_rate_pct ?? 0,
+        }];
+      });
+      const alerts = generateAlerts(alertInputs);
+
+      const prevRun = completed.length >= 2 ? completed[completed.length - 2] : null;
+      const prevMetrics = prevRun
+        ? ((prevRun.results as Record<string, unknown>)?.metrics as BacktestMetrics | null) ?? null
+        : null;
+      const returnDelta =
+        latestMetrics && prevMetrics
+          ? (latestMetrics.total_return_pct ?? 0) - (prevMetrics.total_return_pct ?? 0)
+          : null;
+
+      return {
+        id: s.id as string,
+        name: (s.name as string) || "Unnamed",
+        description: (s.description as string | null) ?? null,
+        hasRuns: completed.length > 0,
+        latestRunId: latestRun?.id ?? null,
+        metrics: latestMetrics,
+        trend,
+        alerts,
+        lastSymbol,
+        runCount: completed.length,
+        returnDelta,
+        lastAnalyzedAt: latestRun?.completed_at ?? null,
+      };
+    });
+
+    // ── Portfolio-level stats ──────────────────────────────────────────────
+    analyzed = rows.filter((r) => r.metrics !== null && r.metrics !== undefined);
+    const returns = analyzed.map((r) => r.metrics!.total_return_pct ?? 0);
+    const sharpes = analyzed.map((r) => r.metrics!.sharpe_ratio ?? 0);
+
+    avgReturn = returns.length ? returns.reduce((a, b) => a + b, 0) / returns.length : null;
+    avgSharpe = sharpes.length ? sharpes.reduce((a, b) => a + b, 0) / sharpes.length : null;
+    bestRow  = analyzed.length ? analyzed.reduce((a, b) => ((a.metrics!.total_return_pct ?? 0) > (b.metrics!.total_return_pct ?? 0) ? a : b)) : null;
+    worstRow = analyzed.length ? analyzed.reduce((a, b) => ((a.metrics!.total_return_pct ?? 0) < (b.metrics!.total_return_pct ?? 0) ? a : b)) : null;
+    health     = portfolioHealth(rows);
+    healthConf = HEALTH_CONFIG[health];
+
+    allAlerts  = rows.flatMap((r) => r.alerts);
+    critCount  = allAlerts.filter((a) => a.severity === "critical").length;
+    warnCount  = allAlerts.filter((a) => a.severity === "warning").length;
+    alertTotal = critCount + warnCount;
+
+    trendCounts = {
+      improving: rows.filter((r) => r.trend === "improving").length,
+      stable:    rows.filter((r) => r.trend === "stable").length,
+      atRisk:    rows.filter((r) => r.trend === "at-risk").length,
+      declining: rows.filter((r) => r.trend === "declining").length,
     };
-  });
 
-  // ── Portfolio-level stats ───────────────────────────────────────────────
-
-  const analyzed = rows.filter((r) => r.metrics !== null);
-  const returns = analyzed.map((r) => r.metrics!.total_return_pct);
-  const sharpes = analyzed.map((r) => r.metrics!.sharpe_ratio ?? 0);
-
-  const avgReturn  = returns.length ? returns.reduce((a, b) => a + b, 0) / returns.length : null;
-  const avgSharpe  = sharpes.length ? sharpes.reduce((a, b) => a + b, 0) / sharpes.length : null;
-  const bestRow    = analyzed.length ? analyzed.reduce((a, b) => (a.metrics!.total_return_pct > b.metrics!.total_return_pct ? a : b)) : null;
-  const worstRow   = analyzed.length ? analyzed.reduce((a, b) => (a.metrics!.total_return_pct < b.metrics!.total_return_pct ? a : b)) : null;
-  const health     = portfolioHealth(rows);
-  const healthConf = HEALTH_CONFIG[health];
-
-  const allAlerts  = rows.flatMap((r) => r.alerts);
-  const critCount  = allAlerts.filter((a) => a.severity === "critical").length;
-  const warnCount  = allAlerts.filter((a) => a.severity === "warning").length;
-  const alertTotal = critCount + warnCount;
-
-  const trendCounts = {
-    improving: rows.filter((r) => r.trend === "improving").length,
-    stable:    rows.filter((r) => r.trend === "stable").length,
-    atRisk:    rows.filter((r) => r.trend === "at-risk").length,
-    declining: rows.filter((r) => r.trend === "declining").length,
-  };
+  } catch {
+    // all variables stay at safe empty defaults above — shows empty state
+  }
 
   const noStrategies = rows.length === 0;
 
@@ -316,7 +328,7 @@ export default async function PortfolioPage() {
               {bestRow ? (
                 <StatCell
                   label="Best"
-                  value={formatPercent(bestRow.metrics!.total_return_pct)}
+                  value={formatPercent(bestRow.metrics!.total_return_pct ?? 0)}
                   valueClass="text-profit"
                   sub={bestRow.name}
                 />
@@ -327,8 +339,8 @@ export default async function PortfolioPage() {
               {worstRow ? (
                 <StatCell
                   label="Worst"
-                  value={formatPercent(worstRow.metrics!.total_return_pct)}
-                  valueClass={pnlColor(worstRow.metrics!.total_return_pct)}
+                  value={formatPercent(worstRow.metrics!.total_return_pct ?? 0)}
+                  valueClass={pnlColor(worstRow.metrics!.total_return_pct ?? 0)}
                   sub={worstRow.name}
                 />
               ) : (
@@ -509,13 +521,13 @@ function StrategyTableRow({ row }: { row: StrategyRow }) {
         {metrics ? (
           <>
             <div className="flex items-center lg:justify-end gap-1">
-              {metrics.total_return_pct >= 0.5
+              {(metrics.total_return_pct ?? 0) >= 0.5
                 ? <TrendingUp size={11} className="text-profit" />
-                : metrics.total_return_pct <= -0.5
+                : (metrics.total_return_pct ?? 0) <= -0.5
                 ? <TrendingDown size={11} className="text-loss" />
                 : <Minus size={11} className="text-text-muted" />}
-              <span className={cn("text-base font-bold font-mono tabular-nums", pnlColor(metrics.total_return_pct))}>
-                {formatPercent(metrics.total_return_pct)}
+              <span className={cn("text-base font-bold font-mono tabular-nums", pnlColor(metrics.total_return_pct ?? 0))}>
+                {formatPercent(metrics.total_return_pct ?? 0)}
               </span>
             </div>
             {row.returnDelta !== null && (

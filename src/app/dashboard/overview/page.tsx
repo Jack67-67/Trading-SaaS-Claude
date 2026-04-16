@@ -13,12 +13,14 @@ import { AiActivityFeed } from "@/components/dashboard/ai-activity-feed";
 import type { ActivityEvent } from "@/components/dashboard/ai-activity-feed";
 import { TryExampleButton } from "@/components/dashboard/try-example-button";
 import { generateAlerts } from "@/lib/alerts";
+import type { AppAlert } from "@/lib/alerts";
 import { computeStrategyTrend, compareTwoRuns } from "@/lib/trends";
 import type { TrendLabel } from "@/lib/trends";
 import { TodayOverview } from "@/components/dashboard/today-overview";
 import type { StrategyOverviewCard } from "@/components/dashboard/today-overview";
 import { NextAction } from "@/components/dashboard/next-action";
 import { generateNextActions } from "@/lib/next-actions";
+import type { NextActionItem } from "@/lib/next-actions";
 import { pnlColor, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { BacktestMetrics } from "@/types";
@@ -33,12 +35,27 @@ export default async function OverviewPage() {
 
   if (!user) redirect("/auth/login");
 
-  let strategyCount: number | null = 0;
-  let backtestCount: number | null = 0;
-  let recentRuns: any[] | null = [];
-  let completedRuns: any[] | null = [];
+  // ── Safe defaults (used if anything below throws) ──────────────────────────
+  let strategyCount = 0;
+  let backtestCount = 0;
+  let recentRuns: any[] = [];
+  let bestSharpe: string | null = null;
+  let avgRunTime: string | null = null;
+  let bestRun: { id: string; name: string; symbol: string; returnPct: number } | null = null;
+  let aiRunSummaries: {
+    id: string; name: string; symbol: string;
+    returnPct: number; sharpe: number; drawdown: number; trades: number;
+    metrics: BacktestMetrics;
+  }[] = [];
+  let strategyDailyUpdates: StrategyDailyUpdate[] = [];
+  let strategyOverviewCards: StrategyOverviewCard[] = [];
+  let dashboardAlerts: AppAlert[] = [];
+  let feedEvents: ActivityEvent[] = [];
+  let nextActions: NextActionItem[] = [];
+  let lastRunAt: string | null = null;
 
   try {
+    // ── Fetch ─────────────────────────────────────────────────────────────────
     const [sc, bc, rr, cr] = await Promise.all([
       supabase
         .from("strategies")
@@ -60,245 +77,240 @@ export default async function OverviewPage() {
         .eq("user_id", user.id)
         .eq("status", "completed"),
     ]);
-    strategyCount = sc.count;
-    backtestCount = bc.count;
-    recentRuns = rr.data;
-    completedRuns = cr.data;
-  } catch {
-    // Data fetch failed — show empty state
-  }
 
-  // Compute aggregate stats
-  let bestSharpe: string | null = null;
-  let avgRunTime: string | null = null;
-  let bestRun: { id: string; name: string; symbol: string; returnPct: number } | null = null;
+    strategyCount = sc.count ?? 0;
+    backtestCount = bc.count ?? 0;
+    recentRuns = rr.data ?? [];
+    const completedRuns: any[] = cr.data ?? [];
 
-  const aiRunSummaries: {
-    id: string; name: string; symbol: string;
-    returnPct: number; sharpe: number; drawdown: number; trades: number;
-    metrics: BacktestMetrics;
-  }[] = [];
+    // ── Aggregate stats ───────────────────────────────────────────────────────
+    if (completedRuns.length) {
+      const sharpes = completedRuns
+        .map((r) => {
+          const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
+          return m?.sharpe_ratio;
+        })
+        .filter((v): v is number => v !== undefined && !isNaN(v));
 
-  if (completedRuns?.length) {
-    const sharpes = completedRuns
-      .map((r) => {
-        const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
-        return m?.sharpe_ratio;
-      })
-      .filter((v): v is number => v !== undefined && !isNaN(v));
+      if (sharpes.length) bestSharpe = Math.max(...sharpes).toFixed(2);
 
-    if (sharpes.length) bestSharpe = Math.max(...sharpes).toFixed(2);
+      const durations = completedRuns
+        .filter((r) => r.started_at && r.completed_at)
+        .map((r) => (new Date(r.completed_at!).getTime() - new Date(r.started_at!).getTime()) / 1000);
 
-    const durations = completedRuns
-      .filter((r) => r.started_at && r.completed_at)
-      .map((r) => (new Date(r.completed_at!).getTime() - new Date(r.started_at!).getTime()) / 1000);
-
-    if (durations.length) {
-      const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
-      avgRunTime = avg < 60 ? `${Math.round(avg)}s` : `${(avg / 60).toFixed(1)}m`;
-    }
-
-    let topReturn = -Infinity;
-    for (const r of completedRuns) {
-      const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
-      const cfg = r.config as Record<string, unknown> | null;
-      const ret = m?.total_return_pct;
-
-      if (ret !== undefined && ret > topReturn) {
-        topReturn = ret;
-        bestRun = {
-          id: r.id as string,
-          name: (cfg?.name as string) || (cfg?.symbol as string) || "—",
-          symbol: (cfg?.symbol as string) || "—",
-          returnPct: ret,
-        };
+      if (durations.length) {
+        const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
+        avgRunTime = avg < 60 ? `${Math.round(avg)}s` : `${(avg / 60).toFixed(1)}m`;
       }
 
-      if (m && m.sharpe_ratio !== undefined && m.max_drawdown_pct !== undefined && m.total_trades !== undefined && ret !== undefined) {
-        aiRunSummaries.push({
-          id: r.id as string,
-          name: (cfg?.name as string) || (cfg?.symbol as string) || "—",
-          symbol: (cfg?.symbol as string) || "—",
-          returnPct: ret,
-          sharpe: m.sharpe_ratio,
-          drawdown: Math.abs(m.max_drawdown_pct),
-          trades: m.total_trades,
-          metrics: m as unknown as BacktestMetrics,
+      let topReturn = -Infinity;
+      for (const r of completedRuns) {
+        const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
+        const cfg = r.config as Record<string, unknown> | null;
+        const ret = m?.total_return_pct;
+
+        if (ret !== undefined && ret > topReturn) {
+          topReturn = ret;
+          bestRun = {
+            id: r.id as string,
+            name: (cfg?.name as string) || (cfg?.symbol as string) || "—",
+            symbol: (cfg?.symbol as string) || "—",
+            returnPct: ret,
+          };
+        }
+
+        if (m && m.sharpe_ratio !== undefined && m.max_drawdown_pct !== undefined && m.total_trades !== undefined && ret !== undefined) {
+          aiRunSummaries.push({
+            id: r.id as string,
+            name: (cfg?.name as string) || (cfg?.symbol as string) || "—",
+            symbol: (cfg?.symbol as string) || "—",
+            returnPct: ret,
+            sharpe: m.sharpe_ratio,
+            drawdown: Math.abs(m.max_drawdown_pct),
+            trades: m.total_trades,
+            metrics: m as unknown as BacktestMetrics,
+          });
+        }
+      }
+    }
+
+    // ── Strategy run map ──────────────────────────────────────────────────────
+    const strategyRunMap = new Map<string, { id: string; completedAt: string; returnPct: number; sharpe: number; drawdown: number; winRate: number; trades: number }[]>();
+    for (const r of completedRuns) {
+      const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
+      const sid = r.strategy_id as string | undefined;
+      if (!m || !sid || m.total_return_pct === undefined) continue;
+      const entry = strategyRunMap.get(sid) ?? [];
+      entry.push({ id: r.id as string, completedAt: (r.completed_at as string) ?? "", returnPct: m.total_return_pct, sharpe: m.sharpe_ratio ?? 0, drawdown: Math.abs(m.max_drawdown_pct ?? 0), winRate: m.win_rate_pct ?? 0, trades: m.total_trades ?? 0 });
+      strategyRunMap.set(sid, entry);
+    }
+
+    const runTrends: Record<string, TrendLabel> = {};
+    for (const [, sRuns] of strategyRunMap) {
+      const sorted = [...sRuns].sort((a, b) => a.completedAt.localeCompare(b.completedAt));
+      const trend = computeStrategyTrend(sorted.map((r) => ({ returnPct: r.returnPct, sharpe: r.sharpe, drawdown: r.drawdown, winRate: r.winRate, trades: r.trades })));
+      if (trend && sorted.length > 0) {
+        runTrends[sorted[sorted.length - 1].id] = trend;
+      }
+    }
+
+    // ── Alerts ────────────────────────────────────────────────────────────────
+    const alertRunInputs = completedRuns.flatMap((r) => {
+      const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
+      const cfg = r.config as Record<string, unknown> | null;
+      if (!m || m.total_return_pct === undefined || m.sharpe_ratio === undefined) return [];
+      const stratName = (r as Record<string, unknown> & { strategies?: { name?: string } }).strategies?.name
+        || (cfg?.name as string) || (cfg?.symbol as string) || "—";
+      return [{
+        id: r.id as string,
+        strategyId: (r.strategy_id as string) || r.id as string,
+        strategyName: stratName,
+        symbol: (cfg?.symbol as string) || "—",
+        completedAt: (r.completed_at as string) || (r.started_at as string) || new Date().toISOString(),
+        returnPct: m.total_return_pct,
+        sharpe: m.sharpe_ratio,
+        drawdown: Math.abs(m.max_drawdown_pct ?? 0),
+        trades: m.total_trades ?? 0,
+        winRate: m.win_rate_pct ?? 0,
+      }];
+    });
+    dashboardAlerts = generateAlerts(alertRunInputs);
+
+    // ── Strategy overview cards ───────────────────────────────────────────────
+    function firstRunSummary(returnPct: number, sharpe: number): string {
+      if (returnPct > 15 && sharpe > 1.2)
+        return `Strong first run — ${returnPct.toFixed(1)}% return with a Sharpe of ${sharpe.toFixed(2)}.`;
+      if (returnPct > 0)
+        return `Profitable first run at ${returnPct.toFixed(1)}% return. Run again to establish a trend direction.`;
+      return `First run came in negative at ${returnPct.toFixed(1)}%. Review the entry conditions before running again.`;
+    }
+
+    for (const [sid, sRuns] of strategyRunMap) {
+      const sorted = [...sRuns].sort((a, b) => a.completedAt.localeCompare(b.completedAt));
+      const latest = sorted[sorted.length - 1];
+      const prev   = sorted.length >= 2 ? sorted[sorted.length - 2] : null;
+
+      const runRecord = completedRuns.find((r) => (r.id as string) === latest.id);
+      const cfg      = runRecord?.config as Record<string, unknown> | null;
+      const stratRef = runRecord as Record<string, unknown> & { strategies?: { name?: string } };
+      const stratName = stratRef?.strategies?.name || (cfg?.name as string) || sid.slice(0, 8);
+      const symbol    = (cfg?.symbol as string) || "—";
+
+      let summary: string;
+      let returnDelta: number | null = null;
+      let sharpeDelta: number | null = null;
+      if (prev) {
+        const comp = compareTwoRuns(
+          { returnPct: latest.returnPct, sharpe: latest.sharpe, drawdown: latest.drawdown, winRate: latest.winRate, trades: latest.trades },
+          { returnPct: prev.returnPct,   sharpe: prev.sharpe,   drawdown: prev.drawdown,   winRate: prev.winRate,   trades: prev.trades },
+        );
+        summary = comp.summary;
+        returnDelta = latest.returnPct - prev.returnPct;
+        sharpeDelta = latest.sharpe - prev.sharpe;
+      } else {
+        summary = firstRunSummary(latest.returnPct, latest.sharpe);
+      }
+
+      const trend = computeStrategyTrend(
+        sorted.map((r) => ({ returnPct: r.returnPct, sharpe: r.sharpe, drawdown: r.drawdown, winRate: r.winRate, trades: r.trades }))
+      );
+      const stratAlerts = dashboardAlerts.filter((a) => a.strategyId === sid);
+
+      strategyDailyUpdates.push({
+        strategyId: sid, strategyName: stratName, symbol,
+        latestRunId: latest.id, lastAnalyzedAt: latest.completedAt || null,
+        returnPct: latest.returnPct, returnDelta, sharpeDelta, trend,
+        isFirstRun: sorted.length === 1,
+      });
+
+      strategyOverviewCards.push({
+        strategyId: sid, strategyName: stratName, symbol,
+        latestRunId: latest.id, latestRunAt: latest.completedAt,
+        trend, returnPct: latest.returnPct, sharpe: latest.sharpe,
+        isBest: false, isWorst: false, summary, alerts: stratAlerts,
+      });
+    }
+
+    if (strategyOverviewCards.length > 0) {
+      const byReturn = [...strategyOverviewCards].sort((a, b) => b.returnPct - a.returnPct);
+      const bestId  = byReturn[0].strategyId;
+      const worstId = byReturn.length > 1 ? byReturn[byReturn.length - 1].strategyId : null;
+      for (const card of strategyOverviewCards) {
+        if (card.strategyId === bestId)  card.isBest  = true;
+        if (worstId && card.strategyId === worstId) card.isWorst = true;
+      }
+      strategyOverviewCards.sort((a, b) => b.returnPct - a.returnPct);
+    }
+
+    // ── Activity feed ─────────────────────────────────────────────────────────
+    const activityEvents: ActivityEvent[] = [];
+    const sortedCompleted = [...completedRuns]
+      .sort((a, b) => {
+        const ta = new Date((a.completed_at as string | null) ?? 0).getTime();
+        const tb = new Date((b.completed_at as string | null) ?? 0).getTime();
+        return tb - ta;
+      })
+      .slice(0, 6);
+
+    for (const r of sortedCompleted) {
+      const cfg = r.config as Record<string, unknown> | null;
+      const symbol = (cfg?.symbol as string) || "—";
+      const ts = (r.completed_at as string | null) || (r.started_at as string | null);
+      if (ts) {
+        activityEvents.push({
+          id: `analysis-${r.id as string}`, type: "analysis",
+          title: `Backtest analyzed · ${symbol}`, subtitle: "AI insights generated",
+          timestamp: ts, runId: r.id as string,
         });
       }
     }
-  }
 
-  const strategyRunMap = new Map<string, { id: string; completedAt: string; returnPct: number; sharpe: number; drawdown: number; winRate: number; trades: number }[]>();
-  for (const r of completedRuns ?? []) {
-    const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
-    const sid = r.strategy_id as string | undefined;
-    if (!m || !sid || m.total_return_pct === undefined) continue;
-    const entry = strategyRunMap.get(sid) ?? [];
-    entry.push({ id: r.id as string, completedAt: (r.completed_at as string) ?? "", returnPct: m.total_return_pct, sharpe: m.sharpe_ratio ?? 0, drawdown: Math.abs(m.max_drawdown_pct ?? 0), winRate: m.win_rate_pct ?? 0, trades: m.total_trades ?? 0 });
-    strategyRunMap.set(sid, entry);
-  }
-
-  const runTrends: Record<string, TrendLabel> = {};
-  for (const [, sRuns] of strategyRunMap) {
-    const sorted = [...sRuns].sort((a, b) => a.completedAt.localeCompare(b.completedAt));
-    const trend = computeStrategyTrend(sorted.map((r) => ({ returnPct: r.returnPct, sharpe: r.sharpe, drawdown: r.drawdown, winRate: r.winRate, trades: r.trades })));
-    if (trend && sorted.length > 0) {
-      runTrends[sorted[sorted.length - 1].id] = trend;
-    }
-  }
-
-  const alertRunInputs = (completedRuns ?? []).flatMap((r) => {
-    const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
-    const cfg = r.config as Record<string, unknown> | null;
-    if (!m || m.total_return_pct === undefined || m.sharpe_ratio === undefined) return [];
-    const stratName = (r as Record<string, unknown> & { strategies?: { name?: string } }).strategies?.name
-      || (cfg?.name as string) || (cfg?.symbol as string) || "—";
-    return [{
-      id: r.id as string,
-      strategyId: (r.strategy_id as string) || r.id as string,
-      strategyName: stratName,
-      symbol: (cfg?.symbol as string) || "—",
-      completedAt: (r.completed_at as string) || (r.started_at as string) || new Date().toISOString(),
-      returnPct: m.total_return_pct,
-      sharpe: m.sharpe_ratio,
-      drawdown: Math.abs(m.max_drawdown_pct ?? 0),
-      trades: m.total_trades ?? 0,
-      winRate: m.win_rate_pct ?? 0,
-    }];
-  });
-  const dashboardAlerts = generateAlerts(alertRunInputs);
-
-  function firstRunSummary(returnPct: number, sharpe: number): string {
-    if (returnPct > 15 && sharpe > 1.2)
-      return `Strong first run — ${returnPct.toFixed(1)}% return with a Sharpe of ${sharpe.toFixed(2)}.`;
-    if (returnPct > 0)
-      return `Profitable first run at ${returnPct.toFixed(1)}% return. Run again to establish a trend direction.`;
-    return `First run came in negative at ${returnPct.toFixed(1)}%. Review the entry conditions before running again.`;
-  }
-
-  const strategyOverviewCards: StrategyOverviewCard[] = [];
-  const strategyDailyUpdates: StrategyDailyUpdate[] = [];
-
-  for (const [sid, sRuns] of strategyRunMap) {
-    const sorted = [...sRuns].sort((a, b) => a.completedAt.localeCompare(b.completedAt));
-    const latest = sorted[sorted.length - 1];
-    const prev   = sorted.length >= 2 ? sorted[sorted.length - 2] : null;
-
-    const runRecord = (completedRuns ?? []).find((r) => (r.id as string) === latest.id);
-    const cfg      = runRecord?.config as Record<string, unknown> | null;
-    const stratRef = runRecord as Record<string, unknown> & { strategies?: { name?: string } };
-    const stratName = stratRef?.strategies?.name || (cfg?.name as string) || sid.slice(0, 8);
-    const symbol    = (cfg?.symbol as string) || "—";
-
-    let summary: string;
-    let returnDelta: number | null = null;
-    let sharpeDelta: number | null = null;
-    if (prev) {
-      const comp = compareTwoRuns(
-        { returnPct: latest.returnPct, sharpe: latest.sharpe, drawdown: latest.drawdown, winRate: latest.winRate, trades: latest.trades },
-        { returnPct: prev.returnPct,   sharpe: prev.sharpe,   drawdown: prev.drawdown,   winRate: prev.winRate,   trades: prev.trades },
-      );
-      summary = comp.summary;
-      returnDelta = latest.returnPct - prev.returnPct;
-      sharpeDelta = latest.sharpe - prev.sharpe;
-    } else {
-      summary = firstRunSummary(latest.returnPct, latest.sharpe);
-    }
-
-    const trend = computeStrategyTrend(
-      sorted.map((r) => ({ returnPct: r.returnPct, sharpe: r.sharpe, drawdown: r.drawdown, winRate: r.winRate, trades: r.trades }))
-    );
-    const stratAlerts = dashboardAlerts.filter((a) => a.strategyId === sid);
-
-    strategyDailyUpdates.push({
-      strategyId: sid, strategyName: stratName, symbol,
-      latestRunId: latest.id, lastAnalyzedAt: latest.completedAt || null,
-      returnPct: latest.returnPct, returnDelta, sharpeDelta, trend,
-      isFirstRun: sorted.length === 1,
-    });
-
-    strategyOverviewCards.push({
-      strategyId: sid, strategyName: stratName, symbol,
-      latestRunId: latest.id, latestRunAt: latest.completedAt,
-      trend, returnPct: latest.returnPct, sharpe: latest.sharpe,
-      isBest: false, isWorst: false, summary, alerts: stratAlerts,
-    });
-  }
-
-  if (strategyOverviewCards.length > 0) {
-    const byReturn = [...strategyOverviewCards].sort((a, b) => b.returnPct - a.returnPct);
-    const bestId  = byReturn[0].strategyId;
-    const worstId = byReturn.length > 1 ? byReturn[byReturn.length - 1].strategyId : null;
-    for (const card of strategyOverviewCards) {
-      if (card.strategyId === bestId)  card.isBest  = true;
-      if (worstId && card.strategyId === worstId) card.isWorst = true;
-    }
-    strategyOverviewCards.sort((a, b) => b.returnPct - a.returnPct);
-  }
-
-  const activityEvents: ActivityEvent[] = [];
-  const sortedCompleted = [...(completedRuns ?? [])]
-    .sort((a, b) => {
-      const ta = new Date((a.completed_at as string | null) ?? 0).getTime();
-      const tb = new Date((b.completed_at as string | null) ?? 0).getTime();
-      return tb - ta;
-    })
-    .slice(0, 6);
-
-  for (const r of sortedCompleted) {
-    const cfg = r.config as Record<string, unknown> | null;
-    const symbol = (cfg?.symbol as string) || "—";
-    const ts = (r.completed_at as string | null) || (r.started_at as string | null);
-    if (ts) {
+    for (const alert of dashboardAlerts.slice(0, 5)) {
+      const type: ActivityEvent["type"] =
+        alert.title.toLowerCase().includes("improv") ? "improvement" :
+        alert.severity === "critical"                ? "decline" :
+        alert.severity === "warning"                 ? "warning" :
+        "insight";
       activityEvents.push({
-        id: `analysis-${r.id as string}`, type: "analysis",
-        title: `Backtest analyzed · ${symbol}`, subtitle: "AI insights generated",
-        timestamp: ts, runId: r.id as string,
+        id: `alert-${alert.id}`, type,
+        title: alert.title,
+        subtitle: alert.strategyName !== alert.symbol ? alert.strategyName : undefined,
+        timestamp: alert.completedAt, runId: alert.runId,
       });
     }
-  }
 
-  for (const alert of dashboardAlerts.slice(0, 5)) {
-    const type: ActivityEvent["type"] =
-      alert.title.toLowerCase().includes("improv") ? "improvement" :
-      alert.severity === "critical"                ? "decline" :
-      alert.severity === "warning"                 ? "warning" :
-      "insight";
-    activityEvents.push({
-      id: `alert-${alert.id}`, type,
-      title: alert.title,
-      subtitle: alert.strategyName !== alert.symbol ? alert.strategyName : undefined,
-      timestamp: alert.completedAt, runId: alert.runId,
+    const seen = new Set<string>();
+    feedEvents = activityEvents
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .filter((e) => {
+        const key = e.runId ?? e.id;
+        if (seen.has(key) && e.type === "analysis") return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 8);
+
+    lastRunAt = completedRuns
+      .map((r) => r.completed_at as string | null)
+      .filter((v): v is string => Boolean(v))
+      .sort()
+      .at(-1) ?? null;
+
+    nextActions = generateNextActions({
+      alerts: dashboardAlerts,
+      strategies: strategyOverviewCards.map((c) => ({
+        id: c.strategyId, name: c.strategyName, trend: c.trend,
+        returnPct: c.returnPct, latestRunId: c.latestRunId,
+      })),
+      totalRuns: backtestCount,
+      totalStrategies: strategyCount,
     });
+
+  } catch {
+    // All variables stay at their safe empty defaults above — shows empty state
   }
 
-  const seen = new Set<string>();
-  const feedEvents = activityEvents
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .filter((e) => {
-      const key = e.runId ?? e.id;
-      if (seen.has(key) && e.type === "analysis") return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 8);
-
-  const lastRunAt = (completedRuns ?? [])
-    .map((r) => r.completed_at as string | null)
-    .filter(Boolean).sort().at(-1) ?? null;
-
-  const nextActions = generateNextActions({
-    alerts: dashboardAlerts,
-    strategies: strategyOverviewCards.map((c) => ({
-      id: c.strategyId, name: c.strategyName, trend: c.trend,
-      returnPct: c.returnPct, latestRunId: c.latestRunId,
-    })),
-    totalRuns: backtestCount ?? 0,
-    totalStrategies: strategyCount ?? 0,
-  });
-
-  const hasData = (strategyCount ?? 0) > 0 || (backtestCount ?? 0) > 0;
+  const hasData = strategyCount > 0 || backtestCount > 0;
 
   const dateLabel = new Date().toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric",
@@ -319,9 +331,9 @@ export default async function OverviewPage() {
           <p className="text-xs text-text-muted">{dateLabel}</p>
           {hasData && (
             <p className="text-xs text-text-secondary mt-0.5">
-              {strategyCount ?? 0} {strategyCount === 1 ? "strategy" : "strategies"}
+              {strategyCount} {strategyCount === 1 ? "strategy" : "strategies"}
               {" · "}
-              {backtestCount ?? 0} {backtestCount === 1 ? "run" : "runs"}
+              {backtestCount} {backtestCount === 1 ? "run" : "runs"}
             </p>
           )}
         </div>
@@ -362,7 +374,7 @@ export default async function OverviewPage() {
       ) : (
         <>
           {/* ── Today's Update ──────────────────────────────── */}
-          {(strategyDailyUpdates.length > 0 || (strategyCount ?? 0) > 0) && (
+          {(strategyDailyUpdates.length > 0 || strategyCount > 0) && (
             <DailyUpdate
               updates={strategyDailyUpdates}
               alerts={dashboardAlerts}
@@ -372,9 +384,9 @@ export default async function OverviewPage() {
 
           {/* ── Portfolio Health ────────────────────────────── */}
           {aiRunSummaries.length > 0 ? (
-            <AiPortfolioOverview runs={aiRunSummaries} lastRunAt={lastRunAt} trends={runTrends} />
+            <AiPortfolioOverview runs={aiRunSummaries} lastRunAt={lastRunAt} trends={{}} />
           ) : (
-            <AiStatusBar strategyCount={strategyCount ?? 0} lastRunAt={lastRunAt} />
+            <AiStatusBar strategyCount={strategyCount} lastRunAt={lastRunAt} />
           )}
 
           {/* ── Next Actions ────────────────────────────────── */}
@@ -394,8 +406,8 @@ export default async function OverviewPage() {
 
           {/* ── Stats strip ─────────────────────────────────── */}
           <DashboardStats
-            strategyCount={strategyCount ?? 0}
-            backtestCount={backtestCount ?? 0}
+            strategyCount={strategyCount}
+            backtestCount={backtestCount}
             bestSharpe={bestSharpe}
             avgRunTime={avgRunTime}
           />
