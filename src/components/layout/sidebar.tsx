@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Home,
   LayoutDashboard,
   Code2,
   FlaskConical,
@@ -19,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { Logo } from "@/components/ui/logo";
 
 const iconMap = {
+  Home,
   LayoutDashboard,
   Code2,
   FlaskConical,
@@ -29,7 +31,8 @@ const iconMap = {
 } as const;
 
 const navItems = [
-  { label: "Overview",      href: "/dashboard",             icon: "LayoutDashboard" as const, badge: null },
+  { label: "Home",          href: "/dashboard",             icon: "Home" as const,            badge: null },
+  { label: "Overview",      href: "/dashboard/overview",    icon: "LayoutDashboard" as const,  badge: null },
   { label: "Portfolio",     href: "/dashboard/portfolio",   icon: "Layers2" as const,         badge: null },
   { label: "Strategies",    href: "/dashboard/strategies",  icon: "Code2" as const,           badge: null },
   { label: "Backtests",     href: "/dashboard/backtests",   icon: "FlaskConical" as const,    badge: null },

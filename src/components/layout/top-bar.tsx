@@ -7,12 +7,15 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 
 const SECTION_LABELS: Record<string, string> = {
-  "/dashboard": "Overview",
+  "/dashboard": "Home",
+  "/dashboard/overview": "Overview",
   "/dashboard/strategies": "Strategies",
   "/dashboard/backtests": "Backtests",
   "/dashboard/results": "Results",
   "/dashboard/settings": "Settings",
   "/dashboard/ai-strategy": "AI Strategy",
+  "/dashboard/portfolio": "Portfolio",
+  "/dashboard/paper-trading": "Paper Trading",
 };
 
 function useBreadcrumb(pathname: string): { section: string; detail: string | null } {
