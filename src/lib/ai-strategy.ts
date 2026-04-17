@@ -639,11 +639,12 @@ export interface RiskLabelResult {
 }
 
 export function generateRiskLabel(metrics: BacktestMetrics): RiskLabelResult {
-  const dd = Math.abs(metrics.max_drawdown_pct);
-  const vol = metrics.volatility_pct;
-  const sharpe = metrics.sharpe_ratio;
+  const dd = Math.abs(metrics.max_drawdown_pct ?? 0);
+  // volatility_pct may be absent in older backtest results — guard before using
+  const vol = typeof metrics.volatility_pct === "number" ? metrics.volatility_pct : null;
+  const sharpe = metrics.sharpe_ratio ?? 0;
 
-  if (dd > 30 || (vol > 25 && sharpe < 1)) {
+  if (dd > 30 || (vol !== null && vol > 25 && sharpe < 1)) {
     return {
       level: "high",
       label: "High Risk",
@@ -651,18 +652,22 @@ export function generateRiskLabel(metrics: BacktestMetrics): RiskLabelResult {
     };
   }
 
-  if (dd <= 15 && vol <= 18 && sharpe >= 0.8) {
+  if (dd <= 15 && (vol === null || vol <= 18) && sharpe >= 0.8) {
     return {
       level: "low",
       label: "Low Risk",
-      description: `${dd.toFixed(1)}% max drawdown with ${vol.toFixed(1)}% annualized volatility — well-controlled downside suitable for conservative accounts.`,
+      description: vol !== null
+        ? `${dd.toFixed(1)}% max drawdown with ${vol.toFixed(1)}% annualized volatility — well-controlled downside suitable for conservative accounts.`
+        : `${dd.toFixed(1)}% max drawdown — well-controlled downside suitable for conservative accounts.`,
     };
   }
 
   return {
     level: "medium",
     label: "Medium Risk",
-    description: `${dd.toFixed(1)}% max drawdown and ${vol.toFixed(1)}% volatility — moderate exposure. Size positions accordingly.`,
+    description: vol !== null
+      ? `${dd.toFixed(1)}% max drawdown and ${vol.toFixed(1)}% volatility — moderate exposure. Size positions accordingly.`
+      : `${dd.toFixed(1)}% max drawdown — moderate exposure. Size positions accordingly.`,
   };
 }
 
@@ -1024,10 +1029,10 @@ export interface VerdictResult {
 
 export function generateVerdict(metrics: BacktestMetrics): VerdictResult {
   const confidence = computeConfidence(metrics);
-  const ret    = metrics.total_return_pct;
-  const sharpe = metrics.sharpe_ratio;
-  const dd     = Math.abs(metrics.max_drawdown_pct);
-  const trades = metrics.total_trades;
+  const ret    = metrics.total_return_pct ?? 0;
+  const sharpe = metrics.sharpe_ratio ?? 0;
+  const dd     = Math.abs(metrics.max_drawdown_pct ?? 0);
+  const trades = metrics.total_trades ?? 0;
 
   if (ret < 0 || confidence.score < 35) {
     return {

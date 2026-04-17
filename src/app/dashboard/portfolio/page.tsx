@@ -356,9 +356,12 @@ function TrendPill({ count, label, cls }: { count: number; label: string; cls: s
 
 function StrategyTableRow({ row }: { row: StrategyRow }) {
   const { metrics } = row;
-  const href = row.latestRunId
-    ? `/dashboard/results/${row.latestRunId}`
-    : `/dashboard/strategies/${row.id}`;
+  // Strategies with no runs go directly to the backtest form — no nested link needed
+  const href = !row.hasRuns
+    ? `/dashboard/backtests?strategy=${row.id}`
+    : row.latestRunId
+      ? `/dashboard/results/${row.latestRunId}`
+      : `/dashboard/strategies/${row.id}`;
 
   // Guard each AI function — if metrics are malformed they could throw
   let verdict: ReturnType<typeof generateVerdict> | null = null;
@@ -488,13 +491,9 @@ function StrategyTableRow({ row }: { row: StrategyRow }) {
             )}
           </div>
         ) : !row.hasRuns ? (
-          <Link
-            href={`/dashboard/backtests?strategy=${row.id}`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors"
-          >
+          <span className="inline-flex items-center gap-1 text-xs text-accent">
             <Play size={11} /> Run first backtest
-          </Link>
+          </span>
         ) : <span className="text-xs text-text-muted/40">—</span>}
       </div>
 

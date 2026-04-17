@@ -82,8 +82,13 @@ export function AiPortfolioOverview({ runs, lastRunAt, trends = {} }: AiPortfoli
   const sorted = [...runs].sort((a, b) => b.returnPct - a.returnPct);
   const best = sorted[0];
   const worst = sorted[sorted.length - 1];
-  const bestRisk = generateRiskLabel(best.metrics);
-  const worstRisk = runs.length > 1 ? generateRiskLabel(worst.metrics) : null;
+
+  let bestRisk: ReturnType<typeof generateRiskLabel> | null = null;
+  let worstRisk: ReturnType<typeof generateRiskLabel> | null = null;
+  try { bestRisk = generateRiskLabel(best.metrics); } catch { /* skip if metrics malformed */ }
+  if (runs.length > 1) {
+    try { worstRisk = generateRiskLabel(worst.metrics); } catch { /* skip */ }
+  }
 
   const riskPillCls = {
     low:    "text-profit bg-profit/10 border-profit/20",
@@ -91,7 +96,10 @@ export function AiPortfolioOverview({ runs, lastRunAt, trends = {} }: AiPortfoli
     high:   "text-loss bg-loss/10 border-loss/20",
   };
 
-  const avgScore = runs.reduce((s, r) => s + computeConfidence(r.metrics).score, 0) / runs.length;
+  let avgScore = 50;
+  try {
+    avgScore = runs.reduce((s, r) => s + computeConfidence(r.metrics).score, 0) / runs.length;
+  } catch { /* keep default */ }
   const level = avgScore >= 65 ? "good" : avgScore >= 40 ? "neutral" : "risky";
   const status = STATUS[level];
   const StatusIcon = status.icon;
@@ -192,9 +200,11 @@ export function AiPortfolioOverview({ runs, lastRunAt, trends = {} }: AiPortfoli
               {formatPercent(best.returnPct)}
             </span>
             {trends[best.id] && <TrendBadge trend={trends[best.id]} size="sm" />}
-            <span className={cn("text-2xs font-semibold px-1.5 py-0.5 rounded-full border shrink-0", riskPillCls[bestRisk.level])}>
-              {bestRisk.label}
-            </span>
+            {bestRisk && (
+              <span className={cn("text-2xs font-semibold px-1.5 py-0.5 rounded-full border shrink-0", riskPillCls[bestRisk.level])}>
+                {bestRisk.label}
+              </span>
+            )}
             <ArrowRight size={11} className="text-text-muted group-hover:text-text-secondary transition-colors shrink-0" />
           </Link>
 
