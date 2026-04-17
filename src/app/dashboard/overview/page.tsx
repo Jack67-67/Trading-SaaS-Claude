@@ -15,7 +15,6 @@ import { TryExampleButton } from "@/components/dashboard/try-example-button";
 import { generateAlerts } from "@/lib/alerts";
 import type { AppAlert } from "@/lib/alerts";
 import { computeStrategyTrend, compareTwoRuns } from "@/lib/trends";
-import type { TrendLabel } from "@/lib/trends";
 import { TodayOverview } from "@/components/dashboard/today-overview";
 import type { StrategyOverviewCard } from "@/components/dashboard/today-overview";
 import { NextAction } from "@/components/dashboard/next-action";
@@ -28,16 +27,27 @@ import type { StrategyDailyUpdate } from "@/components/dashboard/daily-update";
 
 export const metadata: Metadata = { title: "Overview" };
 
-// ── Pure helper (module-level, no block-scope issues) ─────────────────────────
+// ── Pure helper (module-level) ─────────────────────────────────────────────────
 function firstRunSummary(returnPct: number, sharpe: number): string {
-  if (returnPct > 15 && sharpe > 1.2)
-    return `Strong first run — ${returnPct.toFixed(1)}% return with a Sharpe of ${sharpe.toFixed(2)}.`;
-  if (returnPct > 0)
-    return `Profitable first run at ${returnPct.toFixed(1)}% return. Run again to establish a trend direction.`;
-  return `First run came in negative at ${returnPct.toFixed(1)}%. Review the entry conditions before running again.`;
+  const r = typeof returnPct === "number" && isFinite(returnPct) ? returnPct : 0;
+  const s = typeof sharpe    === "number" && isFinite(sharpe)    ? sharpe    : 0;
+  if (r > 15 && s > 1.2)
+    return `Strong first run — ${r.toFixed(1)}% return with a Sharpe of ${s.toFixed(2)}.`;
+  if (r > 0)
+    return `Profitable first run at ${r.toFixed(1)}% return. Run again to establish a trend direction.`;
+  return `First run came in negative at ${r.toFixed(1)}%. Review the entry conditions before running again.`;
 }
 
-// ── Empty state (module-level, returned early — no data processing runs) ──────
+// ── Safe metric extractor ──────────────────────────────────────────────────────
+// Reads a numeric field from a raw metrics object. Falls back to 0 if the
+// field is missing, null, or not a finite number.
+function safeNum(m: Record<string, unknown> | undefined, key: string): number {
+  if (!m) return 0;
+  const v = m[key];
+  return typeof v === "number" && isFinite(v) ? v : 0;
+}
+
+// ── Empty state ────────────────────────────────────────────────────────────────
 function OverviewEmpty() {
   const dateLabel = new Date().toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric",
@@ -122,22 +132,12 @@ export default async function OverviewPage() {
     return <OverviewEmpty />;
   }
 
-  // ── Step 2: full data fetch (only runs when user has data) ─────────────────
+  // ── Step 2a: fetch data ────────────────────────────────────────────────────
+  // Each section has its own try/catch so a failure in one section does NOT
+  // prevent the rest of the page from rendering.
+
   let recentRuns: any[] = [];
-  let bestSharpe: string | null = null;
-  let avgRunTime: string | null = null;
-  let bestRun: { id: string; name: string; symbol: string; returnPct: number } | null = null;
-  let aiRunSummaries: {
-    id: string; name: string; symbol: string;
-    returnPct: number; sharpe: number; drawdown: number; trades: number;
-    metrics: BacktestMetrics;
-  }[] = [];
-  let strategyDailyUpdates: StrategyDailyUpdate[] = [];
-  let strategyOverviewCards: StrategyOverviewCard[] = [];
-  let dashboardAlerts: AppAlert[] = [];
-  let feedEvents: ActivityEvent[] = [];
-  let nextActions: NextActionItem[] = [];
-  let lastRunAt: string | null = null;
+  let completedRuns: any[] = [];
 
   try {
     const [rr, cr] = await Promise.all([
@@ -153,24 +153,40 @@ export default async function OverviewPage() {
         .eq("user_id", user.id)
         .eq("status", "completed"),
     ]);
+    recentRuns    = rr.data ?? [];
+    completedRuns = cr.data ?? [];
+  } catch {
+    // both stay []
+  }
 
-    recentRuns = rr.data ?? [];
-    const completedRuns: any[] = cr.data ?? [];
+  // ── Step 2b: aggregate stats ───────────────────────────────────────────────
+  let bestSharpe: string | null = null;
+  let avgRunTime: string | null = null;
+  let bestRun: { id: string; name: string; symbol: string; returnPct: number } | null = null;
+  let aiRunSummaries: {
+    id: string; name: string; symbol: string;
+    returnPct: number; sharpe: number; drawdown: number; trades: number;
+    metrics: BacktestMetrics;
+  }[] = [];
 
-    // ── Aggregate stats ───────────────────────────────────────────────────────
+  try {
     if (completedRuns.length > 0) {
       const sharpes = completedRuns
         .map((r) => {
-          const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
-          return m?.sharpe_ratio;
+          const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, unknown> | undefined;
+          const v = m?.sharpe_ratio;
+          return typeof v === "number" && isFinite(v) ? v : null;
         })
-        .filter((v): v is number => typeof v === "number" && !isNaN(v));
+        .filter((v): v is number => v !== null);
 
       if (sharpes.length > 0) bestSharpe = Math.max(...sharpes).toFixed(2);
 
       const durations = completedRuns
         .filter((r) => r.started_at && r.completed_at)
-        .map((r) => (new Date(r.completed_at as string).getTime() - new Date(r.started_at as string).getTime()) / 1000)
+        .map((r) => {
+          const diff = new Date(r.completed_at as string).getTime() - new Date(r.started_at as string).getTime();
+          return diff / 1000;
+        })
         .filter((d) => isFinite(d) && d > 0);
 
       if (durations.length > 0) {
@@ -180,124 +196,187 @@ export default async function OverviewPage() {
 
       let topReturn = -Infinity;
       for (const r of completedRuns) {
-        const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
+        const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, unknown> | undefined;
         const cfg = r.config as Record<string, unknown> | null;
-        const ret = m?.total_return_pct;
-        if (typeof ret === "number" && ret > topReturn) {
+        const ret = m ? safeNum(m as Record<string, unknown>, "total_return_pct") : null;
+        const hasRet = m && typeof (m as Record<string, unknown>).total_return_pct === "number";
+
+        if (hasRet && typeof ret === "number" && ret > topReturn) {
           topReturn = ret;
           bestRun = {
-            id: r.id as string,
+            id: String(r.id ?? ""),
             name: (cfg?.name as string) || (cfg?.symbol as string) || "—",
             symbol: (cfg?.symbol as string) || "—",
             returnPct: ret,
           };
         }
+
+        // Only include in AI summaries when the key metrics are real numbers
         if (
           m &&
-          typeof m.sharpe_ratio === "number" &&
-          typeof m.max_drawdown_pct === "number" &&
-          typeof m.total_trades === "number" &&
-          typeof ret === "number"
+          typeof (m as Record<string, unknown>).sharpe_ratio     === "number" &&
+          typeof (m as Record<string, unknown>).max_drawdown_pct === "number" &&
+          typeof (m as Record<string, unknown>).total_trades     === "number" &&
+          typeof (m as Record<string, unknown>).total_return_pct === "number"
         ) {
+          const mm = m as Record<string, unknown>;
           aiRunSummaries.push({
-            id: r.id as string,
-            name: (cfg?.name as string) || (cfg?.symbol as string) || "—",
-            symbol: (cfg?.symbol as string) || "—",
-            returnPct: ret,
-            sharpe: m.sharpe_ratio,
-            drawdown: Math.abs(m.max_drawdown_pct),
-            trades: m.total_trades,
-            metrics: m as unknown as BacktestMetrics,
+            id:        String(r.id ?? ""),
+            name:      (cfg?.name as string) || (cfg?.symbol as string) || "—",
+            symbol:    (cfg?.symbol as string) || "—",
+            returnPct: safeNum(mm, "total_return_pct"),
+            sharpe:    safeNum(mm, "sharpe_ratio"),
+            drawdown:  Math.abs(safeNum(mm, "max_drawdown_pct")),
+            trades:    safeNum(mm, "total_trades"),
+            metrics:   m as unknown as BacktestMetrics,
           });
         }
       }
     }
+  } catch {
+    // partial stats loss — bestSharpe/avgRunTime/bestRun/aiRunSummaries stay at their defaults
+  }
 
-    // ── Strategy run map ──────────────────────────────────────────────────────
-    const strategyRunMap = new Map<string, {
-      id: string; completedAt: string;
-      returnPct: number; sharpe: number; drawdown: number; winRate: number; trades: number;
-    }[]>();
+  // ── Step 2c: strategy run map ──────────────────────────────────────────────
+  const strategyRunMap = new Map<string, {
+    id: string; completedAt: string;
+    returnPct: number; sharpe: number; drawdown: number; winRate: number; trades: number;
+  }[]>();
 
+  try {
     for (const r of completedRuns) {
-      const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
+      const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, unknown> | undefined;
       const sid = r.strategy_id as string | undefined;
-      if (!m || !sid || typeof m.total_return_pct !== "number") continue;
+      if (!m || !sid || typeof (m as Record<string, unknown>).total_return_pct !== "number") continue;
+      const mm = m as Record<string, unknown>;
       const entry = strategyRunMap.get(sid) ?? [];
       entry.push({
-        id: r.id as string,
-        completedAt: (r.completed_at as string) ?? "",
-        returnPct: m.total_return_pct,
-        sharpe: m.sharpe_ratio ?? 0,
-        drawdown: Math.abs(m.max_drawdown_pct ?? 0),
-        winRate: m.win_rate_pct ?? 0,
-        trades: m.total_trades ?? 0,
+        id:          String(r.id ?? ""),
+        completedAt: (r.completed_at as string | null) ?? "",
+        returnPct:   safeNum(mm, "total_return_pct"),
+        sharpe:      safeNum(mm, "sharpe_ratio"),
+        drawdown:    Math.abs(safeNum(mm, "max_drawdown_pct")),
+        winRate:     safeNum(mm, "win_rate_pct"),
+        trades:      safeNum(mm, "total_trades"),
       });
       strategyRunMap.set(sid, entry);
     }
+  } catch {
+    // map stays partially filled or empty — the rest of the page still renders
+  }
 
-    // ── Alerts ────────────────────────────────────────────────────────────────
+  // ── Step 2d: alerts ────────────────────────────────────────────────────────
+  let dashboardAlerts: AppAlert[] = [];
+
+  try {
     const alertRunInputs = completedRuns.flatMap((r) => {
-      const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, number> | undefined;
+      const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, unknown> | undefined;
       const cfg = r.config as Record<string, unknown> | null;
-      if (!m || typeof m.total_return_pct !== "number" || typeof m.sharpe_ratio !== "number") return [];
+      if (
+        !m ||
+        typeof (m as Record<string, unknown>).total_return_pct !== "number" ||
+        typeof (m as Record<string, unknown>).sharpe_ratio     !== "number"
+      ) return [];
+      const mm = m as Record<string, unknown>;
       const stratName =
         (r as Record<string, unknown> & { strategies?: { name?: string } }).strategies?.name ||
         (cfg?.name as string) || (cfg?.symbol as string) || "—";
       return [{
-        id: r.id as string,
-        strategyId: (r.strategy_id as string) || (r.id as string),
+        id:           String(r.id ?? ""),
+        strategyId:   (r.strategy_id as string) || String(r.id ?? ""),
         strategyName: stratName,
-        symbol: (cfg?.symbol as string) || "—",
-        completedAt: (r.completed_at as string) || new Date().toISOString(),
-        returnPct: m.total_return_pct,
-        sharpe: m.sharpe_ratio,
-        drawdown: Math.abs(m.max_drawdown_pct ?? 0),
-        trades: m.total_trades ?? 0,
-        winRate: m.win_rate_pct ?? 0,
+        symbol:       (cfg?.symbol as string) || "—",
+        completedAt:  (r.completed_at as string) || new Date().toISOString(),
+        returnPct:    safeNum(mm, "total_return_pct"),
+        sharpe:       safeNum(mm, "sharpe_ratio"),
+        drawdown:     Math.abs(safeNum(mm, "max_drawdown_pct")),
+        trades:       safeNum(mm, "total_trades"),
+        winRate:      safeNum(mm, "win_rate_pct"),
       }];
     });
     dashboardAlerts = generateAlerts(alertRunInputs);
+  } catch {
+    // dashboardAlerts stays []
+  }
 
-    // ── Strategy overview cards ───────────────────────────────────────────────
+  // ── Step 2e: strategy overview cards + daily updates ───────────────────────
+  let strategyDailyUpdates: StrategyDailyUpdate[] = [];
+  let strategyOverviewCards: StrategyOverviewCard[] = [];
+
+  try {
     for (const [sid, sRuns] of strategyRunMap) {
-      const sorted = [...sRuns].sort((a, b) => a.completedAt.localeCompare(b.completedAt));
-      const latest = sorted[sorted.length - 1];
-      const prev = sorted.length >= 2 ? sorted[sorted.length - 2] : null;
+      try {
+        const sorted = [...sRuns].sort((a, b) =>
+          (a.completedAt || "").localeCompare(b.completedAt || "")
+        );
+        const latest = sorted[sorted.length - 1];
+        const prev   = sorted.length >= 2 ? sorted[sorted.length - 2] : null;
 
-      const runRecord = completedRuns.find((r) => (r.id as string) === latest.id);
-      const cfg = runRecord?.config as Record<string, unknown> | null;
-      const stratRef = runRecord as Record<string, unknown> & { strategies?: { name?: string } };
-      const stratName = stratRef?.strategies?.name || (cfg?.name as string) || sid.slice(0, 8);
-      const symbol = (cfg?.symbol as string) || "—";
+        const runRecord = completedRuns.find((r) => String(r.id ?? "") === latest.id);
+        const cfg       = runRecord?.config as Record<string, unknown> | null;
+        const stratRef  = runRecord as Record<string, unknown> & { strategies?: { name?: string } };
+        const stratName = stratRef?.strategies?.name || (cfg?.name as string) || sid.slice(0, 8);
+        const symbol    = (cfg?.symbol as string) || "—";
 
-      const summary = prev
-        ? compareTwoRuns(
-            { returnPct: latest.returnPct, sharpe: latest.sharpe, drawdown: latest.drawdown, winRate: latest.winRate, trades: latest.trades },
-            { returnPct: prev.returnPct,   sharpe: prev.sharpe,   drawdown: prev.drawdown,   winRate: prev.winRate,   trades: prev.trades },
-          ).summary
-        : firstRunSummary(latest.returnPct, latest.sharpe);
+        let summary: string;
+        try {
+          summary = prev
+            ? compareTwoRuns(
+                { returnPct: latest.returnPct, sharpe: latest.sharpe, drawdown: latest.drawdown, winRate: latest.winRate, trades: latest.trades },
+                { returnPct: prev.returnPct,   sharpe: prev.sharpe,   drawdown: prev.drawdown,   winRate: prev.winRate,   trades: prev.trades   },
+              ).summary
+            : firstRunSummary(latest.returnPct, latest.sharpe);
+        } catch {
+          summary = firstRunSummary(latest.returnPct, latest.sharpe);
+        }
 
-      const returnDelta = prev ? latest.returnPct - prev.returnPct : null;
-      const sharpeDelta = prev ? latest.sharpe - prev.sharpe : null;
-      const trend = computeStrategyTrend(
-        sorted.map((r) => ({ returnPct: r.returnPct, sharpe: r.sharpe, drawdown: r.drawdown, winRate: r.winRate, trades: r.trades }))
-      );
-      const stratAlerts = dashboardAlerts.filter((a) => a.strategyId === sid);
+        const returnDelta = prev ? latest.returnPct - prev.returnPct : null;
+        const sharpeDelta = prev ? latest.sharpe    - prev.sharpe    : null;
 
-      strategyDailyUpdates.push({
-        strategyId: sid, strategyName: stratName, symbol,
-        latestRunId: latest.id, lastAnalyzedAt: latest.completedAt || null,
-        returnPct: latest.returnPct, returnDelta, sharpeDelta, trend,
-        isFirstRun: sorted.length === 1,
-      });
+        let trend: ReturnType<typeof computeStrategyTrend> = null;
+        try {
+          trend = computeStrategyTrend(
+            sorted.map((r) => ({
+              returnPct: r.returnPct, sharpe: r.sharpe,
+              drawdown: r.drawdown, winRate: r.winRate, trades: r.trades,
+            }))
+          );
+        } catch {
+          // trend stays null
+        }
 
-      strategyOverviewCards.push({
-        strategyId: sid, strategyName: stratName, symbol,
-        latestRunId: latest.id, latestRunAt: latest.completedAt || new Date().toISOString(),
-        trend, returnPct: latest.returnPct, sharpe: latest.sharpe,
-        isBest: false, isWorst: false, summary, alerts: stratAlerts,
-      });
+        const stratAlerts = dashboardAlerts.filter((a) => a.strategyId === sid);
+
+        strategyDailyUpdates.push({
+          strategyId:     sid,
+          strategyName:   stratName,
+          symbol,
+          latestRunId:    latest.id || null,
+          lastAnalyzedAt: latest.completedAt || null,
+          returnPct:      latest.returnPct,
+          returnDelta,
+          sharpeDelta,
+          trend,
+          isFirstRun:     sorted.length === 1,
+        });
+
+        strategyOverviewCards.push({
+          strategyId:   sid,
+          strategyName: stratName,
+          symbol,
+          latestRunId:  latest.id || "",
+          latestRunAt:  latest.completedAt || new Date().toISOString(),
+          trend,
+          returnPct:    latest.returnPct,
+          sharpe:       latest.sharpe,
+          isBest:       false,
+          isWorst:      false,
+          summary,
+          alerts:       stratAlerts,
+        });
+      } catch {
+        // skip this strategy — don't let one bad strategy crash the whole loop
+      }
     }
 
     if (strategyOverviewCards.length > 0) {
@@ -308,29 +387,39 @@ export default async function OverviewPage() {
       });
       strategyOverviewCards.sort((a, b) => b.returnPct - a.returnPct);
     }
+  } catch {
+    // strategyOverviewCards / strategyDailyUpdates stay at whatever was built before error
+  }
 
-    // ── Activity feed ─────────────────────────────────────────────────────────
+  // ── Step 2f: activity feed + lastRunAt ─────────────────────────────────────
+  let feedEvents: ActivityEvent[] = [];
+  let lastRunAt: string | null = null;
+
+  try {
     const activityEvents: ActivityEvent[] = [];
     const sortedCompleted = [...completedRuns]
       .sort((a, b) => {
         const ta = new Date((a.completed_at as string | null) ?? 0).getTime();
         const tb = new Date((b.completed_at as string | null) ?? 0).getTime();
-        return tb - ta;
+        return (isFinite(tb) ? tb : 0) - (isFinite(ta) ? ta : 0);
       })
       .slice(0, 6);
 
     for (const r of sortedCompleted) {
       const cfg = r.config as Record<string, unknown> | null;
-      const ts = (r.completed_at as string | null) || (r.started_at as string | null);
+      const ts  = (r.completed_at as string | null) || (r.started_at as string | null);
       if (ts) {
         activityEvents.push({
-          id: `analysis-${r.id as string}`, type: "analysis",
-          title: `Backtest analyzed · ${(cfg?.symbol as string) || "—"}`,
+          id:       `analysis-${String(r.id ?? "")}`,
+          type:     "analysis",
+          title:    `Backtest analyzed · ${(cfg?.symbol as string) || "—"}`,
           subtitle: "AI insights generated",
-          timestamp: ts, runId: r.id as string,
+          timestamp: ts,
+          runId:    String(r.id ?? ""),
         });
       }
     }
+
     for (const alert of dashboardAlerts.slice(0, 5)) {
       const type: ActivityEvent["type"] =
         alert.title.toLowerCase().includes("improv") ? "improvement" :
@@ -338,10 +427,12 @@ export default async function OverviewPage() {
         alert.severity === "warning"                 ? "warning"     :
         "insight";
       activityEvents.push({
-        id: `alert-${alert.id}`, type,
-        title: alert.title,
-        subtitle: alert.strategyName !== alert.symbol ? alert.strategyName : undefined,
-        timestamp: alert.completedAt, runId: alert.runId,
+        id:        `alert-${alert.id}`,
+        type,
+        title:     alert.title,
+        subtitle:  alert.strategyName !== alert.symbol ? alert.strategyName : undefined,
+        timestamp: alert.completedAt,
+        runId:     alert.runId,
       });
     }
 
@@ -361,23 +452,31 @@ export default async function OverviewPage() {
       .filter((v): v is string => Boolean(v))
       .sort()
       .at(-1) ?? null;
+  } catch {
+    // feedEvents stays [], lastRunAt stays null
+  }
 
+  // ── Step 2g: next actions ──────────────────────────────────────────────────
+  let nextActions: NextActionItem[] = [];
+
+  try {
     nextActions = generateNextActions({
       alerts: dashboardAlerts,
       strategies: strategyOverviewCards.map((c) => ({
-        id: c.strategyId, name: c.strategyName, trend: c.trend,
-        returnPct: c.returnPct, latestRunId: c.latestRunId,
+        id:          c.strategyId,
+        name:        c.strategyName,
+        trend:       c.trend,
+        returnPct:   c.returnPct,
+        latestRunId: c.latestRunId,
       })),
-      totalRuns: backtestCount,
+      totalRuns:       backtestCount,
       totalStrategies: strategyCount,
     });
-
   } catch {
-    // processing failed — return empty state rather than crashing
-    return <OverviewEmpty />;
+    // nextActions stays []
   }
 
-  // ── Full render (only reached when user has data and processing succeeded) ──
+  // ── Full render ────────────────────────────────────────────────────────────
   const dateLabel = new Date().toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric",
   });
