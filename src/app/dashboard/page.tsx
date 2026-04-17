@@ -187,7 +187,7 @@ export default async function HomePage() {
       {/* ── Example result preview ────────────────────────────── */}
       <div className="space-y-2">
         <p className="text-2xs font-semibold text-text-muted/60 uppercase tracking-widest pl-1">
-          What you'll get
+          What you&apos;ll get
         </p>
         <ExampleResultPreview />
       </div>
