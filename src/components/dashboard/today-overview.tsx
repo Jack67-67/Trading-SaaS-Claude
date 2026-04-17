@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {
   TrendingUp, TrendingDown, Minus, AlertTriangle,
-  ArrowRight, AlertCircle, Info, Clock,
+  ArrowRight, AlertCircle, Info, CheckCircle2, Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatPercent, pnlColor } from "@/lib/utils";
@@ -64,9 +64,10 @@ const TREND_CFG = {
 } as const;
 
 const ALERT_CFG = {
-  critical: { Icon: AlertCircle, cls: "text-loss bg-loss/10 border border-loss/20" },
-  warning:  { Icon: AlertTriangle, cls: "text-yellow-400 bg-yellow-400/10 border border-yellow-400/20" },
-  info:     { Icon: Info, cls: "text-accent bg-accent/10 border border-accent/20" },
+  critical: { Icon: AlertCircle,    cls: "text-loss bg-loss/10 border border-loss/20" },
+  warning:  { Icon: AlertTriangle,  cls: "text-yellow-400 bg-yellow-400/10 border border-yellow-400/20" },
+  info:     { Icon: Info,           cls: "text-accent bg-accent/10 border border-accent/20" },
+  good:     { Icon: CheckCircle2,   cls: "text-profit bg-profit/10 border border-profit/20" },
 } as const;
 
 // ── Strategy row ─────────────────────────────────────────────────────────────
