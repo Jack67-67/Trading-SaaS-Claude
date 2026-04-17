@@ -163,15 +163,18 @@ export default async function ResultDetailPage({ params }: PageProps) {
             <RerunButton runId={run.id} />
           )}
           {run.status === "completed" && metrics && (
-            <ShareButton text={buildShareText({
-              strategyName,
-              symbol: (config.symbol as string) || "—",
-              interval: (config.interval as string) || "—",
-              periodLabel,
-              metrics,
-              buyAndHold: metrics.buy_and_hold_return_pct,
-              runName: (config.name as string) || undefined,
-            })} />
+            <ShareButton
+              text={buildShareText({
+                strategyName,
+                symbol: (config.symbol as string) || "—",
+                interval: (config.interval as string) || "—",
+                periodLabel,
+                metrics,
+                buyAndHold: metrics.buy_and_hold_return_pct,
+                runName: (config.name as string) || undefined,
+              })}
+              shareUrl={`${process.env.NEXT_PUBLIC_APP_URL || ""}/share/${run.id}`}
+            />
           )}
           {!!strategyRef?.id && (
             <Link href={`/dashboard/strategies/${strategyRef.id as string}`}>
