@@ -13,7 +13,11 @@ export const metadata: Metadata = {
   title: "Backtests",
 };
 
-export default async function BacktestsPage() {
+export default async function BacktestsPage({
+  searchParams,
+}: {
+  searchParams?: { strategy?: string };
+}) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -22,6 +26,24 @@ export default async function BacktestsPage() {
     .select("id, name, updated_at")
     .eq("user_id", user!.id)
     .order("updated_at", { ascending: false });
+
+  // If arriving from a strategy page, fetch the last run's config to pre-fill the form
+  const preselectedStrategyId = searchParams?.strategy || "";
+  let formInitialConfig: Record<string, unknown> | undefined;
+  if (preselectedStrategyId) {
+    const { data: lastRun } = await supabase
+      .from("backtest_runs")
+      .select("config")
+      .eq("user_id", user!.id)
+      .eq("strategy_id", preselectedStrategyId)
+      .eq("status", "completed")
+      .order("completed_at", { ascending: false })
+      .limit(1)
+      .single() as unknown as { data: { config: Record<string, unknown> } | null };
+    if (lastRun?.config) {
+      formInitialConfig = lastRun.config;
+    }
+  }
 
   const { data: runs } = await supabase
     .from("backtest_runs")
@@ -105,7 +127,10 @@ export default async function BacktestsPage() {
         {/* Form — 3 cols */}
         <div className="xl:col-span-3">
           <Suspense fallback={null}>
-            <BacktestForm strategies={strategyList} />
+            <BacktestForm
+              strategies={strategyList}
+              initialConfig={formInitialConfig as any}
+            />
           </Suspense>
         </div>
 

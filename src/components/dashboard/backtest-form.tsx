@@ -14,6 +14,19 @@ import { cn } from "@/lib/utils";
 
 interface BacktestFormProps {
   strategies: { id: string; name: string; updated_at: string }[];
+  /** When provided, pre-fills the form with the last run's settings. */
+  initialConfig?: {
+    strategy_id?: string;
+    symbol?: string;
+    interval?: string;
+    start?: string | null;
+    end?: string | null;
+    entry?: Record<string, unknown>;
+    risk?: Record<string, unknown>;
+    params?: Record<string, unknown>;
+    commission_pct?: number;
+    slippage_pct?: number;
+  };
 }
 
 const DEFAULT_ENTRY = "{}";
@@ -26,37 +39,46 @@ function isValidJson(str: string) {
   try { JSON.parse(s); return true; } catch { return false; }
 }
 
-export function BacktestForm({ strategies }: BacktestFormProps) {
+function jsonOrDefault(v: Record<string, unknown> | undefined, fallback: string) {
+  if (!v || Object.keys(v).length === 0) return fallback;
+  return JSON.stringify(v, null, 2);
+}
+
+export function BacktestForm({ strategies, initialConfig }: BacktestFormProps) {
   const searchParams = useSearchParams();
-  const preselectedStrategy = searchParams.get("strategy") || "";
+  const preselectedStrategy = initialConfig?.strategy_id || searchParams.get("strategy") || "";
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
 
   const [strategyId, setStrategyId] = useState(preselectedStrategy);
   const [name, setName] = useState("");
-  const [symbol, setSymbol] = useState("SPY");
-  const [interval, setInterval] = useState("1d");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [entryJson, setEntryJson] = useState(DEFAULT_ENTRY);
-  const [riskJson, setRiskJson] = useState(DEFAULT_RISK);
-  const [paramsJson, setParamsJson] = useState(DEFAULT_PARAMS);
-  const [commissionPct, setCommissionPct] = useState("0.1");
-  const [slippagePct, setSlippagePct] = useState("0.05");
+  const [symbol, setSymbol] = useState(initialConfig?.symbol || "SPY");
+  const [interval, setInterval] = useState(initialConfig?.interval || "1d");
+  const [start, setStart] = useState(initialConfig?.start || "");
+  const [end, setEnd] = useState(initialConfig?.end || "");
+  const [entryJson, setEntryJson] = useState(jsonOrDefault(initialConfig?.entry, DEFAULT_ENTRY));
+  const [riskJson, setRiskJson] = useState(jsonOrDefault(initialConfig?.risk, DEFAULT_RISK));
+  const [paramsJson, setParamsJson] = useState(jsonOrDefault(initialConfig?.params, DEFAULT_PARAMS));
+  const [commissionPct, setCommissionPct] = useState(
+    initialConfig?.commission_pct != null ? String(initialConfig.commission_pct) : "0.1"
+  );
+  const [slippagePct, setSlippagePct] = useState(
+    initialConfig?.slippage_pct != null ? String(initialConfig.slippage_pct) : "0.05"
+  );
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const handleReset = () => {
     setStrategyId(preselectedStrategy);
     setName("");
-    setSymbol("SPY");
-    setInterval("1d");
-    setStart("");
-    setEnd("");
-    setEntryJson(DEFAULT_ENTRY);
-    setRiskJson(DEFAULT_RISK);
-    setParamsJson(DEFAULT_PARAMS);
-    setCommissionPct("0.1");
-    setSlippagePct("0.05");
+    setSymbol(initialConfig?.symbol || "SPY");
+    setInterval(initialConfig?.interval || "1d");
+    setStart(initialConfig?.start || "");
+    setEnd(initialConfig?.end || "");
+    setEntryJson(jsonOrDefault(initialConfig?.entry, DEFAULT_ENTRY));
+    setRiskJson(jsonOrDefault(initialConfig?.risk, DEFAULT_RISK));
+    setParamsJson(jsonOrDefault(initialConfig?.params, DEFAULT_PARAMS));
+    setCommissionPct(initialConfig?.commission_pct != null ? String(initialConfig.commission_pct) : "0.1");
+    setSlippagePct(initialConfig?.slippage_pct != null ? String(initialConfig.slippage_pct) : "0.05");
     setShowAdvanced(false);
   };
 
