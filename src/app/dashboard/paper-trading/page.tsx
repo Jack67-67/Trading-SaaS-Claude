@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus, TrendingUp, TrendingDown, Minus, Activity, RefreshCw, Bot, ShieldX } from "lucide-react";
+import { Plus, TrendingUp, TrendingDown, Minus, Activity, RefreshCw } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatPercent, pnlColor } from "@/lib/utils";
 import { timeAgo } from "@/components/dashboard/daily-update";
@@ -32,7 +32,7 @@ export default async function PaperTradingPage() {
     id: string; name: string; symbol: string; interval: string;
     status: string; last_results: unknown; last_refreshed_at: string | null;
     created_at: string; start_date: string; initial_capital: unknown;
-    strategy_id: string; autotrading_enabled: boolean;
+    strategy_id: string;
   };
   let sessions: SessionRow[] = [];
 
@@ -53,7 +53,7 @@ export default async function PaperTradingPage() {
 
     const { data, error } = await supabase
       .from("paper_trade_sessions")
-      .select("id, name, symbol, interval, status, last_results, last_refreshed_at, created_at, start_date, initial_capital, strategy_id, autotrading_enabled")
+      .select("id, name, symbol, interval, status, last_results, last_refreshed_at, created_at, start_date, initial_capital, strategy_id")
       .eq("user_id", user!.id)
       .order("created_at", { ascending: false });
 
@@ -122,9 +122,6 @@ export default async function PaperTradingPage() {
             const returnPct: number | null = metrics?.total_return_pct ?? null;
             const openPositions: unknown[] = (results?.open_positions as unknown[]) ?? [];
             const hasPosition = openPositions.length > 0;
-            const isStopped = sess.status === "stopped";
-            const isPaused = sess.status === "paused";
-            const isAutotrading = sess.autotrading_enabled && !isStopped && !isPaused;
 
             return (
               <div key={sess.id} className="relative group">
@@ -145,23 +142,6 @@ export default async function PaperTradingPage() {
                       <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">{sess.symbol}</span>
                       <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">{sess.interval}</span>
                       {hasPosition && <span className="text-2xs font-semibold text-profit">● In position</span>}
-                      {isAutotrading && (
-                        <span className="inline-flex items-center gap-1 text-2xs font-semibold text-profit bg-profit/10 border border-profit/20 rounded-full px-1.5 py-0.5">
-                          <Bot size={9} />
-                          Auto
-                        </span>
-                      )}
-                      {isPaused && (
-                        <span className="text-2xs font-semibold text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full px-1.5 py-0.5">
-                          Paused
-                        </span>
-                      )}
-                      {isStopped && (
-                        <span className="inline-flex items-center gap-1 text-2xs font-semibold text-loss bg-loss/10 border border-loss/20 rounded-full px-1.5 py-0.5">
-                          <ShieldX size={9} />
-                          Stopped
-                        </span>
-                      )}
                     </div>
                   </div>
                   <div className="text-right shrink-0">

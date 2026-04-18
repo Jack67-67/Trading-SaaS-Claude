@@ -11,6 +11,7 @@ import {
   Sparkles,
   Layers2,
   Activity,
+  Bot,
   Settings,
   ChevronsLeft,
   ChevronsRight,
@@ -28,6 +29,7 @@ const iconMap = {
   Sparkles,
   Layers2,
   Activity,
+  Bot,
 } as const;
 
 const navItems = [
@@ -39,6 +41,7 @@ const navItems = [
   { label: "Results",       href: "/dashboard/results",     icon: "BarChart3" as const,       badge: null },
   { label: "AI Strategy",   href: "/dashboard/ai-strategy",    icon: "Sparkles" as const,   badge: "New" },
   { label: "Paper Trading", href: "/dashboard/paper-trading",  icon: "Activity" as const,   badge: null  },
+  { label: "Autotrading",   href: "/dashboard/autotrading",    icon: "Bot" as const,         badge: "New" },
 ];
 
 export function Sidebar({ alertCount = 0 }: { alertCount?: number }) {

@@ -154,12 +154,4 @@ export async function refreshPaperTradingSession(
 
   revalidatePath(`/dashboard/paper-trading/${sessionId}`);
   revalidatePath("/dashboard/paper-trading");
-
-  // Run safety checks if autotrading is enabled — non-fatal
-  try {
-    const { runSafetyChecks } = await import("@/app/actions/autotrading");
-    await runSafetyChecks(sessionId);
-  } catch (safetyErr) {
-    console.error("[paper-trading] safety check failed (non-fatal):", safetyErr);
-  }
 }
