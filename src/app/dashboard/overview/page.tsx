@@ -502,6 +502,11 @@ export default async function OverviewPage() {
         </div>
       </div>
 
+      {/* ── Alerts ──────────────────────────────────────────────── */}
+      {dashboardAlerts.length > 0 && (
+        <AiAlerts alerts={dashboardAlerts} variant="full" />
+      )}
+
       {/* ── Today's Update ──────────────────────────────────────── */}
       {(strategyDailyUpdates.length > 0 || strategyCount > 0) && (
         <DailyUpdate
@@ -526,11 +531,6 @@ export default async function OverviewPage() {
       {/* ── Today's Overview ────────────────────────────────────── */}
       {strategyOverviewCards.length > 0 && (
         <TodayOverview strategies={strategyOverviewCards} />
-      )}
-
-      {/* ── AI Alerts ───────────────────────────────────────────── */}
-      {dashboardAlerts.length > 0 && strategyOverviewCards.length === 0 && (
-        <AiAlerts alerts={dashboardAlerts} variant="full" />
       )}
 
       {/* ── Stats strip ─────────────────────────────────────────── */}

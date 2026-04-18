@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 import { MessageSquare, Sparkles, ArrowRight, CheckCircle2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TryExampleButton } from "@/components/dashboard/try-example-button";
+import { AlertsBar } from "@/components/dashboard/alerts-bar";
+import { generateAlerts } from "@/lib/alerts";
+import type { AppAlert } from "@/lib/alerts";
 import { cn } from "@/lib/utils";
 
 // ── Static example result preview ──────────────────────────────────────────────
@@ -96,6 +99,51 @@ export default async function HomePage() {
     // Non-critical — hasData stays false
   }
 
+  // Alerts — compare latest vs previous run per strategy
+  let homeAlerts: AppAlert[] = [];
+  if (hasData) {
+    try {
+      const { data: runs } = await supabase
+        .from("backtest_runs")
+        .select("id, strategy_id, results, completed_at, config, strategies(name)")
+        .eq("user_id", user.id)
+        .eq("status", "completed")
+        .order("completed_at", { ascending: false })
+        .limit(40) as unknown as { data: any[] | null };
+
+      const inputs = (runs ?? []).flatMap((r) => {
+        const m = (r.results as Record<string, unknown> | null)?.metrics as Record<string, unknown> | undefined;
+        const cfg = r.config as Record<string, unknown> | null;
+        if (
+          !m ||
+          typeof (m as Record<string, unknown>).total_return_pct !== "number" ||
+          typeof (m as Record<string, unknown>).sharpe_ratio !== "number"
+        ) return [];
+        const mm = m as Record<string, unknown>;
+        const stratName =
+          (r as Record<string, unknown> & { strategies?: { name?: string } }).strategies?.name ||
+          (cfg?.name as string) ||
+          (cfg?.symbol as string) || "—";
+        return [{
+          id:           String(r.id ?? ""),
+          strategyId:   (r.strategy_id as string) || String(r.id ?? ""),
+          strategyName: stratName,
+          symbol:       (cfg?.symbol as string) || "—",
+          completedAt:  (r.completed_at as string) || new Date().toISOString(),
+          returnPct:    mm.total_return_pct as number,
+          sharpe:       mm.sharpe_ratio as number,
+          drawdown:     Math.abs((mm.max_drawdown_pct as number | undefined) ?? 0),
+          trades:       (mm.total_trades as number | undefined) ?? 0,
+          winRate:      (mm.win_rate_pct as number | undefined) ?? 0,
+        }];
+      });
+
+      homeAlerts = generateAlerts(inputs).slice(0, 5);
+    } catch {
+      // stays []
+    }
+  }
+
   return (
     <div className="space-y-6 animate-fade-in max-w-2xl">
 
@@ -109,6 +157,11 @@ export default async function HomePage() {
           No emotion. No guesswork. Just data.
         </p>
       </div>
+
+      {/* ── Alerts ────────────────────────────────────────────── */}
+      {homeAlerts.length > 0 && (
+        <AlertsBar alerts={homeAlerts} limit={4} />
+      )}
 
       {/* ── What do you want to do? ───────────────────────────── */}
       <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden relative">
