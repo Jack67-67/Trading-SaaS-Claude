@@ -10,6 +10,7 @@ import { cn, formatPercent, pnlColor } from "@/lib/utils";
 import { timeAgo } from "@/components/dashboard/daily-update";
 import { RefreshPaperSessionButton } from "@/components/dashboard/refresh-paper-session-button";
 import { DeletePaperSessionButton } from "@/components/dashboard/delete-paper-session-button";
+import { AutotradingControlCenter } from "@/components/dashboard/autotrading-control-center";
 
 export const metadata: Metadata = { title: "Paper Session" };
 
@@ -222,6 +223,40 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
   const sessInterval = String(sess.interval ?? "");
   const sessLastRefreshed = sess.last_refreshed_at as string | null;
 
+  // ── Autotrading fields ─────────────────────────────────────────────────────
+  const autotradingEnabled = Boolean(sess.autotrading_enabled ?? false);
+  const maxCapitalPct      = Number(sess.max_capital_pct ?? 100);
+  const maxWeeklyLossPct   = Number(sess.max_weekly_loss_pct ?? 10);
+  const maxMonthlyLossPct  = Number(sess.max_monthly_loss_pct ?? 20);
+  const pauseOnEvents      = Boolean(sess.pause_on_events ?? true);
+  const sessStatus         = String(sess.status ?? "active");
+  const pauseReason        = (sess.pause_reason as string | null) ?? null;
+  const lastAction         = (sess.last_action as string | null) ?? null;
+  const lastActionAt       = (sess.last_action_at as string | null) ?? null;
+
+  // Compute weekly/monthly P&L from equity curve for AI recommendations
+  function findEquityAtOffset(targetMs: number): number | null {
+    let best: { timestamp: string; equity: number } | null = null;
+    for (const pt of equityCurve) {
+      if (new Date(pt.timestamp).getTime() <= targetMs) best = pt;
+      else break;
+    }
+    return best?.equity ?? null;
+  }
+  const now = Date.now();
+  const DAY_MS = 86_400_000;
+  const currentEquity = equityCurve.length > 0 ? equityCurve[equityCurve.length - 1].equity : null;
+  const equity7d = currentEquity !== null ? findEquityAtOffset(now - 7 * DAY_MS) : null;
+  const equity30d = currentEquity !== null ? findEquityAtOffset(now - 30 * DAY_MS) : null;
+  const weeklyLossPct =
+    equity7d !== null && equity7d > 0 && currentEquity !== null
+      ? ((currentEquity - equity7d) / equity7d) * 100
+      : null;
+  const monthlyLossPct =
+    equity30d !== null && equity30d > 0 && currentEquity !== null
+      ? ((currentEquity - equity30d) / equity30d) * 100
+      : null;
+
   return (
     <div className="space-y-6 animate-fade-in">
 
@@ -335,6 +370,23 @@ export default async function PaperSessionDetailPage({ params }: { params: { id:
               <StatCell label="Trades" value={String(metrics!.total_trades ?? 0)} sub={`PF ${(metrics!.profit_factor ?? 0).toFixed(2)}`} />
             </div>
           </div>
+
+          {/* ── Autotrading control center ───────────────────────────────── */}
+          <AutotradingControlCenter
+            sessionId={params.id}
+            status={sessStatus}
+            autotradingEnabled={autotradingEnabled}
+            pauseReason={pauseReason}
+            lastAction={lastAction}
+            lastActionAt={lastActionAt}
+            maxCapitalPct={maxCapitalPct}
+            maxWeeklyLossPct={maxWeeklyLossPct}
+            maxMonthlyLossPct={maxMonthlyLossPct}
+            pauseOnEvents={pauseOnEvents}
+            metrics={metrics}
+            weeklyLossPct={weeklyLossPct}
+            monthlyLossPct={monthlyLossPct}
+          />
 
           {/* ── Trade log ────────────────────────────────────────────────── */}
           <div className="rounded-2xl border border-border overflow-hidden">
