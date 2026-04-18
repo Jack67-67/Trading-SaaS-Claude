@@ -21,6 +21,8 @@ import { compareTwoRuns } from "@/lib/trends";
 import { RunComparisonPanel } from "@/components/dashboard/run-comparison";
 import { ShareButton } from "@/components/dashboard/share-button";
 import { RerunButton } from "@/components/dashboard/rerun-button";
+import { MarketContextBanner } from "@/components/dashboard/market-context-banner";
+import { getOverlappingEvents } from "@/lib/market-events";
 import type { RiskLevel, TimeframeHorizon, ConfidenceSignal } from "@/lib/ai-strategy";
 import type { BacktestStatus, BacktestMetrics, EquityCurvePoint } from "@/types";
 
@@ -94,6 +96,8 @@ export default async function ResultDetailPage({ params }: PageProps) {
         ? periodStart.slice(0, 4)
         : `${periodStart.slice(0, 4)}–${periodEnd.slice(0, 4)}`)
     : null;
+
+  const marketEvents = getOverlappingEvents(periodStart, periodEnd);
 
   return (
     <div className="space-y-5 animate-fade-in max-w-5xl">
@@ -272,6 +276,9 @@ export default async function ResultDetailPage({ params }: PageProps) {
               symbol={(config.symbol as string) || "asset"}
             />
           )}
+
+          {/* Market context — events overlapping this backtest's date range */}
+          <MarketContextBanner events={marketEvents} />
 
           {/* Comparison vs previous run */}
           {comparison && (
@@ -723,6 +730,12 @@ function KpiHero({ metrics, hasCosts }: { metrics: BacktestMetrics; hasCosts?: b
   const { text: sText, cls: sCls } = sharpeLabel(metrics.sharpe_ratio);
   const TrendIcon = isUp ? TrendingUp : TrendingDown;
 
+  // Benchmark delta for inline display
+  const bah = typeof metrics.buy_and_hold_return_pct === "number" ? metrics.buy_and_hold_return_pct : null;
+  const bahDelta = bah !== null ? metrics.total_return_pct - bah : null;
+  const bahBeats = bahDelta !== null && bahDelta > 0.5;
+  const bahBelow = bahDelta !== null && bahDelta < -0.5;
+
   return (
     <div className={cn(
       "rounded-2xl border overflow-hidden",
@@ -750,9 +763,27 @@ function KpiHero({ metrics, hasCosts }: { metrics: BacktestMetrics; hasCosts?: b
             </p>
             <TrendIcon size={20} className={cn("mb-1.5 shrink-0", pnlColor(metrics.total_return_pct))} />
           </div>
-          <p className="text-xs text-text-muted font-mono mt-3">
-            {formatPercent(metrics.annualized_return_pct)} annualized
-          </p>
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
+            <p className="text-xs text-text-muted font-mono">
+              {formatPercent(metrics.annualized_return_pct)} annualized
+            </p>
+            {bahDelta !== null && (
+              <span className={cn(
+                "text-2xs font-semibold border rounded-full px-2 py-0.5",
+                bahBeats
+                  ? "text-profit bg-profit/10 border-profit/20"
+                  : bahBelow
+                    ? "text-loss bg-loss/10 border-loss/20"
+                    : "text-text-muted bg-surface-2 border-border"
+              )}>
+                {bahBeats
+                  ? `+${bahDelta.toFixed(1)}pp vs B&H`
+                  : bahBelow
+                    ? `${bahDelta.toFixed(1)}pp vs B&H`
+                    : "≈ buy & hold"}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Sharpe Ratio */}
