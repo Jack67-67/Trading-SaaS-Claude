@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, RefreshCw, BarChart3, Activity,
-  AlertTriangle, Play, TrendingUp, TrendingDown,
+  AlertTriangle, Play, TrendingUp, TrendingDown, CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -19,14 +20,54 @@ interface BacktestDetailViewProps {
 }
 
 export function BacktestDetailView({ initialRun, strategyName }: BacktestDetailViewProps) {
+  const router = useRouter();
   const { run, isLive, error, refresh } = useBacktestRealtime({ initialRun });
   const config = run.config as unknown as BacktestConfig;
+
+  // Track whether this run was live when the page first loaded (for auto-redirect)
+  const wasInProgress = useRef(
+    initialRun.status === "pending" || initialRun.status === "running"
+  );
+  const [redirecting, setRedirecting] = useState(false);
 
   const [, setTick] = useState(0);
   useEffect(() => {
     if (run.status !== "running" && run.status !== "pending") return;
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
+  }, [run.status]);
+
+  // ── Client-side timing diagnostics ──────────────────────────────────────
+  useEffect(() => {
+    if (run.status === "running") {
+      console.log(`[backtest:${run.id.slice(0, 8)}] → running`);
+    }
+    if (run.status === "completed") {
+      const dur =
+        run.started_at && run.completed_at
+          ? Math.round(
+              (new Date(run.completed_at).getTime() -
+                new Date(run.started_at).getTime()) /
+                1000
+            )
+          : null;
+      console.log(
+        `[backtest:${run.id.slice(0, 8)}] → completed duration=${dur ?? "?"}s`
+      );
+      // Auto-redirect to results only if the run was live when we arrived
+      if (wasInProgress.current) {
+        setRedirecting(true);
+        const t = setTimeout(
+          () => router.push(`/dashboard/results/${run.id}`),
+          1800
+        );
+        return () => clearTimeout(t);
+      }
+    }
+    if (run.status === "failed") {
+      console.log(`[backtest:${run.id.slice(0, 8)}] → failed`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run.status]);
 
   const startedAt = run.started_at ? new Date(run.started_at) : null;
@@ -107,6 +148,19 @@ export function BacktestDetailView({ initialRun, strategyName }: BacktestDetailV
           symbol={config.symbol}
           interval={config.interval}
         />
+      )}
+
+      {/* ── Redirecting banner (shown briefly after live run completes) ── */}
+      {redirecting && (
+        <div className="rounded-xl border border-profit/20 bg-profit/[0.04] px-5 py-4 flex items-center gap-3">
+          <CheckCircle2 size={16} className="text-profit shrink-0" />
+          <p className="text-sm font-medium text-text-primary">
+            Backtest complete — taking you to results…
+          </p>
+          <span className="ml-auto text-xs text-text-muted font-mono">
+            {elapsed !== null ? `${elapsed}s` : ""}
+          </span>
+        </div>
       )}
 
       {/* ── Failed ─────────────────────────────────────────────── */}
@@ -270,15 +324,19 @@ function BacktestProgressCard({
 }) {
   const e = elapsed ?? 0;
 
-  // Determine which step is actively in progress based on status + elapsed
-  // 0 = queued, 1 = fetching data, 2 = running simulation, 3 = done (not shown here)
+  // Step progression based on status + elapsed time.
+  // Thresholds are approximate — Polygon fetch is typically 3–10 s,
+  // simulation 1–20 s, metric calc is near-instant.
+  // 0 = queued, 1 = fetching data, 2 = running simulation, 3 = processing results
   let activeStep: number;
   if (status === "pending") {
     activeStep = 0;
-  } else if (e < 12) {
+  } else if (e < 6) {
     activeStep = 1;
-  } else {
+  } else if (e < 20) {
     activeStep = 2;
+  } else {
+    activeStep = 3;
   }
 
   const steps = [
@@ -297,8 +355,8 @@ function BacktestProgressCard({
       sub: "Simulating trades bar-by-bar against real market data",
     },
     {
-      label: "Generating AI analysis",
-      sub: "Scoring performance and writing recommendations",
+      label: "Calculating performance",
+      sub: "Computing Sharpe, drawdown, win rate, and other metrics",
     },
   ];
 
@@ -309,7 +367,10 @@ function BacktestProgressCard({
         <div
           className={cn(
             "h-full bg-accent transition-all duration-1000",
-            status === "pending" ? "w-[8%]" : activeStep === 1 ? "w-[35%]" : "w-[65%] animate-pulse"
+            status === "pending"  ? "w-[8%]"  :
+            activeStep === 1      ? "w-[30%]" :
+            activeStep === 2      ? "w-[60%]" :
+                                    "w-[82%] animate-pulse"
           )}
         />
       </div>

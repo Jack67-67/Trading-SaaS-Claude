@@ -61,6 +61,7 @@ export async function submitBacktestAction(formData: FormData) {
   const config = { strategy_id: strategyId, name, symbol, interval, start, end, entry, risk, params, commission_pct: commissionPct, slippage_pct: slippagePct };
 
   // ─── Insert pending run in Supabase ───────────────────────
+  const t0 = Date.now();
   const { data: run, error: insertError } = await supabase
     .from("backtest_runs")
     .insert({
@@ -73,6 +74,7 @@ export async function submitBacktestAction(formData: FormData) {
     .single();
 
   if (insertError) return { error: `Failed to create backtest: ${insertError.message}` };
+  console.log(`[backtest] db_insert=${Date.now() - t0}ms run=${run.id}`);
 
   // ─── POST to FastAPI: /backtests/run ──────────────────────
   const apiUrl = process.env.NEXT_PUBLIC_BACKTEST_API_URL || "http://localhost:8000";
@@ -92,6 +94,7 @@ export async function submitBacktestAction(formData: FormData) {
     slippage_pct: slippagePct,
   };
 
+  const t1 = Date.now();
   try {
     const apiRes = await fetch(`${apiUrl}/backtests/run`, {
       method: "POST",
@@ -101,6 +104,7 @@ export async function submitBacktestAction(formData: FormData) {
       },
       body: JSON.stringify(payload),
     });
+    console.log(`[backtest] api_dispatch=${Date.now() - t1}ms status=${apiRes.status} run=${run.id}`);
 
     if (!apiRes.ok) {
       const errorBody = await apiRes.json().catch(() => null);
@@ -113,7 +117,8 @@ export async function submitBacktestAction(formData: FormData) {
 
       return { error: `Backtest engine error: ${detail}` };
     }
-  } catch {
+  } catch (err) {
+    console.log(`[backtest] api_dispatch=${Date.now() - t1}ms ERROR run=${run.id}`);
     await supabase.from("backtest_runs").update({
       status: "failed",
       error_message: "Could not reach backtest engine. Is it running?",
@@ -121,6 +126,7 @@ export async function submitBacktestAction(formData: FormData) {
 
     return { error: "Could not connect to the backtest engine. Please try again later." };
   }
+  console.log(`[backtest] total_submit=${Date.now() - t0}ms run=${run.id}`);
 
   revalidatePath("/dashboard/backtests");
   revalidatePath("/dashboard");
