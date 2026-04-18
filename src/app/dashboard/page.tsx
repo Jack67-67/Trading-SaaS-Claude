@@ -4,7 +4,9 @@ import { MessageSquare, Sparkles, ArrowRight, CheckCircle2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/server";
 import { TryExampleButton } from "@/components/dashboard/try-example-button";
 import { AlertsBar } from "@/components/dashboard/alerts-bar";
+import { EventGuard } from "@/components/dashboard/event-guard";
 import { generateAlerts } from "@/lib/alerts";
+import { getTodayGuard } from "@/lib/economic-calendar";
 import type { AppAlert } from "@/lib/alerts";
 import { cn } from "@/lib/utils";
 
@@ -144,6 +146,9 @@ export default async function HomePage() {
     }
   }
 
+  // Today's event guard — no DB needed, pure calendar lookup
+  const todayGuard = getTodayGuard();
+
   return (
     <div className="space-y-6 animate-fade-in max-w-2xl">
 
@@ -157,6 +162,11 @@ export default async function HomePage() {
           No emotion. No guesswork. Just data.
         </p>
       </div>
+
+      {/* ── Event guard ───────────────────────────────────────── */}
+      {todayGuard && todayGuard.level !== "upcoming" && (
+        <EventGuard guard={todayGuard} variant="compact" />
+      )}
 
       {/* ── Alerts ────────────────────────────────────────────── */}
       {homeAlerts.length > 0 && (

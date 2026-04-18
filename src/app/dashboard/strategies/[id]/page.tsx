@@ -8,8 +8,10 @@ import { TrendBadge, RunComparisonPanel } from "@/components/dashboard/run-compa
 import { StrategyRunHistory } from "@/components/dashboard/strategy-run-history";
 import type { StrategyRunRow } from "@/components/dashboard/strategy-run-history";
 import { RerunButton } from "@/components/dashboard/rerun-button";
+import { EventGuard } from "@/components/dashboard/event-guard";
 import { generateAlerts } from "@/lib/alerts";
 import { computeStrategyTrend, compareTwoRuns } from "@/lib/trends";
+import { getTodayGuard } from "@/lib/economic-calendar";
 import { formatPercent, pnlColor, cn } from "@/lib/utils";
 
 interface PageProps {
@@ -103,6 +105,9 @@ export default async function StrategyEditorPage({ params }: PageProps) {
       )
     : null;
 
+  // Today's event guard
+  const todayGuard = getTodayGuard();
+
   // Last run's config (for "Run again" link pre-fill)
   const lastRunRecord = latestRun
     ? (strategyRuns ?? []).find((r) => r.id === latestRun.id)
@@ -139,6 +144,11 @@ export default async function StrategyEditorPage({ params }: PageProps) {
       {/* ── Alerts ─────────────────────────────────────────────── */}
       {strategyAlerts.length > 0 && (
         <AiAlerts alerts={strategyAlerts} variant="compact" />
+      )}
+
+      {/* ── Event guard ─────────────────────────────────────────── */}
+      {todayGuard && todayGuard.level !== "upcoming" && (
+        <EventGuard guard={todayGuard} variant="full" />
       )}
 
       {/* ── Last Run + Rerun ─────────────────────────────────────── */}
