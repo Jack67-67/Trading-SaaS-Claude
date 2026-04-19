@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
-import { User, Key, AlertTriangle, LogOut, Shield, Calendar, Mail, Hash } from "lucide-react";
+import { User, Key, AlertTriangle, LogOut, Shield, Calendar, Mail, Hash, Link2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { signOutAction } from "@/app/actions/auth";
 import { cn } from "@/lib/utils";
+import { BrokerConnectionSection } from "@/components/dashboard/broker-connection-section";
+import type { BrokerConnectionRow } from "@/app/actions/broker";
 
 export const metadata: Metadata = {
   title: "Settings",
@@ -39,6 +41,19 @@ export default async function SettingsPage() {
   const tier = profile?.subscription_tier || "free";
   const apiUrl =
     (process.env.NEXT_PUBLIC_BACKTEST_API_URL || "http://localhost:8000") + "/api/v1";
+
+  // Fetch broker connections (exclude credentials — server-side only)
+  let brokerConnections: BrokerConnectionRow[] = [];
+  try {
+    const { data: conns } = await supabase
+      .from("broker_connections")
+      .select("id, broker, status, display_name, account_number, error_message, last_verified_at, created_at")
+      .eq("user_id", user!.id)
+      .order("created_at", { ascending: true });
+    brokerConnections = (conns as BrokerConnectionRow[]) ?? [];
+  } catch {
+    // Table may not exist yet (pre-migration) — graceful fallback
+  }
 
   return (
     <div className="space-y-5 animate-fade-in max-w-2xl">
@@ -116,6 +131,15 @@ export default async function SettingsPage() {
         <p className="text-xs text-text-muted mt-3 leading-relaxed">
           Authentication is handled via the <code className="font-mono text-text-secondary">Authorization: Bearer</code> header using your session token.
         </p>
+      </Section>
+
+      {/* ── Broker Connection ─────────────────────────────────── */}
+      <Section icon={Link2} title="Broker Connection">
+        <p className="text-sm text-text-secondary leading-relaxed mb-4">
+          Connect your brokerage account to see live balance, positions, and account status.
+          This is read-only — no orders are placed until you explicitly enable live execution.
+        </p>
+        <BrokerConnectionSection initialConnections={brokerConnections} />
       </Section>
 
       {/* ── Danger Zone ───────────────────────────────────────── */}
