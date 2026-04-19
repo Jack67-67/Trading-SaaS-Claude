@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   ArrowLeft, Bot, Activity, Clock, ExternalLink,
   AlertTriangle, TrendingUp, TrendingDown, Radio,
+  History, ArrowRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatPercent, pnlColor } from "@/lib/utils";
@@ -111,11 +112,36 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
     );
   }
 
+  // ── Trade types (actual backend fields) ──────────────────────────────────
+  type RawTrade = {
+    timestamp: string;   // exit time
+    symbol: string;
+    entry_price: number;
+    exit_price: number;
+    shares: number;
+    pnl: number;
+    return_pct: number;
+  };
+  type RawOpenPosition = {
+    symbol: string;
+    shares: number;
+    entry_price: number;
+    current_price: number;
+    unrealized_pnl: number;
+    unrealized_pct: number;
+    market_value: number;
+  };
+
   // ── Parse ─────────────────────────────────────────────────────────────────
   const results     = (sess.last_results ?? null) as Record<string, unknown> | null;
   const metrics     = (results?.metrics as AutotradingMetrics) ?? null;
   const equityCurve = (results?.equity_curve ?? []) as { timestamp: string; equity: number }[];
   const lastBarDate = (results?.last_bar_date as string) ?? null;
+
+  // Trades — last 20, newest first
+  const allTrades      = (results?.trades ?? []) as RawTrade[];
+  const recentTrades   = allTrades.slice(-20).reverse();
+  const openPositions  = (results?.open_positions ?? []) as RawOpenPosition[];
 
   const sessName     = String(sess.name ?? "");
   const sessSymbol   = String(sess.symbol ?? "");
@@ -525,6 +551,129 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
           >
             Run a refresh in the paper trading session →
           </Link>
+        </div>
+      )}
+
+      {/* ── Trade log ──────────────────────────────────────────────────────── */}
+      {hasResults && (
+        <div className="rounded-2xl border border-border overflow-hidden">
+          {/* Header */}
+          <div className="px-5 py-3.5 bg-surface-1 border-b border-border flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <History size={12} className="text-text-muted" />
+              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Trade History</p>
+            </div>
+            <div className="flex items-center gap-3 text-2xs text-text-muted">
+              {allTrades.length > 0 && (
+                <span>{allTrades.length} total trade{allTrades.length !== 1 ? "s" : ""}</span>
+              )}
+              {lastBarDate && (
+                <span className="font-mono">as of {lastBarDate}</span>
+              )}
+            </div>
+          </div>
+
+          {/* Open positions banner */}
+          {openPositions.length > 0 && openPositions.map((pos, i) => (
+            <div key={i} className={cn(
+              "flex items-center gap-3 px-5 py-3 border-b border-border text-xs",
+              pos.unrealized_pnl >= 0
+                ? "bg-profit/[0.04] border-b-profit/15"
+                : "bg-loss/[0.04] border-b-loss/15"
+            )}>
+              <span className="w-1.5 h-1.5 rounded-full bg-profit animate-pulse shrink-0" />
+              <span className="font-semibold text-text-primary">In position</span>
+              <span className="font-mono text-text-muted bg-surface-3 border border-border rounded px-1.5 py-0.5 text-2xs">
+                {pos.symbol}
+              </span>
+              <span className="text-text-muted">{pos.shares.toFixed(2)} shares</span>
+              <span className="text-text-muted">·</span>
+              <span className="text-text-muted">Entry <span className="font-mono text-text-secondary">${pos.entry_price.toFixed(2)}</span></span>
+              <span className="text-text-muted">·</span>
+              <span className="text-text-muted">Now <span className="font-mono text-text-secondary">${pos.current_price.toFixed(2)}</span></span>
+              <span className={cn("ml-auto font-mono font-semibold", pos.unrealized_pnl >= 0 ? "text-profit" : "text-loss")}>
+                {pos.unrealized_pnl >= 0 ? "+" : ""}{pos.unrealized_pnl.toFixed(2)}
+                <span className="text-2xs ml-1">
+                  ({pos.unrealized_pct >= 0 ? "+" : ""}{pos.unrealized_pct.toFixed(1)}%)
+                </span>
+              </span>
+              <span className="text-2xs text-text-muted font-medium">Unrealized</span>
+            </div>
+          ))}
+
+          {/* Trades */}
+          {recentTrades.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="text-sm text-text-muted">No closed trades yet.</p>
+              <p className="text-xs text-text-muted/60 mt-1">Trades will appear here once the strategy closes its first position.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-border/50 bg-surface-0">
+              {recentTrades.map((t, i) => {
+                const isWin      = t.pnl >= 0;
+                const direction  = t.exit_price >= t.entry_price ? "Long" : "Short";
+                const exitDate   = new Date(t.timestamp);
+                const dateStr    = exitDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                const timeStr    = exitDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+                return (
+                  <div key={i} className={cn(
+                    "flex items-center gap-3 px-5 py-3 border-l-2",
+                    isWin ? "border-l-profit/40" : "border-l-loss/40"
+                  )}>
+                    {/* Direction badge */}
+                    <span className={cn(
+                      "shrink-0 text-2xs font-bold px-2 py-0.5 rounded border uppercase tracking-wider",
+                      direction === "Long"
+                        ? "text-profit bg-profit/10 border-profit/20"
+                        : "text-loss bg-loss/10 border-loss/20"
+                    )}>
+                      {direction}
+                    </span>
+
+                    {/* Symbol */}
+                    <span className="text-xs font-mono font-semibold text-text-primary w-14 shrink-0">
+                      {t.symbol}
+                    </span>
+
+                    {/* Entry → Exit prices */}
+                    <div className="flex items-center gap-1.5 text-xs text-text-muted min-w-0 flex-1">
+                      <span className="font-mono">${t.entry_price.toFixed(2)}</span>
+                      <ArrowRight size={10} className="text-text-muted/40 shrink-0" />
+                      <span className={cn("font-mono font-semibold", isWin ? "text-profit" : "text-loss")}>
+                        ${t.exit_price.toFixed(2)}
+                      </span>
+                    </div>
+
+                    {/* P&L */}
+                    <div className="text-right shrink-0">
+                      <p className={cn("text-xs font-mono font-bold tabular-nums", isWin ? "text-profit" : "text-loss")}>
+                        {isWin ? "+" : ""}{t.pnl.toFixed(2)}
+                      </p>
+                      <p className={cn("text-2xs font-mono", isWin ? "text-profit/70" : "text-loss/70")}>
+                        {t.return_pct >= 0 ? "+" : ""}{t.return_pct.toFixed(2)}%
+                      </p>
+                    </div>
+
+                    {/* Time */}
+                    <div className="text-right shrink-0 pl-3">
+                      <p className="text-2xs font-mono text-text-muted">{dateStr}</p>
+                      <p className="text-2xs font-mono text-text-muted/50">{timeStr}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Footer note if truncated */}
+          {allTrades.length > 20 && (
+            <div className="px-5 py-3 bg-surface-1 border-t border-border text-center">
+              <p className="text-2xs text-text-muted">
+                Showing last 20 of {allTrades.length} trades
+              </p>
+            </div>
+          )}
         </div>
       )}
 
