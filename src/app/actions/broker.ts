@@ -55,11 +55,15 @@ export async function saveBrokerConnection(
         broker,
         api_key:          apiKey.trim(),
         api_secret:       apiSecret.trim(),
-        status:           "connected",
-        display_name:     displayName,
-        account_number:   result.account.account_number,
-        error_message:    null,
-        last_verified_at: new Date().toISOString(),
+        status:                   "connected",
+        display_name:             displayName,
+        account_number:           result.account.account_number,
+        cached_account_status:    result.account.status,
+        cached_equity:            result.account.equity,
+        cached_buying_power:      result.account.buying_power,
+        cached_positions_count:   result.positions.length,
+        error_message:            null,
+        last_verified_at:         new Date().toISOString(),
       },
       { onConflict: "user_id,broker" },
     )
@@ -118,15 +122,21 @@ export async function getBrokerLiveData(
     conn.api_secret,
   );
 
-  // Update verified status
+  // Update verified status + cache key account fields for readiness checks
   const newStatus = "error" in result ? "error" : "connected";
   await db
     .from("broker_connections")
     .update({
-      status:           newStatus,
-      error_message:    "error" in result ? result.error : null,
-      last_verified_at: new Date().toISOString(),
-      ...("error" in result ? {} : { account_number: result.account.account_number }),
+      status:                   newStatus,
+      error_message:            "error" in result ? result.error : null,
+      last_verified_at:         new Date().toISOString(),
+      ...("error" in result ? {} : {
+        account_number:         result.account.account_number,
+        cached_account_status:  result.account.status,
+        cached_equity:          result.account.equity,
+        cached_buying_power:    result.account.buying_power,
+        cached_positions_count: result.positions.length,
+      }),
     })
     .eq("id", connectionId)
     .eq("user_id", user.id);

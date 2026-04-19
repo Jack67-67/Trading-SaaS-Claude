@@ -4,7 +4,8 @@ import Link from "next/link";
 import {
   ArrowLeft, Bot, Activity, Clock, ExternalLink,
   AlertTriangle, Radio, History, ArrowRight,
-  Eye, Info, CheckCircle2,
+  Eye, Info, CheckCircle2, Zap, ShieldCheck, XCircle,
+  Lock, FileText,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatPercent, pnlColor } from "@/lib/utils";
@@ -24,6 +25,12 @@ import {
   type NextActionTimingLevel,
   type ShadowSignal,
 } from "@/lib/autotrading-ai";
+import {
+  computeExecutionReadiness,
+  type ReadinessSummary,
+} from "@/lib/execution-readiness";
+import { TradingModeSelector } from "@/components/dashboard/trading-mode-selector";
+import type { TradingMode } from "@/app/actions/live-trading";
 
 export const metadata: Metadata = { title: "Autotrading Controls" };
 
@@ -234,6 +241,86 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
 
   const nextScan = autoEnabled ? estimateNextScan(sessInterval, sessLastRef) : null;
 
+  // ── Stage 3: Trading mode + broker + readiness ────────────────────────────
+  // trading_mode defaults to 'shadow' for existing sessions with autotrading on
+  const rawMode = (sess.trading_mode as string | null) ?? null;
+  const tradingMode: TradingMode =
+    rawMode === "live_prep" ? "live_prep"
+    : rawMode === "shadow"  ? "shadow"
+    : rawMode === "paper"   ? "paper"
+    : autoEnabled           ? "shadow"   // legacy: autotrading_enabled=true → shadow
+    : "paper";
+
+  const brokerConnectionId = (sess.broker_connection_id as string | null) ?? null;
+
+  // Fetch linked broker connection (display data only — no credentials)
+  type BrokerRow = {
+    id: string;
+    status: string;
+    display_name: string | null;
+    account_number: string | null;
+    cached_account_status: string | null;
+    cached_buying_power: number | null;
+    cached_equity: number | null;
+    last_verified_at: string | null;
+  };
+  type BrokerListRow = { id: string; display_name: string | null; broker: string; status: string };
+
+  let linkedBroker: BrokerRow | null = null;
+  let userBrokers: BrokerListRow[] = [];
+
+  try {
+    const supabaseInner = (await import("@/lib/supabase/server")).createClient();
+    const { data: { user: u } } = await supabaseInner.auth.getUser();
+    if (u) {
+      const db = supabaseInner as any;
+      if (brokerConnectionId) {
+        const { data } = await db
+          .from("broker_connections")
+          .select("id, status, display_name, account_number, cached_account_status, cached_buying_power, cached_equity, last_verified_at")
+          .eq("id", brokerConnectionId)
+          .eq("user_id", u.id)
+          .single() as { data: BrokerRow | null };
+        linkedBroker = data;
+      }
+      const { data: bList } = await db
+        .from("broker_connections")
+        .select("id, display_name, broker, status")
+        .eq("user_id", u.id) as { data: BrokerListRow[] | null };
+      userBrokers = bList ?? [];
+    }
+  } catch { /* pre-migration: broker_connections table may not exist */ }
+
+  const brokerConnected = linkedBroker?.status === "connected";
+  const dataFreshMins   = sessLastRef
+    ? (Date.now() - new Date(sessLastRef).getTime()) / 60_000
+    : null;
+
+  const estimatedOrderCost = shadowSignal
+    ? shadowSignal.entryApprox * shadowSignal.positionSize
+    : 0;
+
+  const readiness: ReadinessSummary = computeExecutionReadiness({
+    brokerConnected,
+    brokerStatus:         linkedBroker?.status ?? null,
+    accountStatus:        linkedBroker?.cached_account_status ?? null,
+    buyingPower:          linkedBroker?.cached_buying_power ?? null,
+    estimatedOrderCost,
+    hasMetrics:           hasResults,
+    profitFactor:         metrics?.profit_factor ?? null,
+    sharpeRatio:          metrics?.sharpe_ratio  ?? null,
+    totalTrades:          metrics?.total_trades  ?? null,
+    weeklyLossPct:        wLoss,
+    maxWeeklyLossPct:     maxWeeklyLoss,
+    monthlyLossPct:       mLoss,
+    maxMonthlyLossPct:    maxMonthlyLoss,
+    sessionStopped:       isStopped,
+    sessionPaused:        isPaused,
+    eventDanger:          guard?.level === "danger",
+    eventName:            guard?.events?.[0]?.short ?? null,
+    dataFreshMins,
+  });
+
   return (
     <div className="space-y-6 animate-fade-in max-w-3xl">
 
@@ -274,14 +361,20 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
                   )} />
                   {isStopped ? "Stopped" : isPaused ? "Paused" : isRunning ? "Running" : "Off"}
                 </span>
-                {autoEnabled ? (
+                {tradingMode === "live_prep" ? (
+                  <span className="text-2xs font-semibold text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded-full px-2 py-0.5 flex items-center gap-1">
+                    <Zap size={9} />
+                    LIVE PREP
+                  </span>
+                ) : tradingMode === "shadow" ? (
                   <span className="text-2xs font-semibold text-accent bg-accent/10 border border-accent/25 rounded-full px-2 py-0.5 flex items-center gap-1">
                     <Eye size={9} />
                     SHADOW MODE
                   </span>
                 ) : (
-                  <span className="text-2xs font-semibold text-text-muted/50 bg-surface-3 border border-border rounded-full px-2 py-0.5">
-                    PAPER / VIRTUAL
+                  <span className="text-2xs font-semibold text-text-muted/50 bg-surface-3 border border-border rounded-full px-2 py-0.5 flex items-center gap-1">
+                    <FileText size={9} />
+                    PAPER
                   </span>
                 )}
               </div>
@@ -353,6 +446,31 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* ── Mode selector ──────────────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-border flex items-center gap-2">
+          <Zap size={12} className="text-text-muted" />
+          <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Trading Mode</p>
+          {tradingMode === "live_prep" && linkedBroker && (
+            <span className="ml-auto text-2xs text-text-muted flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-gain" />
+              {linkedBroker.display_name}
+              {linkedBroker.cached_buying_power !== null && (
+                <span className="font-mono ml-1">${linkedBroker.cached_buying_power.toLocaleString()} BP</span>
+              )}
+            </span>
+          )}
+        </div>
+        <div className="px-5 py-4">
+          <TradingModeSelector
+            sessionId={params.id}
+            currentMode={tradingMode}
+            brokerConnected={userBrokers.some(b => b.status === "connected")}
+            sessionStopped={isStopped}
+          />
         </div>
       </div>
 
@@ -515,10 +633,11 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
         );
       })()}
 
-      {/* ── Shadow signal panel ────────────────────────────────────────────── */}
+      {/* ── Signal / Order preview panel ───────────────────────────────────── */}
       {shadowSignal && (() => {
-        const sig = shadowSignal;
-        const fmtP  = (n: number) => `$${n.toFixed(2)}`;
+        const sig      = shadowSignal;
+        const isLivePrep = tradingMode === "live_prep";
+        const fmtP     = (n: number) => `$${n.toFixed(2)}`;
 
         const confStyle: Record<string, string> = {
           high:   "text-profit bg-profit/10 border-profit/20",
@@ -526,17 +645,28 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
           low:    "text-text-muted bg-surface-3 border-border",
         };
 
+        const borderColor  = isLivePrep ? "border-amber-500/30" : "border-accent/30";
+        const headerBg     = isLivePrep ? "bg-amber-400/[0.04]" : "bg-accent/[0.03]";
+        const headerBorder = isLivePrep ? "border-amber-500/20" : "border-accent/20";
+        const iconColor    = isLivePrep ? "text-amber-400" : "text-accent";
+        const pillStyle    = isLivePrep
+          ? "text-amber-400/80 bg-amber-400/10 border-dashed border-amber-400/40"
+          : "text-accent/70   bg-accent/10    border-dashed border-accent/40";
+        const dividerColor = isLivePrep ? "border-amber-500/15 divide-amber-500/10" : "border-accent/15 divide-accent/10";
+
         return (
-          <div className="rounded-2xl border border-accent/30 overflow-hidden" style={{ background: "rgb(var(--color-accent) / 0.015)" }}>
+          <div className={cn("rounded-2xl border overflow-hidden", borderColor)}>
 
             {/* Header */}
-            <div className="px-5 py-3.5 border-b border-accent/20 flex items-center justify-between gap-3 bg-accent/[0.03]">
+            <div className={cn("px-5 py-3.5 border-b flex items-center justify-between gap-3", headerBg, headerBorder)}>
               <div className="flex items-center gap-2">
-                <Eye size={12} className="text-accent" />
-                <p className="text-xs font-semibold text-accent/80 uppercase tracking-wider">Signal Detected</p>
+                {isLivePrep ? <Zap size={12} className={iconColor} /> : <Eye size={12} className={iconColor} />}
+                <p className={cn("text-xs font-semibold uppercase tracking-wider", iconColor)}>
+                  {isLivePrep ? "Execution Preview" : "Signal Detected"}
+                </p>
               </div>
-              <span className="text-2xs font-bold text-accent/70 bg-accent/10 border border-dashed border-accent/40 rounded-full px-2.5 py-0.5">
-                SIMULATED · NO REAL ORDER
+              <span className={cn("text-2xs font-bold border rounded-full px-2.5 py-0.5", pillStyle)}>
+                {isLivePrep ? "NOT SUBMITTED · EXECUTION DISABLED" : "SIMULATED · NO REAL ORDER"}
               </span>
             </div>
 
@@ -544,10 +674,12 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
             <div className="px-5 pt-4 pb-3">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
                 <span className="text-2xs font-bold px-2 py-0.5 rounded border text-profit bg-profit/10 border-profit/20 uppercase tracking-wider">
-                  LONG
+                  {isLivePrep ? "BUY" : "LONG"}
                 </span>
                 <p className="text-base font-bold text-text-primary">
-                  Would enter {sessSymbol} on {sessInterval}
+                  {isLivePrep
+                    ? `Would submit: BUY ${sessSymbol} — ${sessInterval}`
+                    : `Would enter ${sessSymbol} on ${sessInterval}`}
                 </p>
                 <span className={cn("text-2xs font-semibold px-2 py-0.5 rounded border capitalize ml-auto", confStyle[sig.confidence])}>
                   {sig.confidence} confidence
@@ -556,24 +688,64 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
               <p className="text-xs text-text-muted leading-relaxed">{sig.reason}</p>
             </div>
 
-            {/* Price grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 border-t border-accent/15 divide-x divide-accent/10">
+            {/* Order spec grid */}
+            <div className={cn("grid grid-cols-2 sm:grid-cols-4 border-t divide-x", dividerColor)}>
               {[
-                { label: "Entry (approx)",  value: fmtP(sig.entryApprox),  sub: "at last scan",                              subClass: "text-text-muted" },
-                { label: "Stop Loss",       value: fmtP(sig.stopLoss),     sub: `−${sig.stopLossPct.toFixed(2)}%`,           subClass: "text-loss" },
-                { label: "Take Profit",     value: fmtP(sig.takeProfit),   sub: `+${sig.takeProfitPct.toFixed(2)}%`,         subClass: "text-profit" },
-                { label: "Risk : Reward",   value: `1 : ${sig.riskReward.toFixed(1)}`, sub: `${sig.positionSize} sh · $${sig.riskAmount.toFixed(0)} at risk`, subClass: "text-text-muted" },
-              ].map(({ label, value, sub, subClass }) => (
+                {
+                  label: isLivePrep ? "Entry price" : "Entry (approx)",
+                  value: fmtP(sig.entryApprox),
+                  sub:   isLivePrep ? "Market order" : "at last scan",
+                  subC:  "text-text-muted",
+                },
+                {
+                  label: "Stop Loss",
+                  value: fmtP(sig.stopLoss),
+                  sub:   `−${sig.stopLossPct.toFixed(2)}%${isLivePrep ? " · GTC Stop" : ""}`,
+                  subC:  "text-loss",
+                },
+                {
+                  label: "Take Profit",
+                  value: fmtP(sig.takeProfit),
+                  sub:   `+${sig.takeProfitPct.toFixed(2)}%${isLivePrep ? " · GTC Limit" : ""}`,
+                  subC:  "text-profit",
+                },
+                {
+                  label: "Risk : Reward",
+                  value: `1 : ${sig.riskReward.toFixed(1)}`,
+                  sub:   `${sig.positionSize} sh · $${sig.riskAmount.toFixed(0)} risk`,
+                  subC:  "text-text-muted",
+                },
+              ].map(({ label, value, sub, subC }) => (
                 <div key={label} className="px-4 py-3">
                   <p className="text-2xs text-text-muted mb-0.5">{label}</p>
                   <p className="text-sm font-bold font-mono text-text-primary tabular-nums">{value}</p>
-                  <p className={cn("text-2xs font-mono", subClass)}>{sub}</p>
+                  <p className={cn("text-2xs font-mono", subC)}>{sub}</p>
                 </div>
               ))}
             </div>
 
+            {/* Live prep: execution conditions row */}
+            {isLivePrep && (
+              <div className={cn("px-5 py-3 border-t bg-surface-0/30", dividerColor.split(" ")[0])}>
+                <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider mb-2">Execution conditions</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {[
+                    `Order type: Market entry — fills at best available price`,
+                    `Stop loss: GTC Stop order at $${fmtP(sig.stopLoss)} — cancels on fill`,
+                    `Event guard: auto-cancel if high-impact event detected${pauseOnEvents ? " (enabled)" : " (disabled)"}`,
+                    `Kill switch: immediate cancel if triggered`,
+                  ].map((cond, i) => (
+                    <div key={i} className="flex items-start gap-1.5">
+                      <CheckCircle2 size={11} className="text-amber-400/70 shrink-0 mt-0.5" />
+                      <p className="text-2xs text-text-secondary leading-snug">{cond}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Why this signal */}
-            <div className="px-5 py-3.5 border-t border-accent/15 bg-surface-0/40">
+            <div className={cn("px-5 py-3.5 border-t bg-surface-0/40", dividerColor.split(" ")[0])}>
               <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider mb-2.5">Why this signal</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 {sig.conditions.map((c, i) => (
@@ -586,15 +758,97 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
             </div>
 
             {/* Disclaimer */}
-            <div className="px-5 py-2.5 border-t border-accent/15 flex items-start gap-2 bg-accent/[0.02]">
-              <Info size={11} className="text-accent/50 shrink-0 mt-0.5" />
+            <div className={cn("px-5 py-2.5 border-t flex items-start gap-2", isLivePrep ? "bg-amber-400/[0.02]" : "bg-accent/[0.02]", dividerColor.split(" ")[0])}>
+              <Info size={11} className={cn("shrink-0 mt-0.5 opacity-50", iconColor)} />
               <p className="text-2xs text-text-muted/70 leading-relaxed">
-                Entry price is approximate based on last simulation data.
-                In live mode, real-time market prices would be used.
-                All safety limits apply — event guards, loss limits, and kill switch are enforced.
+                {isLivePrep
+                  ? "Entry price is based on last simulation data — real-time prices would be used on execution. Live execution is currently disabled. All safety limits, event guards, and the kill switch are enforced."
+                  : "Entry price is approximate based on last simulation data. In live mode, real-time market prices would be used. All safety limits apply."}
               </p>
             </div>
 
+          </div>
+        );
+      })()}
+
+      {/* ── Execution readiness (live_prep only) ───────────────────────────── */}
+      {tradingMode === "live_prep" && (() => {
+        const allPassed = readiness.allBlockersPassed;
+
+        return (
+          <div className="rounded-2xl border border-border overflow-hidden">
+
+            {/* Header */}
+            <div className="px-5 py-3.5 border-b border-border bg-surface-1 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={12} className={allPassed ? "text-profit" : "text-text-muted"} />
+                <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                  Execution Readiness
+                </p>
+              </div>
+              <span className={cn(
+                "text-2xs font-semibold px-2.5 py-1 rounded-full border",
+                allPassed
+                  ? "text-profit bg-profit/10 border-profit/20"
+                  : "text-text-muted bg-surface-3 border-border"
+              )}>
+                {readiness.passedBlockers}/{readiness.totalBlockers} checks passed
+              </span>
+            </div>
+
+            {/* Check list */}
+            <div className="divide-y divide-border/60 bg-surface-0">
+              {readiness.checks.map(check => (
+                <div key={check.id} className="flex items-start gap-3 px-5 py-3">
+                  <span className={cn(
+                    "shrink-0 mt-0.5 w-5 h-5 rounded-full flex items-center justify-center",
+                    check.passed
+                      ? "bg-profit/15"
+                      : check.blocking
+                      ? "bg-loss/15"
+                      : "bg-amber-400/15"
+                  )}>
+                    {check.passed
+                      ? <CheckCircle2 size={11} className="text-profit" />
+                      : check.blocking
+                      ? <XCircle      size={11} className="text-loss" />
+                      : <AlertTriangle size={10} className="text-amber-400" />}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className={cn(
+                        "text-xs font-semibold",
+                        check.passed ? "text-text-primary" : check.blocking ? "text-text-secondary" : "text-amber-300"
+                      )}>
+                        {check.label}
+                      </p>
+                      {!check.blocking && (
+                        <span className="text-2xs text-text-muted/50 bg-surface-3 border border-border rounded px-1">warning</span>
+                      )}
+                    </div>
+                    <p className="text-2xs text-text-muted leading-snug mt-0.5">{check.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Go live section */}
+            <div className="px-5 py-4 border-t border-border bg-surface-1 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-text-primary">Enable live trading</p>
+                <p className="text-xs text-text-muted mt-0.5">
+                  {allPassed
+                    ? "All readiness checks passed — live execution is architecturally ready."
+                    : `${readiness.totalBlockers - readiness.passedBlockers} blocker${readiness.totalBlockers - readiness.passedBlockers !== 1 ? "s" : ""} must be resolved before going live.`}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Lock size={12} className="text-text-muted/50" />
+                <span className="text-xs font-medium text-text-muted bg-surface-3 border border-border rounded-lg px-3 py-1.5">
+                  Coming in Stage 4
+                </span>
+              </div>
+            </div>
           </div>
         );
       })()}

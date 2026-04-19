@@ -80,6 +80,8 @@ const ACTION_LABEL: Record<string, string> = {
 
 type RawSession = Record<string, unknown>;
 
+type TradingMode = "paper" | "shadow" | "live_prep";
+
 type ParsedSession = {
   id: string;
   name: string;
@@ -90,6 +92,7 @@ type ParsedSession = {
   lastRefreshed: string | null;
   initialCapital: number;
   autoEnabled: boolean;
+  tradingMode: TradingMode;
   maxCapitalPct: number;
   maxWeeklyLoss: number;
   maxMonthlyLoss: number;
@@ -132,6 +135,13 @@ function parseSession(raw: RawSession): ParsedSession {
     lastRefreshed: (raw.last_refreshed_at as string | null) ?? null,
     initialCapital: cap,
     autoEnabled:   Boolean(raw.autotrading_enabled ?? false),
+    tradingMode:   (() => {
+      const m = raw.trading_mode as string | null;
+      if (m === "live_prep") return "live_prep";
+      if (m === "shadow")    return "shadow";
+      if (m === "paper")     return "paper";
+      return Boolean(raw.autotrading_enabled) ? "shadow" : "paper";
+    })() as TradingMode,
     maxCapitalPct: capPct,
     maxWeeklyLoss: Number(raw.max_weekly_loss_pct ?? 10),
     maxMonthlyLoss: Number(raw.max_monthly_loss_pct ?? 20),
@@ -213,16 +223,26 @@ function GlobalStatusHero({ sessions }: { sessions: ParsedSession[] }) {
             <span className={cn("text-xs font-bold tracking-widest uppercase", statusColor)}>
               {statusLabel}
             </span>
-            {anyAutoEnabled ? (
-              <span className="text-2xs font-semibold text-accent bg-accent/10 border border-accent/25 rounded-full px-2.5 py-0.5 flex items-center gap-1">
-                <Eye size={9} />
-                SHADOW MODE
-              </span>
-            ) : (
-              <span className="text-2xs font-semibold text-text-muted/50 bg-surface-3 border border-border rounded-full px-2.5 py-0.5">
-                PAPER / VIRTUAL
-              </span>
-            )}
+            {(() => {
+              const hasLivePrep = sessions.some(s => s.tradingMode === "live_prep");
+              if (hasLivePrep) return (
+                <span className="text-2xs font-semibold text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded-full px-2.5 py-0.5 flex items-center gap-1">
+                  <Zap size={9} />
+                  LIVE PREP
+                </span>
+              );
+              if (anyAutoEnabled) return (
+                <span className="text-2xs font-semibold text-accent bg-accent/10 border border-accent/25 rounded-full px-2.5 py-0.5 flex items-center gap-1">
+                  <Eye size={9} />
+                  SHADOW MODE
+                </span>
+              );
+              return (
+                <span className="text-2xs font-semibold text-text-muted/50 bg-surface-3 border border-border rounded-full px-2.5 py-0.5">
+                  PAPER / VIRTUAL
+                </span>
+              );
+            })()}
           </div>
           <div className="flex items-center gap-4 text-2xs text-text-muted">
             {running && oldestActive && (
@@ -421,6 +441,13 @@ function SessionCard({ sess }: { sess: ParsedSession }) {
               )}
               {isRunning && !hasWarning && !hasSignalDetected && (
                 <span className="text-2xs font-semibold text-profit bg-profit/10 border border-profit/20 rounded-full px-2 py-0.5">Running</span>
+              )}
+              {/* Trading mode badge (subtle — only when not obvious from status) */}
+              {!isStopped && !isPaused && sess.tradingMode === "live_prep" && (
+                <span className="text-2xs font-semibold text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full px-2 py-0.5 flex items-center gap-1">
+                  <Zap size={9} />
+                  Live Prep
+                </span>
               )}
               {isRunning && hasWarning && (
                 <span className="text-2xs font-semibold text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full px-2 py-0.5">Warning</span>
