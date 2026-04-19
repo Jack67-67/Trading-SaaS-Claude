@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, Bot, Activity, Clock, ExternalLink,
-  AlertTriangle, TrendingUp, TrendingDown,
+  AlertTriangle, TrendingUp, TrendingDown, Radio,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatPercent, pnlColor } from "@/lib/utils";
@@ -12,6 +12,7 @@ import { getTodayGuard } from "@/lib/economic-calendar";
 import { EventGuard } from "@/components/dashboard/event-guard";
 import {
   generateAutotradingRecommendations,
+  computeLiveState,
   type AutotradingMetrics,
 } from "@/lib/autotrading-ai";
 
@@ -165,6 +166,17 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
   const isPaused  = sessStatus === "paused";
   const isRunning = autoEnabled && !isStopped && !isPaused;
 
+  // Live state
+  const live = computeLiveState({
+    status:        sessStatus,
+    autoEnabled,
+    pauseReason,
+    symbol:        sessSymbol,
+    interval:      sessInterval,
+    lastRefreshed: sessLastRef,
+    metrics,
+  });
+
   return (
     <div className="space-y-6 animate-fade-in max-w-3xl">
 
@@ -279,6 +291,74 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
           </div>
         </div>
       </div>
+
+      {/* ── Live status ────────────────────────────────────────────────────── */}
+      {(() => {
+        const dotColor: Record<string, string> = {
+          scanning: "bg-profit animate-pulse",
+          active:   "bg-profit",
+          waiting:  "bg-text-muted/40",
+          paused:   "bg-amber-400",
+          stopped:  "bg-loss",
+          off:      "bg-text-muted/25",
+        };
+        return (
+          <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden">
+            {/* Card header */}
+            <div className="px-5 py-3.5 border-b border-border flex items-center gap-2">
+              <Radio size={12} className={cn(
+                isRunning ? "text-profit" : "text-text-muted"
+              )} />
+              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Live Status</p>
+              {isRunning && (
+                <span className="ml-auto flex items-center gap-1.5 text-2xs font-semibold text-profit">
+                  <span className="w-1.5 h-1.5 rounded-full bg-profit animate-pulse" />
+                  Monitoring
+                </span>
+              )}
+            </div>
+
+            {/* 3-column grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border/60">
+
+              {/* Current state */}
+              <div className="px-5 py-4">
+                <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-2">Current State</p>
+                <div className="flex items-start gap-2">
+                  <span className={cn("w-2 h-2 rounded-full shrink-0 mt-1", dotColor[live.level])} />
+                  <p className="text-sm font-semibold text-text-primary leading-snug">{live.currentState}</p>
+                </div>
+                {sessLastRef && isRunning && (
+                  <p className="text-2xs text-text-muted mt-2 flex items-center gap-1">
+                    <Activity size={9} />
+                    Last scan {(() => {
+                      const diff = Date.now() - new Date(sessLastRef).getTime();
+                      const mins = Math.floor(diff / 60_000);
+                      if (mins < 1) return "just now";
+                      if (mins < 60) return `${mins}m ago`;
+                      const hrs = Math.floor(mins / 60);
+                      return hrs < 24 ? `${hrs}h ago` : `${Math.floor(hrs / 24)}d ago`;
+                    })()}
+                  </p>
+                )}
+              </div>
+
+              {/* What it's looking for */}
+              <div className="px-5 py-4">
+                <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-2">What it&apos;s looking for</p>
+                <p className="text-sm text-text-secondary leading-relaxed">{live.watchingDetail}</p>
+              </div>
+
+              {/* Next action */}
+              <div className="px-5 py-4">
+                <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-2">Next Action</p>
+                <p className="text-sm text-text-secondary leading-relaxed">{live.nextAction}</p>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Event guard ────────────────────────────────────────────────────── */}
       {showGuard && guard && (

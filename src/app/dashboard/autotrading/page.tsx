@@ -12,8 +12,10 @@ import { getTodayGuard } from "@/lib/economic-calendar";
 import { EventGuard } from "@/components/dashboard/event-guard";
 import {
   generateAutotradingRecommendations,
+  computeLiveState,
   type AutotradingMetrics,
   type AutotradingRecommendation,
+  type LiveState,
 } from "@/lib/autotrading-ai";
 
 export const metadata: Metadata = { title: "Autotrading" };
@@ -416,6 +418,17 @@ function SessionCard({ sess }: { sess: ParsedSession }) {
           </p>
         )}
 
+        {/* Live state strip */}
+        <LiveStateStrip live={computeLiveState({
+          status:       sess.status,
+          autoEnabled:  sess.autoEnabled,
+          pauseReason:  sess.pauseReason,
+          symbol:       sess.symbol,
+          interval:     sess.interval,
+          lastRefreshed: sess.lastRefreshed,
+          metrics:      sess.metrics,
+        })} />
+
         {/* Metrics row */}
         {sess.metrics && (
           <div className="mt-3 ml-11 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2 border-t border-border/60 pt-3">
@@ -454,6 +467,39 @@ function SessionCard({ sess }: { sess: ParsedSession }) {
         )}
       </div>
     </Link>
+  );
+}
+
+// ── Live state strip (inside session cards) ───────────────────────────────────
+
+const LIVE_DOT: Record<string, string> = {
+  scanning: "bg-profit animate-pulse",
+  active:   "bg-profit",
+  waiting:  "bg-text-muted/40",
+  paused:   "bg-amber-400",
+  stopped:  "bg-loss",
+  off:      "bg-text-muted/25",
+};
+
+function LiveStateStrip({ live }: { live: LiveState }) {
+  return (
+    <div className="mt-3 ml-11 grid grid-cols-3 gap-4 border-t border-border/60 pt-3">
+      <div>
+        <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-1.5">Current state</p>
+        <div className="flex items-start gap-1.5">
+          <span className={cn("w-1.5 h-1.5 rounded-full shrink-0 mt-[3px]", LIVE_DOT[live.level])} />
+          <p className="text-xs font-semibold text-text-primary leading-tight">{live.currentState}</p>
+        </div>
+      </div>
+      <div>
+        <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-1.5">Watching</p>
+        <p className="text-xs text-text-secondary leading-tight">{live.watching}</p>
+      </div>
+      <div>
+        <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-1.5">Next action</p>
+        <p className="text-xs text-text-secondary leading-tight">{live.nextAction}</p>
+      </div>
+    </div>
   );
 }
 

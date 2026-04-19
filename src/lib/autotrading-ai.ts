@@ -133,3 +133,120 @@ export function generateAutotradingRecommendations(
 
   return recs;
 }
+
+// ── Live state ────────────────────────────────────────────────────────────────
+// Derives what the session is doing *right now* from available state.
+// No LLM — pure derivation from status + metrics + timing.
+
+export type LiveStateLevel = "scanning" | "active" | "waiting" | "paused" | "stopped" | "off";
+
+export interface LiveState {
+  level: LiveStateLevel;
+  /** Short phrase: "Scanning BTC", "Waiting for next refresh" */
+  currentState: string;
+  /** What the system is monitoring: symbol, interval, strategy type */
+  watching: string;
+  /** Expanded watching description for detail views */
+  watchingDetail: string;
+  /** What will happen next */
+  nextAction: string;
+}
+
+function strategyHint(interval: string): string {
+  if (["1m", "3m", "5m"].includes(interval)) return "scalp & momentum";
+  if (["15m", "30m"].includes(interval))      return "intraday breakout";
+  if (["1h", "2h", "4h"].includes(interval))  return "swing momentum";
+  if (["1d", "3d", "1w"].includes(interval))  return "trend following";
+  return "technical signals";
+}
+
+function watchingDetailText(symbol: string, interval: string): string {
+  if (["1m", "3m", "5m"].includes(interval))
+    return `Scanning ${symbol} for short-term momentum — rapid price action and volume spikes on each ${interval} bar.`;
+  if (["15m", "30m"].includes(interval))
+    return `Monitoring ${symbol} for intraday breakouts — range expansions with confirmation on the ${interval} chart.`;
+  if (["1h", "2h", "4h"].includes(interval))
+    return `Watching ${symbol} for swing entries — momentum continuation and pullback setups on the ${interval} timeframe.`;
+  if (["1d", "3d", "1w"].includes(interval))
+    return `Tracking ${symbol} trend — position entries on pullbacks within the established trend direction on daily bars.`;
+  return `Monitoring ${symbol} on ${interval} bars for technical entry and exit conditions.`;
+}
+
+export function computeLiveState(params: {
+  status: string;
+  autoEnabled: boolean;
+  pauseReason: string | null;
+  symbol: string;
+  interval: string;
+  lastRefreshed: string | null;
+  metrics: AutotradingMetrics | null;
+}): LiveState {
+  const { status, autoEnabled, pauseReason, symbol, interval, lastRefreshed, metrics } = params;
+
+  if (status === "stopped") {
+    return {
+      level: "stopped",
+      currentState: "Session stopped",
+      watching: "—",
+      watchingDetail: "This session has been permanently terminated via kill switch.",
+      nextAction: "Create a new session to continue trading",
+    };
+  }
+
+  if (status === "paused") {
+    return {
+      level: "paused",
+      currentState: pauseReason ?? "Paused",
+      watching: `${symbol} · ${interval}`,
+      watchingDetail: `${symbol} on ${interval} — not scanning. Session is paused${pauseReason ? `: ${pauseReason.toLowerCase()}` : ""}.`,
+      nextAction: "No trade until session is manually resumed",
+    };
+  }
+
+  if (!autoEnabled) {
+    return {
+      level: "off",
+      currentState: "Not monitoring",
+      watching: `${symbol} · ${interval}`,
+      watchingDetail: `${symbol} on ${interval} is not being scanned. Enable autotrading to activate signal monitoring.`,
+      nextAction: "Enable autotrading to activate signal scanning",
+    };
+  }
+
+  // Active + autotrading on
+  const minsAgo = lastRefreshed
+    ? (Date.now() - new Date(lastRefreshed).getTime()) / 60_000
+    : Infinity;
+
+  const hint    = strategyHint(interval);
+  const watching = `${symbol} · ${interval} · ${hint}`;
+  const watchingDetail = watchingDetailText(symbol, interval);
+
+  let currentState: string;
+  let level: LiveStateLevel;
+  if (minsAgo < 3) {
+    currentState = `Scanning ${symbol}`;
+    level = "scanning";
+  } else if (minsAgo < 60) {
+    currentState = `Active — ${Math.round(minsAgo)}m since last scan`;
+    level = "active";
+  } else {
+    currentState = "Waiting for next refresh";
+    level = "waiting";
+  }
+
+  let nextAction: string;
+  if (!metrics) {
+    nextAction = "Run a backtest refresh to initialize monitoring";
+  } else if (metrics.profit_factor < 1 || metrics.sharpe_ratio < 0) {
+    nextAction = "Holding — strategy performance below entry threshold";
+  } else if (metrics.sharpe_ratio >= 1.5 && metrics.profit_factor >= 1.5) {
+    nextAction = hint.includes("trend")
+      ? `Enter ${symbol} on next trend pullback if signal confirms`
+      : `Enter on next breakout if volume and momentum confirm`;
+  } else {
+    nextAction = "Wait for confirmation before entry";
+  }
+
+  return { level, currentState, watching, watchingDetail, nextAction };
+}
