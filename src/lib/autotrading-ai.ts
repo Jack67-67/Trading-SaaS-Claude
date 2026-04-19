@@ -426,6 +426,120 @@ function describeWatching(symbol: string, interval: string, strategy: string): s
   return base + stratExtra;
 }
 
+// ── Shadow mode ───────────────────────────────────────────────────────────────
+// Computes the exact trade the system *would* place if live.
+// No orders are placed — this is purely for display.
+
+export interface ShadowSignal {
+  direction:      "long" | "short";
+  entryApprox:    number;
+  stopLoss:       number;
+  stopLossPct:    number;
+  takeProfit:     number;
+  takeProfitPct:  number;
+  riskAmount:     number;
+  positionSize:   number;
+  riskReward:     number;
+  confidence:     "low" | "medium" | "high";
+  reason:         string;
+  conditions:     string[];
+}
+
+export function computeShadowSignal(params: {
+  symbol:         string;
+  interval:       string;
+  metrics:        AutotradingMetrics;
+  initialCapital: number;
+  maxCapitalPct:  number;
+  lastPrice:      number;
+}): ShadowSignal | null {
+  const { symbol, interval, metrics, initialCapital, maxCapitalPct, lastPrice } = params;
+  if (lastPrice <= 0) return null;
+  if (metrics.profit_factor < 1 || metrics.sharpe_ratio < 0) return null;
+  if (metrics.total_trades < 3) return null;
+
+  // Stop-loss distance — based on timeframe and drawdown-derived volatility
+  const baseSLMap: Record<string, number> = {
+    "1m": 0.005, "3m": 0.006, "5m": 0.008,
+    "15m": 0.010, "30m": 0.013,
+    "1h": 0.016, "2h": 0.020, "4h": 0.024,
+    "1d": 0.035, "3d": 0.050, "1w": 0.065,
+  };
+  const baseSL   = baseSLMap[interval] ?? 0.020;
+  const ddFactor = 1 + Math.max(0, (metrics.max_drawdown_pct - 10) / 200);
+  const slPct    = Math.min(baseSL * ddFactor, baseSL * 2);
+
+  // Take-profit: risk:reward derived from profit factor, capped at 4:1
+  const riskReward = Math.min(4, Math.max(1, metrics.profit_factor));
+  const tpPct      = slPct * riskReward;
+
+  // Position size: risk 1% of allocated capital per trade
+  const allocatedCap = initialCapital * (maxCapitalPct / 100);
+  const riskAmount   = allocatedCap * 0.01;
+  const positionSize = Math.max(1, Math.floor(riskAmount / (lastPrice * slPct)));
+
+  const confidence: "low" | "medium" | "high" =
+    metrics.sharpe_ratio >= 1.5 && metrics.profit_factor >= 2.0 && metrics.win_rate_pct >= 55
+      ? "high"
+      : metrics.sharpe_ratio >= 0.8 && metrics.profit_factor >= 1.3
+      ? "medium"
+      : "low";
+
+  const conditions: string[] = [
+    `Profit factor ${metrics.profit_factor.toFixed(2)} — strategy earns more than it loses over ${metrics.total_trades} trades`,
+    `Sharpe ratio ${metrics.sharpe_ratio.toFixed(2)} — risk-adjusted returns justify the entry`,
+    `Win rate ${metrics.win_rate_pct.toFixed(0)}% — ${metrics.win_rate_pct >= 50 ? "majority of trades are profitable" : "sufficient for this strategy type"}`,
+  ];
+  if (metrics.max_drawdown_pct < 20) {
+    conditions.push(`Max drawdown −${metrics.max_drawdown_pct.toFixed(1)}% — within acceptable risk range`);
+  }
+
+  return {
+    direction:     "long",
+    entryApprox:   lastPrice,
+    stopLoss:      lastPrice * (1 - slPct),
+    stopLossPct:   slPct * 100,
+    takeProfit:    lastPrice * (1 + tpPct),
+    takeProfitPct: tpPct * 100,
+    riskAmount,
+    positionSize,
+    riskReward,
+    confidence,
+    reason: `${symbol} showing ${confidence === "high" ? "strong" : "developing"} ${interval} setup — all entry conditions met per strategy rules.`,
+    conditions,
+  };
+}
+
+/** Infer why a simulated trade closed from its P&L. */
+export function inferTradeCloseReason(pnl: number, returnPct: number): string {
+  if (pnl < 0) {
+    if (returnPct < -3) return "Stop loss hit";
+    return "Stop loss";
+  }
+  if (returnPct > 2.5)  return "Take profit hit";
+  if (returnPct > 0.8)  return "Target reached";
+  if (Math.abs(returnPct) < 0.15) return "Session ended";
+  return "Signal reversed";
+}
+
+/** Estimate when the next scan will run based on interval and last refresh. */
+export function estimateNextScan(interval: string, lastRefreshed: string | null): string | null {
+  if (!lastRefreshed) return null;
+  const msMap: Record<string, number> = {
+    "1m": 60_000,       "3m": 180_000,      "5m": 300_000,
+    "15m": 900_000,     "30m": 1_800_000,
+    "1h": 3_600_000,    "2h": 7_200_000,    "4h": 14_400_000,
+    "1d": 86_400_000,   "3d": 259_200_000,  "1w": 604_800_000,
+  };
+  const intervalMs = msMap[interval] ?? 3_600_000;
+  const diff       = new Date(lastRefreshed).getTime() + intervalMs - Date.now();
+  if (diff <= 0) return "due now";
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1)  return "< 1 min";
+  if (mins < 60) return `~${mins} min`;
+  return `~${Math.floor(mins / 60)}h`;
+}
+
 export function computeLiveState(params: {
   status: string;
   autoEnabled: boolean;

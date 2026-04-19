@@ -3,8 +3,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, Bot, Activity, Clock, ExternalLink,
-  AlertTriangle, TrendingUp, TrendingDown, Radio,
-  History, ArrowRight,
+  AlertTriangle, Radio, History, ArrowRight,
+  Eye, Info, CheckCircle2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatPercent, pnlColor } from "@/lib/utils";
@@ -15,10 +15,14 @@ import {
   generateAutotradingRecommendations,
   generateEventRecommendations,
   computeLiveState,
+  computeShadowSignal,
+  inferTradeCloseReason,
+  estimateNextScan,
   type AutotradingMetrics,
   type MarketStateLevel,
   type SignalProgress,
   type NextActionTimingLevel,
+  type ShadowSignal,
 } from "@/lib/autotrading-ai";
 
 export const metadata: Metadata = { title: "Autotrading Controls" };
@@ -210,6 +214,26 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
     metrics,
   });
 
+  // Shadow mode — last known price from open positions or most recent closed trade
+  const lastPrice: number | null =
+    openPositions.length > 0  ? openPositions[0].current_price
+    : recentTrades.length > 0 ? recentTrades[0].exit_price
+    : null;
+
+  const shadowSignal: ShadowSignal | null =
+    autoEnabled && live.signalProgress === "ready" && metrics && lastPrice !== null
+      ? computeShadowSignal({
+          symbol:         sessSymbol,
+          interval:       sessInterval,
+          metrics,
+          initialCapital: initCap,
+          maxCapitalPct,
+          lastPrice,
+        })
+      : null;
+
+  const nextScan = autoEnabled ? estimateNextScan(sessInterval, sessLastRef) : null;
+
   return (
     <div className="space-y-6 animate-fade-in max-w-3xl">
 
@@ -250,9 +274,16 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
                   )} />
                   {isStopped ? "Stopped" : isPaused ? "Paused" : isRunning ? "Running" : "Off"}
                 </span>
-                <span className="text-2xs font-semibold text-text-muted/50 bg-surface-3 border border-border rounded-full px-2 py-0.5">
-                  PAPER / VIRTUAL
-                </span>
+                {autoEnabled ? (
+                  <span className="text-2xs font-semibold text-accent bg-accent/10 border border-accent/25 rounded-full px-2 py-0.5 flex items-center gap-1">
+                    <Eye size={9} />
+                    SHADOW MODE
+                  </span>
+                ) : (
+                  <span className="text-2xs font-semibold text-text-muted/50 bg-surface-3 border border-border rounded-full px-2 py-0.5">
+                    PAPER / VIRTUAL
+                  </span>
+                )}
               </div>
 
               <h1 className="text-2xl font-bold tracking-tight text-text-primary">{sessName}</h1>
@@ -379,12 +410,20 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
                   <span className={cn("w-2 h-2 rounded-full shrink-0 mt-1.5", dotColor[live.level])} />
                   <p className="text-sm font-semibold text-text-primary leading-snug">{live.currentState}</p>
                 </div>
-                {sessLastRef && (
-                  <p className="text-2xs text-text-muted flex items-center gap-1">
-                    <Activity size={9} />
-                    Last scan {timeAgo(sessLastRef)}
-                  </p>
-                )}
+                <div className="flex items-center gap-3 flex-wrap">
+                  {sessLastRef && (
+                    <p className="text-2xs text-text-muted flex items-center gap-1">
+                      <Activity size={9} />
+                      Last check {timeAgo(sessLastRef)}
+                    </p>
+                  )}
+                  {nextScan && (
+                    <p className="text-2xs text-text-muted flex items-center gap-1">
+                      <Clock size={9} />
+                      Next check {nextScan}
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Watching breakdown */}
@@ -471,6 +510,90 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
                 </div>
               </div>
             )}
+
+          </div>
+        );
+      })()}
+
+      {/* ── Shadow signal panel ────────────────────────────────────────────── */}
+      {shadowSignal && (() => {
+        const sig = shadowSignal;
+        const fmtP  = (n: number) => `$${n.toFixed(2)}`;
+
+        const confStyle: Record<string, string> = {
+          high:   "text-profit bg-profit/10 border-profit/20",
+          medium: "text-accent  bg-accent/10  border-accent/20",
+          low:    "text-text-muted bg-surface-3 border-border",
+        };
+
+        return (
+          <div className="rounded-2xl border border-accent/30 overflow-hidden" style={{ background: "rgb(var(--color-accent) / 0.015)" }}>
+
+            {/* Header */}
+            <div className="px-5 py-3.5 border-b border-accent/20 flex items-center justify-between gap-3 bg-accent/[0.03]">
+              <div className="flex items-center gap-2">
+                <Eye size={12} className="text-accent" />
+                <p className="text-xs font-semibold text-accent/80 uppercase tracking-wider">Signal Detected</p>
+              </div>
+              <span className="text-2xs font-bold text-accent/70 bg-accent/10 border border-dashed border-accent/40 rounded-full px-2.5 py-0.5">
+                SIMULATED · NO REAL ORDER
+              </span>
+            </div>
+
+            {/* Title row */}
+            <div className="px-5 pt-4 pb-3">
+              <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                <span className="text-2xs font-bold px-2 py-0.5 rounded border text-profit bg-profit/10 border-profit/20 uppercase tracking-wider">
+                  LONG
+                </span>
+                <p className="text-base font-bold text-text-primary">
+                  Would enter {sessSymbol} on {sessInterval}
+                </p>
+                <span className={cn("text-2xs font-semibold px-2 py-0.5 rounded border capitalize ml-auto", confStyle[sig.confidence])}>
+                  {sig.confidence} confidence
+                </span>
+              </div>
+              <p className="text-xs text-text-muted leading-relaxed">{sig.reason}</p>
+            </div>
+
+            {/* Price grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 border-t border-accent/15 divide-x divide-accent/10">
+              {[
+                { label: "Entry (approx)",  value: fmtP(sig.entryApprox),  sub: "at last scan",                              subClass: "text-text-muted" },
+                { label: "Stop Loss",       value: fmtP(sig.stopLoss),     sub: `−${sig.stopLossPct.toFixed(2)}%`,           subClass: "text-loss" },
+                { label: "Take Profit",     value: fmtP(sig.takeProfit),   sub: `+${sig.takeProfitPct.toFixed(2)}%`,         subClass: "text-profit" },
+                { label: "Risk : Reward",   value: `1 : ${sig.riskReward.toFixed(1)}`, sub: `${sig.positionSize} sh · $${sig.riskAmount.toFixed(0)} at risk`, subClass: "text-text-muted" },
+              ].map(({ label, value, sub, subClass }) => (
+                <div key={label} className="px-4 py-3">
+                  <p className="text-2xs text-text-muted mb-0.5">{label}</p>
+                  <p className="text-sm font-bold font-mono text-text-primary tabular-nums">{value}</p>
+                  <p className={cn("text-2xs font-mono", subClass)}>{sub}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Why this signal */}
+            <div className="px-5 py-3.5 border-t border-accent/15 bg-surface-0/40">
+              <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider mb-2.5">Why this signal</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {sig.conditions.map((c, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <CheckCircle2 size={11} className="text-profit shrink-0 mt-0.5" />
+                    <p className="text-xs text-text-secondary leading-snug">{c}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Disclaimer */}
+            <div className="px-5 py-2.5 border-t border-accent/15 flex items-start gap-2 bg-accent/[0.02]">
+              <Info size={11} className="text-accent/50 shrink-0 mt-0.5" />
+              <p className="text-2xs text-text-muted/70 leading-relaxed">
+                Entry price is approximate based on last simulation data.
+                In live mode, real-time market prices would be used.
+                All safety limits apply — event guards, loss limits, and kill switch are enforced.
+              </p>
+            </div>
 
           </div>
         );
@@ -565,11 +688,16 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
           <div className="px-5 py-3.5 bg-surface-1 border-b border-border flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <History size={12} className="text-text-muted" />
-              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Trade History</p>
+              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Simulated Trade History</p>
+              {autoEnabled && (
+                <span className="text-2xs font-semibold text-accent/70 bg-accent/8 border border-dashed border-accent/30 rounded px-1.5 py-0.5">
+                  SHADOW MODE
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-3 text-2xs text-text-muted">
               {allTrades.length > 0 && (
-                <span>{allTrades.length} total trade{allTrades.length !== 1 ? "s" : ""}</span>
+                <span>{allTrades.length} trade{allTrades.length !== 1 ? "s" : ""}</span>
               )}
               {lastBarDate && (
                 <span className="font-mono">as of {lastBarDate}</span>
@@ -616,6 +744,7 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
               {recentTrades.map((t, i) => {
                 const isWin      = t.pnl >= 0;
                 const direction  = t.exit_price >= t.entry_price ? "Long" : "Short";
+                const closeReason = inferTradeCloseReason(t.pnl, t.return_pct);
                 const exitDate   = new Date(t.timestamp);
                 const dateStr    = exitDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
                 const timeStr    = exitDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -640,13 +769,23 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
                       {t.symbol}
                     </span>
 
-                    {/* Entry → Exit prices */}
-                    <div className="flex items-center gap-1.5 text-xs text-text-muted min-w-0 flex-1">
-                      <span className="font-mono">${t.entry_price.toFixed(2)}</span>
-                      <ArrowRight size={10} className="text-text-muted/40 shrink-0" />
-                      <span className={cn("font-mono font-semibold", isWin ? "text-profit" : "text-loss")}>
-                        ${t.exit_price.toFixed(2)}
-                      </span>
+                    {/* Entry → Exit prices + close reason */}
+                    <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-xs text-text-muted">
+                        <span className="font-mono">${t.entry_price.toFixed(2)}</span>
+                        <ArrowRight size={10} className="text-text-muted/40 shrink-0" />
+                        <span className={cn("font-mono font-semibold", isWin ? "text-profit" : "text-loss")}>
+                          ${t.exit_price.toFixed(2)}
+                        </span>
+                      </div>
+                      <p className={cn(
+                        "text-2xs",
+                        closeReason.startsWith("Stop") ? "text-loss/70"
+                          : closeReason.startsWith("Take") ? "text-profit/70"
+                          : "text-text-muted/60"
+                      )}>
+                        {closeReason}
+                      </p>
                     </div>
 
                     {/* P&L */}
@@ -660,7 +799,7 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
                     </div>
 
                     {/* Time */}
-                    <div className="text-right shrink-0 pl-3">
+                    <div className="text-right shrink-0 pl-2">
                       <p className="text-2xs font-mono text-text-muted">{dateStr}</p>
                       <p className="text-2xs font-mono text-text-muted/50">{timeStr}</p>
                     </div>

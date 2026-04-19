@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import {
   Bot, Plus, TrendingUp, TrendingDown, Minus, Pause, ShieldX,
   Activity, Zap, AlertTriangle, CheckCircle2, Clock, ArrowRight,
-  DollarSign, RefreshCw,
+  DollarSign, RefreshCw, Eye,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatPercent, pnlColor } from "@/lib/utils";
@@ -213,9 +213,16 @@ function GlobalStatusHero({ sessions }: { sessions: ParsedSession[] }) {
             <span className={cn("text-xs font-bold tracking-widest uppercase", statusColor)}>
               {statusLabel}
             </span>
-            <span className="text-2xs font-semibold text-text-muted/50 bg-surface-3 border border-border rounded-full px-2.5 py-0.5">
-              PAPER / VIRTUAL
-            </span>
+            {anyAutoEnabled ? (
+              <span className="text-2xs font-semibold text-accent bg-accent/10 border border-accent/25 rounded-full px-2.5 py-0.5 flex items-center gap-1">
+                <Eye size={9} />
+                SHADOW MODE
+              </span>
+            ) : (
+              <span className="text-2xs font-semibold text-text-muted/50 bg-surface-3 border border-border rounded-full px-2.5 py-0.5">
+                PAPER / VIRTUAL
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-4 text-2xs text-text-muted">
             {running && oldestActive && (
@@ -351,6 +358,18 @@ function SessionCard({ sess }: { sess: ParsedSession }) {
   const isPaused  = sess.status === "paused";
   const isRunning = sess.autoEnabled && !isStopped && !isPaused;
 
+  // Compute live state once — used for both the strip and signal badge
+  const live = computeLiveState({
+    status:        sess.status,
+    autoEnabled:   sess.autoEnabled,
+    pauseReason:   sess.pauseReason,
+    symbol:        sess.symbol,
+    interval:      sess.interval,
+    lastRefreshed: sess.lastRefreshed,
+    metrics:       sess.metrics,
+  });
+  const hasSignalDetected = isRunning && live.signalProgress === "ready";
+
   const hasWarning = sess.metrics && sess.autoEnabled && (() => {
     const recs = generateAutotradingRecommendations(sess.metrics!, {
       weeklyLossPct: sess.weeklyLossPct,
@@ -400,11 +419,17 @@ function SessionCard({ sess }: { sess: ParsedSession }) {
               {isPaused && (
                 <span className="text-2xs font-semibold text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full px-2 py-0.5">Paused</span>
               )}
-              {isRunning && !hasWarning && (
+              {isRunning && !hasWarning && !hasSignalDetected && (
                 <span className="text-2xs font-semibold text-profit bg-profit/10 border border-profit/20 rounded-full px-2 py-0.5">Running</span>
               )}
               {isRunning && hasWarning && (
                 <span className="text-2xs font-semibold text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full px-2 py-0.5">Warning</span>
+              )}
+              {hasSignalDetected && (
+                <span className="text-2xs font-semibold text-accent bg-accent/10 border border-accent/25 rounded-full px-2 py-0.5 flex items-center gap-1">
+                  <Eye size={9} />
+                  Signal detected
+                </span>
               )}
               {!sess.autoEnabled && !isStopped && (
                 <span className="text-2xs text-text-muted/50 bg-surface-3 border border-border rounded-full px-2 py-0.5">Auto off</span>
@@ -438,15 +463,7 @@ function SessionCard({ sess }: { sess: ParsedSession }) {
         )}
 
         {/* Live state strip */}
-        <LiveStateStrip live={computeLiveState({
-          status:       sess.status,
-          autoEnabled:  sess.autoEnabled,
-          pauseReason:  sess.pauseReason,
-          symbol:       sess.symbol,
-          interval:     sess.interval,
-          lastRefreshed: sess.lastRefreshed,
-          metrics:      sess.metrics,
-        })} />
+        <LiveStateStrip live={live} />
 
         {/* Metrics row */}
         {sess.metrics && (
