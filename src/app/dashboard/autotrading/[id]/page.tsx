@@ -14,6 +14,8 @@ import {
   generateAutotradingRecommendations,
   computeLiveState,
   type AutotradingMetrics,
+  type MarketStateLevel,
+  type SignalProgress,
 } from "@/lib/autotrading-ai";
 
 export const metadata: Metadata = { title: "Autotrading Controls" };
@@ -302,13 +304,28 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
           stopped:  "bg-loss",
           off:      "bg-text-muted/25",
         };
+        const mktBadge = (level: MarketStateLevel, label: string) => (
+          <span className={cn(
+            "inline-block text-2xs font-semibold px-2 py-0.5 rounded-full border",
+            level === "trending"  && "text-profit    bg-profit/10    border-profit/20",
+            level === "sideways"  && "text-accent     bg-accent/10    border-accent/20",
+            level === "volatile"  && "text-amber-400  bg-amber-400/10 border-amber-400/20",
+            level === "mixed"     && "text-text-muted bg-surface-3    border-border",
+            level === "unknown"   && "text-text-muted/50 bg-surface-3/50 border-border/40",
+          )}>
+            {label}
+          </span>
+        );
+        const sigBarColor = (p: SignalProgress) =>
+          p === "ready" ? "bg-profit" : p === "partial" ? "bg-amber-400" : p === "blocked" ? "bg-loss" : "bg-accent";
+        const sigTextColor = (p: SignalProgress) =>
+          p === "ready" ? "text-profit" : p === "partial" ? "text-amber-400" : p === "blocked" ? "text-loss" : "text-accent";
+
         return (
           <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden">
             {/* Card header */}
             <div className="px-5 py-3.5 border-b border-border flex items-center gap-2">
-              <Radio size={12} className={cn(
-                isRunning ? "text-profit" : "text-text-muted"
-              )} />
+              <Radio size={12} className={isRunning ? "text-profit" : "text-text-muted"} />
               <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Live Status</p>
               {isRunning && (
                 <span className="ml-auto flex items-center gap-1.5 text-2xs font-semibold text-profit">
@@ -318,43 +335,73 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
               )}
             </div>
 
-            {/* 3-column grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border/60">
+            {/* Top row: current state + watching breakdown */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border/60 border-b border-border/60">
 
               {/* Current state */}
               <div className="px-5 py-4">
                 <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-2">Current State</p>
-                <div className="flex items-start gap-2">
-                  <span className={cn("w-2 h-2 rounded-full shrink-0 mt-1", dotColor[live.level])} />
+                <div className="flex items-start gap-2 mb-2">
+                  <span className={cn("w-2 h-2 rounded-full shrink-0 mt-1.5", dotColor[live.level])} />
                   <p className="text-sm font-semibold text-text-primary leading-snug">{live.currentState}</p>
                 </div>
                 {sessLastRef && isRunning && (
-                  <p className="text-2xs text-text-muted mt-2 flex items-center gap-1">
+                  <p className="text-2xs text-text-muted flex items-center gap-1">
                     <Activity size={9} />
-                    Last scan {(() => {
-                      const diff = Date.now() - new Date(sessLastRef).getTime();
-                      const mins = Math.floor(diff / 60_000);
-                      if (mins < 1) return "just now";
-                      if (mins < 60) return `${mins}m ago`;
-                      const hrs = Math.floor(mins / 60);
-                      return hrs < 24 ? `${hrs}h ago` : `${Math.floor(hrs / 24)}d ago`;
-                    })()}
+                    {timeAgo(sessLastRef)} · {sessInterval} refresh cycle
                   </p>
                 )}
               </div>
 
+              {/* Watching breakdown */}
+              <div className="px-5 py-4">
+                <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-2">Watching</p>
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="text-sm font-mono font-semibold text-text-primary">{live.watchSymbol}</span>
+                  <span className="text-2xs font-mono text-text-muted bg-surface-3 border border-border rounded px-1.5 py-0.5">
+                    {live.watchTimeframe}
+                  </span>
+                  {mktBadge(live.watchMarketState, live.watchMarketStateLabel)}
+                </div>
+                <p className="text-2xs text-text-muted">{live.watchStrategy}</p>
+              </div>
+            </div>
+
+            {/* Bottom row: what it's looking for + next action + signal progress */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border/60">
+
               {/* What it's looking for */}
               <div className="px-5 py-4">
                 <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-2">What it&apos;s looking for</p>
-                <p className="text-sm text-text-secondary leading-relaxed">{live.watchingDetail}</p>
+                <p className="text-xs text-text-secondary leading-relaxed">{live.watchingDetail}</p>
               </div>
 
-              {/* Next action */}
+              {/* Next action + signal progress */}
               <div className="px-5 py-4">
                 <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-2">Next Action</p>
-                <p className="text-sm text-text-secondary leading-relaxed">{live.nextAction}</p>
-              </div>
+                <p className="text-sm font-semibold text-text-primary leading-snug mb-1">{live.nextAction}</p>
+                <p className="text-xs text-text-muted leading-relaxed">{live.nextActionTrigger}</p>
 
+                {/* Signal progress */}
+                {live.signalProgress !== "none" && (
+                  <div className="mt-3 pt-3 border-t border-border/60">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={cn("text-2xs font-semibold", sigTextColor(live.signalProgress))}>
+                        {live.signalProgressLabel}
+                      </span>
+                      {live.signalProgress !== "blocked" && (
+                        <span className="text-2xs text-text-muted/50 font-mono">{live.signalProgressPct}%</span>
+                      )}
+                    </div>
+                    <div className="h-1 bg-surface-3 rounded-full overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full transition-all", sigBarColor(live.signalProgress))}
+                        style={{ width: `${live.signalProgressPct}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         );

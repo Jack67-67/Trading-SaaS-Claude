@@ -135,41 +135,117 @@ export function generateAutotradingRecommendations(
 }
 
 // ── Live state ────────────────────────────────────────────────────────────────
-// Derives what the session is doing *right now* from available state.
-// No LLM — pure derivation from status + metrics + timing.
+// Derives what the session is doing *right now* from status + metrics + timing.
+// No LLM — all inference is from available DB fields.
 
-export type LiveStateLevel = "scanning" | "active" | "waiting" | "paused" | "stopped" | "off";
+export type LiveStateLevel   = "scanning" | "active" | "waiting" | "paused" | "stopped" | "off";
+export type MarketStateLevel = "trending" | "sideways" | "volatile" | "mixed" | "unknown";
+export type SignalProgress   = "none" | "forming" | "partial" | "ready" | "blocked";
 
 export interface LiveState {
   level: LiveStateLevel;
-  /** Short phrase: "Scanning BTC", "Waiting for next refresh" */
-  currentState: string;
-  /** What the system is monitoring: symbol, interval, strategy type */
-  watching: string;
-  /** Expanded watching description for detail views */
-  watchingDetail: string;
-  /** What will happen next */
-  nextAction: string;
+  currentState: string;        // "Analyzing 1h bars for breakout setup"
+
+  // Watching breakdown
+  watchSymbol: string;
+  watchTimeframe: string;      // "1-hour bars"
+  watchStrategy: string;       // "Trend following", "Mean reversion", etc.
+  watchMarketState: MarketStateLevel;
+  watchMarketStateLabel: string;
+  watchingDetail: string;      // paragraph for detail page
+
+  // Next action
+  nextAction: string;          // "Enter on next breakout if conditions align"
+  nextActionTrigger: string;   // "Requires: signal strength above threshold and recent scan"
+
+  // Signal progress
+  signalProgress: SignalProgress;
+  signalProgressLabel: string; // "Setup forming", "Conditions partially met", etc.
+  signalProgressPct: number;   // 0–100
 }
 
-function strategyHint(interval: string): string {
-  if (["1m", "3m", "5m"].includes(interval)) return "scalp & momentum";
-  if (["15m", "30m"].includes(interval))      return "intraday breakout";
-  if (["1h", "2h", "4h"].includes(interval))  return "swing momentum";
-  if (["1d", "3d", "1w"].includes(interval))  return "trend following";
-  return "technical signals";
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+function timeframeLabel(interval: string): string {
+  const map: Record<string, string> = {
+    "1m": "1-min bars",  "3m": "3-min bars",  "5m": "5-min bars",
+    "15m": "15-min bars", "30m": "30-min bars",
+    "1h": "1-hour bars",  "2h": "2-hour bars",  "4h": "4-hour bars",
+    "1d": "Daily bars",   "3d": "3-day bars",   "1w": "Weekly bars",
+  };
+  return map[interval] ?? `${interval} bars`;
 }
 
-function watchingDetailText(symbol: string, interval: string): string {
-  if (["1m", "3m", "5m"].includes(interval))
-    return `Scanning ${symbol} for short-term momentum — rapid price action and volume spikes on each ${interval} bar.`;
-  if (["15m", "30m"].includes(interval))
-    return `Monitoring ${symbol} for intraday breakouts — range expansions with confirmation on the ${interval} chart.`;
-  if (["1h", "2h", "4h"].includes(interval))
-    return `Watching ${symbol} for swing entries — momentum continuation and pullback setups on the ${interval} timeframe.`;
-  if (["1d", "3d", "1w"].includes(interval))
-    return `Tracking ${symbol} trend — position entries on pullbacks within the established trend direction on daily bars.`;
-  return `Monitoring ${symbol} on ${interval} bars for technical entry and exit conditions.`;
+function deriveStrategy(interval: string, m: AutotradingMetrics | null): string {
+  if (!m) {
+    if (["1m","3m","5m"].includes(interval))   return "Scalp & momentum";
+    if (["15m","30m"].includes(interval))       return "Intraday breakout";
+    if (["1h","2h","4h"].includes(interval))    return "Swing momentum";
+    if (["1d","3d","1w"].includes(interval))    return "Trend following";
+    return "Technical signals";
+  }
+  if (m.profit_factor > 2.0 && m.win_rate_pct < 50) return "Trend following";
+  if (m.win_rate_pct > 58   && m.profit_factor < 1.8) return "Mean reversion";
+  if (m.sharpe_ratio > 0.8)                           return "Momentum";
+  if (["1d","3d","1w"].includes(interval))            return "Position trading";
+  return "Technical breakout";
+}
+
+function deriveMarketState(m: AutotradingMetrics | null): { level: MarketStateLevel; label: string } {
+  if (!m) return { level: "unknown", label: "Unknown" };
+  if (m.max_drawdown_pct > 25 || m.sharpe_ratio < 0)               return { level: "volatile",  label: "Volatile"  };
+  if (m.sharpe_ratio > 1.2    && m.max_drawdown_pct < 15)           return { level: "trending",  label: "Trending"  };
+  if (m.win_rate_pct  > 55    && m.sharpe_ratio > 0.5 && m.max_drawdown_pct < 20)
+                                                                      return { level: "sideways",  label: "Sideways"  };
+  return { level: "mixed", label: "Mixed" };
+}
+
+function deriveSignalProgress(
+  m: AutotradingMetrics | null,
+  minsAgo: number,
+): { progress: SignalProgress; label: string; pct: number } {
+  if (!m) return { progress: "none", label: "No data yet", pct: 0 };
+  if (m.profit_factor < 1 || m.sharpe_ratio < 0)
+    return { progress: "blocked", label: "Below entry threshold", pct: 0 };
+
+  const conditions = [
+    m.sharpe_ratio >= 0.3,
+    m.profit_factor >= 1.1,
+    m.win_rate_pct  >= 38,
+    m.sharpe_ratio  >= 0.8,
+    m.profit_factor >= 1.6,
+    m.sharpe_ratio  >= 1.5,
+    minsAgo < 30,
+  ];
+  const pct = Math.round(conditions.filter(Boolean).length / conditions.length * 100);
+
+  if (pct >= 85) return { progress: "ready",   label: "Setup conditions met",       pct };
+  if (pct >= 60) return { progress: "partial",  label: "Conditions partially met",   pct };
+  return           { progress: "forming",  label: "Setup forming",              pct };
+}
+
+function describeWatching(symbol: string, interval: string, strategy: string): string {
+  const base = (() => {
+    if (["1m","3m","5m"].includes(interval))
+      return `Scanning ${symbol} every ${interval} for rapid momentum signals — tracking volume spikes and short-term price acceleration.`;
+    if (["15m","30m"].includes(interval))
+      return `Monitoring ${symbol} on ${interval} bars for intraday range breaks — evaluating breakout quality and rejection patterns.`;
+    if (["1h","2h","4h"].includes(interval))
+      return `Watching ${symbol} on ${interval} bars for swing entry setups — monitoring momentum continuation and pullback conditions.`;
+    if (["1d","3d","1w"].includes(interval))
+      return `Tracking ${symbol} on daily bars for trend-following entries — evaluating trend structure and pullback depth.`;
+    return `Monitoring ${symbol} on ${interval} bars for technical entry conditions.`;
+  })();
+
+  const stratExtra = (() => {
+    if (strategy === "Trend following")  return " Exits triggered on trend reversal signals.";
+    if (strategy === "Mean reversion")   return " Looking for overextended moves to revert.";
+    if (strategy === "Momentum")         return " Enters on breakouts, exits on momentum decay.";
+    if (strategy === "Position trading") return " Holding periods span days to weeks.";
+    return "";
+  })();
+
+  return base + stratExtra;
 }
 
 export function computeLiveState(params: {
@@ -182,71 +258,107 @@ export function computeLiveState(params: {
   metrics: AutotradingMetrics | null;
 }): LiveState {
   const { status, autoEnabled, pauseReason, symbol, interval, lastRefreshed, metrics } = params;
+  const tfLabel  = timeframeLabel(interval);
+  const strategy = deriveStrategy(interval, metrics);
+  const mktState = deriveMarketState(metrics);
+
+  // ── Terminal / inactive states ────────────────────────────────────────────
 
   if (status === "stopped") {
     return {
-      level: "stopped",
-      currentState: "Session stopped",
-      watching: "—",
-      watchingDetail: "This session has been permanently terminated via kill switch.",
-      nextAction: "Create a new session to continue trading",
+      level: "stopped", currentState: "Session permanently stopped",
+      watchSymbol: symbol, watchTimeframe: tfLabel, watchStrategy: strategy,
+      watchMarketState: mktState.level, watchMarketStateLabel: mktState.label,
+      watchingDetail: "This session was terminated via kill switch. No further monitoring or trades.",
+      nextAction: "No trade expected", nextActionTrigger: "Create a new session to continue trading.",
+      signalProgress: "none", signalProgressLabel: "Stopped", signalProgressPct: 0,
     };
   }
 
   if (status === "paused") {
+    const reason = pauseReason ?? "Manually paused";
     return {
-      level: "paused",
-      currentState: pauseReason ?? "Paused",
-      watching: `${symbol} · ${interval}`,
-      watchingDetail: `${symbol} on ${interval} — not scanning. Session is paused${pauseReason ? `: ${pauseReason.toLowerCase()}` : ""}.`,
-      nextAction: "No trade until session is manually resumed",
+      level: "paused", currentState: reason,
+      watchSymbol: symbol, watchTimeframe: tfLabel, watchStrategy: strategy,
+      watchMarketState: mktState.level, watchMarketStateLabel: mktState.label,
+      watchingDetail: `${symbol} on ${tfLabel} — signal scanning suspended. ${reason}. Resume the session to restart monitoring.`,
+      nextAction: "No trade until resumed", nextActionTrigger: "Review the pause reason and resume manually.",
+      signalProgress: "none", signalProgressLabel: "Paused", signalProgressPct: 0,
     };
   }
 
   if (!autoEnabled) {
     return {
-      level: "off",
-      currentState: "Not monitoring",
-      watching: `${symbol} · ${interval}`,
-      watchingDetail: `${symbol} on ${interval} is not being scanned. Enable autotrading to activate signal monitoring.`,
-      nextAction: "Enable autotrading to activate signal scanning",
+      level: "off", currentState: "Signal monitoring is off",
+      watchSymbol: symbol, watchTimeframe: tfLabel, watchStrategy: strategy,
+      watchMarketState: mktState.level, watchMarketStateLabel: mktState.label,
+      watchingDetail: `${symbol} on ${tfLabel} is configured but not actively scanned. Enable autotrading to start monitoring.`,
+      nextAction: "No trade expected", nextActionTrigger: "Enable autotrading to activate signal scanning.",
+      signalProgress: "none", signalProgressLabel: "Off", signalProgressPct: 0,
     };
   }
 
-  // Active + autotrading on
+  // ── Active + autotrading on ───────────────────────────────────────────────
+
   const minsAgo = lastRefreshed
     ? (Date.now() - new Date(lastRefreshed).getTime()) / 60_000
     : Infinity;
 
-  const hint    = strategyHint(interval);
-  const watching = `${symbol} · ${interval} · ${hint}`;
-  const watchingDetail = watchingDetailText(symbol, interval);
+  const sig = deriveSignalProgress(metrics, minsAgo);
 
+  // Current state — descriptive
   let currentState: string;
   let level: LiveStateLevel;
+
   if (minsAgo < 3) {
-    currentState = `Scanning ${symbol}`;
     level = "scanning";
-  } else if (minsAgo < 60) {
-    currentState = `Active — ${Math.round(minsAgo)}m since last scan`;
+    currentState = `Analyzing ${tfLabel} for ${strategy.toLowerCase()} signal`;
+  } else if (sig.progress === "ready") {
     level = "active";
+    currentState = `Setup conditions met — waiting for entry trigger`;
+  } else if (sig.progress === "partial") {
+    level = "active";
+    currentState = `Monitoring ${symbol} — setup partially formed`;
+  } else if (sig.progress === "blocked") {
+    level = "active";
+    currentState = `Watching ${symbol} — strategy below entry threshold`;
+  } else if (minsAgo < 60) {
+    level = "active";
+    currentState = `Scanning ${symbol} — no valid signal on last check`;
   } else {
-    currentState = "Waiting for next refresh";
     level = "waiting";
+    currentState = `Idle — waiting for next refresh cycle`;
   }
 
+  // Next action + trigger
   let nextAction: string;
+  let nextActionTrigger: string;
+
   if (!metrics) {
-    nextAction = "Run a backtest refresh to initialize monitoring";
-  } else if (metrics.profit_factor < 1 || metrics.sharpe_ratio < 0) {
-    nextAction = "Holding — strategy performance below entry threshold";
-  } else if (metrics.sharpe_ratio >= 1.5 && metrics.profit_factor >= 1.5) {
-    nextAction = hint.includes("trend")
-      ? `Enter ${symbol} on next trend pullback if signal confirms`
-      : `Enter on next breakout if volume and momentum confirm`;
+    nextAction = "No signal data yet";
+    nextActionTrigger = "Run a backtest refresh to initialize signal monitoring.";
+  } else if (sig.progress === "blocked") {
+    nextAction = "No entry expected";
+    nextActionTrigger = "Strategy metrics below minimum threshold — review the analysis section.";
+  } else if (sig.progress === "ready") {
+    nextAction = strategy.includes("Trend") || strategy.includes("Position")
+      ? `Enter ${symbol} on trend continuation if signal confirms`
+      : `Enter ${symbol} on breakout if setup triggers`;
+    nextActionTrigger = "All setup conditions met — awaiting final price action confirmation.";
+  } else if (sig.progress === "partial") {
+    nextAction = "Wait for confirmation";
+    nextActionTrigger = `${100 - sig.pct}% of conditions still unmet — monitoring for improvement.`;
   } else {
-    nextAction = "Wait for confirmation before entry";
+    nextAction = "Watch for setup to develop";
+    nextActionTrigger = "Conditions are forming but not yet strong enough for an entry.";
   }
 
-  return { level, currentState, watching, watchingDetail, nextAction };
+  return {
+    level, currentState,
+    watchSymbol: symbol, watchTimeframe: tfLabel, watchStrategy: strategy,
+    watchMarketState: mktState.level, watchMarketStateLabel: mktState.label,
+    watchingDetail: describeWatching(symbol, interval, strategy),
+    nextAction, nextActionTrigger,
+    signalProgress: sig.progress, signalProgressLabel: sig.label, signalProgressPct: sig.pct,
+  };
 }

@@ -16,6 +16,8 @@ import {
   type AutotradingMetrics,
   type AutotradingRecommendation,
   type LiveState,
+  type MarketStateLevel,
+  type SignalProgress,
 } from "@/lib/autotrading-ai";
 
 export const metadata: Metadata = { title: "Autotrading" };
@@ -481,24 +483,80 @@ const LIVE_DOT: Record<string, string> = {
   off:      "bg-text-muted/25",
 };
 
+function MarketStateBadge({ level, label }: { level: MarketStateLevel; label: string }) {
+  return (
+    <span className={cn(
+      "inline-block text-2xs font-semibold px-1.5 py-0.5 rounded-full border mt-1",
+      level === "trending"  && "text-profit    bg-profit/10    border-profit/20",
+      level === "sideways"  && "text-accent     bg-accent/10    border-accent/20",
+      level === "volatile"  && "text-amber-400  bg-amber-400/10 border-amber-400/20",
+      level === "mixed"     && "text-text-muted bg-surface-3    border-border",
+      level === "unknown"   && "text-text-muted/50 bg-surface-3/50 border-border/40",
+    )}>
+      {label}
+    </span>
+  );
+}
+
+function SignalProgressBar({ progress, label, pct }: { progress: SignalProgress; label: string; pct: number }) {
+  if (progress === "none") return null;
+  const barColor =
+    progress === "ready"   ? "bg-profit" :
+    progress === "partial" ? "bg-amber-400" :
+    progress === "blocked" ? "bg-loss" :
+    "bg-accent";
+  const textColor =
+    progress === "ready"   ? "text-profit" :
+    progress === "partial" ? "text-amber-400" :
+    progress === "blocked" ? "text-loss" :
+    "text-accent";
+  return (
+    <div className="mt-1.5">
+      <div className="flex items-center justify-between mb-0.5">
+        <span className={cn("text-2xs font-semibold", textColor)}>{label}</span>
+        {progress !== "blocked" && (
+          <span className="text-2xs text-text-muted/50 font-mono">{pct}%</span>
+        )}
+      </div>
+      <div className="h-0.5 bg-surface-3 rounded-full overflow-hidden">
+        <div className={cn("h-full rounded-full", barColor)} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function LiveStateStrip({ live }: { live: LiveState }) {
   return (
     <div className="mt-3 ml-11 grid grid-cols-3 gap-4 border-t border-border/60 pt-3">
+
+      {/* Current state */}
       <div>
         <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-1.5">Current state</p>
         <div className="flex items-start gap-1.5">
           <span className={cn("w-1.5 h-1.5 rounded-full shrink-0 mt-[3px]", LIVE_DOT[live.level])} />
-          <p className="text-xs font-semibold text-text-primary leading-tight">{live.currentState}</p>
+          <p className="text-xs font-semibold text-text-primary leading-snug">{live.currentState}</p>
         </div>
       </div>
+
+      {/* Watching */}
       <div>
         <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-1.5">Watching</p>
-        <p className="text-xs text-text-secondary leading-tight">{live.watching}</p>
+        <p className="text-xs font-mono text-text-secondary">{live.watchSymbol} · {live.watchTimeframe}</p>
+        <p className="text-2xs text-text-muted mt-0.5">{live.watchStrategy}</p>
+        <MarketStateBadge level={live.watchMarketState} label={live.watchMarketStateLabel} />
       </div>
+
+      {/* Next action */}
       <div>
         <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-1.5">Next action</p>
-        <p className="text-xs text-text-secondary leading-tight">{live.nextAction}</p>
+        <p className="text-xs text-text-secondary leading-snug">{live.nextAction}</p>
+        <SignalProgressBar
+          progress={live.signalProgress}
+          label={live.signalProgressLabel}
+          pct={live.signalProgressPct}
+        />
       </div>
+
     </div>
   );
 }
