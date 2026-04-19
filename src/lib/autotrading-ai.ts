@@ -138,30 +138,45 @@ export function generateAutotradingRecommendations(
 // Derives what the session is doing *right now* from status + metrics + timing.
 // No LLM — all inference is from available DB fields.
 
-export type LiveStateLevel   = "scanning" | "active" | "waiting" | "paused" | "stopped" | "off";
-export type MarketStateLevel = "trending" | "sideways" | "volatile" | "mixed" | "unknown";
-export type SignalProgress   = "none" | "forming" | "partial" | "ready" | "blocked";
+export type LiveStateLevel        = "scanning" | "active" | "waiting" | "paused" | "stopped" | "off";
+export type MarketStateLevel      = "trending" | "sideways" | "volatile" | "mixed" | "unknown";
+export type SignalProgress        = "none" | "forming" | "partial" | "ready" | "blocked";
+export type NextActionTimingLevel = "soon" | "possible" | "unlikely" | "blocked" | "none";
+
+export interface ConditionCheck {
+  label: string;   // "Profitable edge"
+  detail: string;  // "Profit factor 1.8 — strategy makes more than it loses"
+  met: boolean;
+}
 
 export interface LiveState {
   level: LiveStateLevel;
-  currentState: string;        // "Analyzing 1h bars for breakout setup"
+  currentState: string;
 
   // Watching breakdown
   watchSymbol: string;
-  watchTimeframe: string;      // "1-hour bars"
-  watchStrategy: string;       // "Trend following", "Mean reversion", etc.
+  watchTimeframe: string;
+  watchStrategy: string;
   watchMarketState: MarketStateLevel;
   watchMarketStateLabel: string;
-  watchingDetail: string;      // paragraph for detail page
+  watchingDetail: string;
+
+  // Scan frequency
+  scanFrequency: string;        // "Every 15 minutes", "On each new 4-hour candle"
 
   // Next action
-  nextAction: string;          // "Enter on next breakout if conditions align"
-  nextActionTrigger: string;   // "Requires: signal strength above threshold and recent scan"
+  nextAction: string;
+  nextActionTrigger: string;
+  nextActionTiming: string;           // "Next possible trade within 1–2 candles"
+  nextActionTimingLevel: NextActionTimingLevel;
 
   // Signal progress
   signalProgress: SignalProgress;
-  signalProgressLabel: string; // "Setup forming", "Conditions partially met", etc.
-  signalProgressPct: number;   // 0–100
+  signalProgressLabel: string;
+  signalProgressPct: number;
+
+  // Condition breakdown — "why no trade yet"
+  conditionChecks: ConditionCheck[];
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -224,6 +239,97 @@ function deriveSignalProgress(
   return           { progress: "forming",  label: "Setup forming",              pct };
 }
 
+function deriveScanFrequency(interval: string): string {
+  const map: Record<string, string> = {
+    "1m":  "Every 1 minute",
+    "3m":  "Every 3 minutes",
+    "5m":  "Every 5 minutes",
+    "15m": "Every 15 minutes",
+    "30m": "Every 30 minutes",
+    "1h":  "On each new 1-hour candle",
+    "2h":  "On each new 2-hour candle",
+    "4h":  "On each new 4-hour candle",
+    "1d":  "Once per day at candle close",
+    "3d":  "Every 3 days",
+    "1w":  "Weekly at candle close",
+  };
+  return map[interval] ?? `On each ${interval} bar`;
+}
+
+function deriveNextActionTiming(
+  progress: SignalProgress,
+  marketState: MarketStateLevel,
+  strategy: string,
+): { timing: string; level: NextActionTimingLevel } {
+  if (progress === "none")    return { timing: "No scan data yet",                          level: "none"    };
+  if (progress === "blocked") return { timing: "No trade expected — below risk threshold",  level: "blocked" };
+
+  // Strategy / market mismatch lowers probability
+  const mismatch =
+    (strategy.includes("Trend") && marketState === "sideways") ||
+    (strategy.includes("Mean reversion") && marketState === "trending");
+
+  if (progress === "ready") {
+    if (mismatch) return { timing: "Trade possible — but market conditions unfavorable for strategy", level: "possible" };
+    return { timing: "Next possible trade within 1–2 candles", level: "soon" };
+  }
+  if (progress === "partial") {
+    if (mismatch) return { timing: "Low probability — market unfavorable and conditions incomplete",  level: "unlikely" };
+    return { timing: "Trade possible within 3–5 candles if conditions improve",                       level: "possible" };
+  }
+  // forming
+  if (mismatch) return { timing: "Low probability — market conditions unfavorable for strategy",     level: "unlikely" };
+  return           { timing: "No immediate trade — setup still developing",                           level: "unlikely" };
+}
+
+function deriveConditionChecks(
+  m: AutotradingMetrics | null,
+  minsAgo: number,
+): ConditionCheck[] {
+  if (!m) {
+    return [
+      { label: "Performance data", detail: "No backtest results yet — run a session refresh", met: false },
+    ];
+  }
+
+  const staleLabel = minsAgo === Infinity
+    ? "Never scanned — run a backtest refresh"
+    : minsAgo < 30
+    ? `Scanned ${Math.round(minsAgo)}m ago — signals are current`
+    : `Last scan ${Math.round(minsAgo)}m ago — signals may be stale`;
+
+  return [
+    {
+      label: "Profitable edge",
+      detail: m.profit_factor >= 1.1
+        ? `Profit factor ${m.profit_factor.toFixed(2)} — strategy earns more than it loses`
+        : `Profit factor ${m.profit_factor.toFixed(2)} — losses currently exceed gains`,
+      met: m.profit_factor >= 1.1,
+    },
+    {
+      label: "Signal strength",
+      detail: m.sharpe_ratio >= 0.8
+        ? `Sharpe ${m.sharpe_ratio.toFixed(2)} — strong risk-adjusted momentum`
+        : m.sharpe_ratio >= 0.3
+        ? `Sharpe ${m.sharpe_ratio.toFixed(2)} — marginal, needs improvement`
+        : `Sharpe ${m.sharpe_ratio.toFixed(2)} — returns don't justify the volatility`,
+      met: m.sharpe_ratio >= 0.3,
+    },
+    {
+      label: "Win consistency",
+      detail: m.win_rate_pct >= 38
+        ? `${m.win_rate_pct.toFixed(0)}% win rate — acceptable trade frequency`
+        : `${m.win_rate_pct.toFixed(0)}% win rate — fewer than 2 in 5 trades profit`,
+      met: m.win_rate_pct >= 38,
+    },
+    {
+      label: "Data freshness",
+      detail: staleLabel,
+      met: minsAgo < 30,
+    },
+  ];
+}
+
 function describeWatching(symbol: string, interval: string, strategy: string): string {
   const base = (() => {
     if (["1m","3m","5m"].includes(interval))
@@ -258,9 +364,12 @@ export function computeLiveState(params: {
   metrics: AutotradingMetrics | null;
 }): LiveState {
   const { status, autoEnabled, pauseReason, symbol, interval, lastRefreshed, metrics } = params;
-  const tfLabel  = timeframeLabel(interval);
-  const strategy = deriveStrategy(interval, metrics);
-  const mktState = deriveMarketState(metrics);
+  const tfLabel   = timeframeLabel(interval);
+  const strategy  = deriveStrategy(interval, metrics);
+  const mktState  = deriveMarketState(metrics);
+  const scanFreq  = deriveScanFrequency(interval);
+
+  const inactiveChecks = deriveConditionChecks(metrics, Infinity);
 
   // ── Terminal / inactive states ────────────────────────────────────────────
 
@@ -270,8 +379,11 @@ export function computeLiveState(params: {
       watchSymbol: symbol, watchTimeframe: tfLabel, watchStrategy: strategy,
       watchMarketState: mktState.level, watchMarketStateLabel: mktState.label,
       watchingDetail: "This session was terminated via kill switch. No further monitoring or trades.",
+      scanFrequency: scanFreq,
       nextAction: "No trade expected", nextActionTrigger: "Create a new session to continue trading.",
+      nextActionTiming: "No trade expected", nextActionTimingLevel: "none",
       signalProgress: "none", signalProgressLabel: "Stopped", signalProgressPct: 0,
+      conditionChecks: inactiveChecks,
     };
   }
 
@@ -281,9 +393,12 @@ export function computeLiveState(params: {
       level: "paused", currentState: reason,
       watchSymbol: symbol, watchTimeframe: tfLabel, watchStrategy: strategy,
       watchMarketState: mktState.level, watchMarketStateLabel: mktState.label,
-      watchingDetail: `${symbol} on ${tfLabel} — signal scanning suspended. ${reason}. Resume the session to restart monitoring.`,
+      watchingDetail: `${symbol} on ${tfLabel} — signal scanning suspended. ${reason}. Resume to restart monitoring.`,
+      scanFrequency: scanFreq,
       nextAction: "No trade until resumed", nextActionTrigger: "Review the pause reason and resume manually.",
+      nextActionTiming: "No trade until manually resumed", nextActionTimingLevel: "none",
       signalProgress: "none", signalProgressLabel: "Paused", signalProgressPct: 0,
+      conditionChecks: inactiveChecks,
     };
   }
 
@@ -293,8 +408,11 @@ export function computeLiveState(params: {
       watchSymbol: symbol, watchTimeframe: tfLabel, watchStrategy: strategy,
       watchMarketState: mktState.level, watchMarketStateLabel: mktState.label,
       watchingDetail: `${symbol} on ${tfLabel} is configured but not actively scanned. Enable autotrading to start monitoring.`,
+      scanFrequency: scanFreq,
       nextAction: "No trade expected", nextActionTrigger: "Enable autotrading to activate signal scanning.",
+      nextActionTiming: "No trade expected", nextActionTimingLevel: "none",
       signalProgress: "none", signalProgressLabel: "Off", signalProgressPct: 0,
+      conditionChecks: inactiveChecks,
     };
   }
 
@@ -304,7 +422,9 @@ export function computeLiveState(params: {
     ? (Date.now() - new Date(lastRefreshed).getTime()) / 60_000
     : Infinity;
 
-  const sig = deriveSignalProgress(metrics, minsAgo);
+  const sig     = deriveSignalProgress(metrics, minsAgo);
+  const timing  = deriveNextActionTiming(sig.progress, mktState.level, strategy);
+  const checks  = deriveConditionChecks(metrics, minsAgo);
 
   // Current state — descriptive
   let currentState: string;
@@ -358,7 +478,10 @@ export function computeLiveState(params: {
     watchSymbol: symbol, watchTimeframe: tfLabel, watchStrategy: strategy,
     watchMarketState: mktState.level, watchMarketStateLabel: mktState.label,
     watchingDetail: describeWatching(symbol, interval, strategy),
+    scanFrequency: scanFreq,
     nextAction, nextActionTrigger,
+    nextActionTiming: timing.timing, nextActionTimingLevel: timing.level,
     signalProgress: sig.progress, signalProgressLabel: sig.label, signalProgressPct: sig.pct,
+    conditionChecks: checks,
   };
 }

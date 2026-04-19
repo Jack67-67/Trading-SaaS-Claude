@@ -18,6 +18,7 @@ import {
   type LiveState,
   type MarketStateLevel,
   type SignalProgress,
+  type NextActionTimingLevel,
 } from "@/lib/autotrading-ai";
 
 export const metadata: Metadata = { title: "Autotrading" };
@@ -525,6 +526,14 @@ function SignalProgressBar({ progress, label, pct }: { progress: SignalProgress;
   );
 }
 
+const TIMING_COLOR: Record<NextActionTimingLevel, string> = {
+  soon:     "text-profit",
+  possible: "text-accent",
+  unlikely: "text-text-muted/60",
+  blocked:  "text-loss",
+  none:     "text-text-muted/40",
+};
+
 function LiveStateStrip({ live }: { live: LiveState }) {
   return (
     <div className="mt-3 ml-11 grid grid-cols-3 gap-4 border-t border-border/60 pt-3">
@@ -543,13 +552,19 @@ function LiveStateStrip({ live }: { live: LiveState }) {
         <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-1.5">Watching</p>
         <p className="text-xs font-mono text-text-secondary">{live.watchSymbol} · {live.watchTimeframe}</p>
         <p className="text-2xs text-text-muted mt-0.5">{live.watchStrategy}</p>
-        <MarketStateBadge level={live.watchMarketState} label={live.watchMarketStateLabel} />
+        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+          <MarketStateBadge level={live.watchMarketState} label={live.watchMarketStateLabel} />
+          <span className="text-2xs text-text-muted/50">{live.scanFrequency}</span>
+        </div>
       </div>
 
-      {/* Next action */}
+      {/* Next action + timing */}
       <div>
         <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-1.5">Next action</p>
         <p className="text-xs text-text-secondary leading-snug">{live.nextAction}</p>
+        <p className={cn("text-2xs mt-1 leading-snug", TIMING_COLOR[live.nextActionTimingLevel])}>
+          {live.nextActionTiming}
+        </p>
         <SignalProgressBar
           progress={live.signalProgress}
           label={live.signalProgressLabel}

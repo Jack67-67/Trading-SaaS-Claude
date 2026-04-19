@@ -16,6 +16,7 @@ import {
   type AutotradingMetrics,
   type MarketStateLevel,
   type SignalProgress,
+  type NextActionTimingLevel,
 } from "@/lib/autotrading-ai";
 
 export const metadata: Metadata = { title: "Autotrading Controls" };
@@ -307,22 +308,25 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
         const mktBadge = (level: MarketStateLevel, label: string) => (
           <span className={cn(
             "inline-block text-2xs font-semibold px-2 py-0.5 rounded-full border",
-            level === "trending"  && "text-profit    bg-profit/10    border-profit/20",
-            level === "sideways"  && "text-accent     bg-accent/10    border-accent/20",
-            level === "volatile"  && "text-amber-400  bg-amber-400/10 border-amber-400/20",
-            level === "mixed"     && "text-text-muted bg-surface-3    border-border",
-            level === "unknown"   && "text-text-muted/50 bg-surface-3/50 border-border/40",
-          )}>
-            {label}
-          </span>
+            level === "trending" && "text-profit    bg-profit/10    border-profit/20",
+            level === "sideways" && "text-accent     bg-accent/10    border-accent/20",
+            level === "volatile" && "text-amber-400  bg-amber-400/10 border-amber-400/20",
+            level === "mixed"    && "text-text-muted bg-surface-3    border-border",
+            level === "unknown"  && "text-text-muted/50 bg-surface-3/50 border-border/40",
+          )}>{label}</span>
         );
         const sigBarColor = (p: SignalProgress) =>
           p === "ready" ? "bg-profit" : p === "partial" ? "bg-amber-400" : p === "blocked" ? "bg-loss" : "bg-accent";
         const sigTextColor = (p: SignalProgress) =>
           p === "ready" ? "text-profit" : p === "partial" ? "text-amber-400" : p === "blocked" ? "text-loss" : "text-accent";
+        const timingColor: Record<NextActionTimingLevel, string> = {
+          soon: "text-profit", possible: "text-accent",
+          unlikely: "text-text-muted/60", blocked: "text-loss", none: "text-text-muted/40",
+        };
 
         return (
           <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden">
+
             {/* Card header */}
             <div className="px-5 py-3.5 border-b border-border flex items-center gap-2">
               <Radio size={12} className={isRunning ? "text-profit" : "text-text-muted"} />
@@ -330,12 +334,12 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
               {isRunning && (
                 <span className="ml-auto flex items-center gap-1.5 text-2xs font-semibold text-profit">
                   <span className="w-1.5 h-1.5 rounded-full bg-profit animate-pulse" />
-                  Monitoring
+                  Monitoring · {live.scanFrequency.toLowerCase()}
                 </span>
               )}
             </div>
 
-            {/* Top row: current state + watching breakdown */}
+            {/* Row 1: Current state + Watching */}
             <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border/60 border-b border-border/60">
 
               {/* Current state */}
@@ -345,10 +349,10 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
                   <span className={cn("w-2 h-2 rounded-full shrink-0 mt-1.5", dotColor[live.level])} />
                   <p className="text-sm font-semibold text-text-primary leading-snug">{live.currentState}</p>
                 </div>
-                {sessLastRef && isRunning && (
+                {sessLastRef && (
                   <p className="text-2xs text-text-muted flex items-center gap-1">
                     <Activity size={9} />
-                    {timeAgo(sessLastRef)} · {sessInterval} refresh cycle
+                    Last scan {timeAgo(sessLastRef)}
                   </p>
                 )}
               </div>
@@ -356,7 +360,7 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
               {/* Watching breakdown */}
               <div className="px-5 py-4">
                 <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-2">Watching</p>
-                <div className="flex items-center gap-2 flex-wrap mb-1">
+                <div className="flex items-center gap-2 flex-wrap mb-1.5">
                   <span className="text-sm font-mono font-semibold text-text-primary">{live.watchSymbol}</span>
                   <span className="text-2xs font-mono text-text-muted bg-surface-3 border border-border rounded px-1.5 py-0.5">
                     {live.watchTimeframe}
@@ -364,11 +368,14 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
                   {mktBadge(live.watchMarketState, live.watchMarketStateLabel)}
                 </div>
                 <p className="text-2xs text-text-muted">{live.watchStrategy}</p>
+                {!isRunning && (
+                  <p className="text-2xs text-text-muted/50 mt-1">{live.scanFrequency} when active</p>
+                )}
               </div>
             </div>
 
-            {/* Bottom row: what it's looking for + next action + signal progress */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border/60">
+            {/* Row 2: What it's looking for + Next action */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border/60 border-b border-border/60">
 
               {/* What it's looking for */}
               <div className="px-5 py-4">
@@ -376,13 +383,15 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
                 <p className="text-xs text-text-secondary leading-relaxed">{live.watchingDetail}</p>
               </div>
 
-              {/* Next action + signal progress */}
+              {/* Next action + timing + signal progress */}
               <div className="px-5 py-4">
                 <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-2">Next Action</p>
                 <p className="text-sm font-semibold text-text-primary leading-snug mb-1">{live.nextAction}</p>
-                <p className="text-xs text-text-muted leading-relaxed">{live.nextActionTrigger}</p>
+                <p className="text-xs text-text-muted leading-relaxed mb-2">{live.nextActionTrigger}</p>
+                <p className={cn("text-xs font-semibold", timingColor[live.nextActionTimingLevel])}>
+                  {live.nextActionTiming}
+                </p>
 
-                {/* Signal progress */}
                 {live.signalProgress !== "none" && (
                   <div className="mt-3 pt-3 border-t border-border/60">
                     <div className="flex items-center justify-between mb-1">
@@ -403,6 +412,36 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
                 )}
               </div>
             </div>
+
+            {/* Row 3: Condition checks */}
+            {live.conditionChecks.length > 0 && (
+              <div className="px-5 py-4 bg-surface-0/40">
+                <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-3">
+                  Entry conditions
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {live.conditionChecks.map((c) => (
+                    <div key={c.label} className="flex items-start gap-2.5">
+                      <span className={cn(
+                        "shrink-0 mt-0.5 w-4 h-4 rounded-full flex items-center justify-center text-2xs font-bold",
+                        c.met
+                          ? "bg-profit/15 text-profit"
+                          : "bg-loss/15 text-loss"
+                      )}>
+                        {c.met ? "✓" : "✗"}
+                      </span>
+                      <div className="min-w-0">
+                        <p className={cn("text-xs font-semibold", c.met ? "text-text-primary" : "text-text-secondary")}>
+                          {c.label}
+                        </p>
+                        <p className="text-2xs text-text-muted leading-snug mt-0.5">{c.detail}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
           </div>
         );
       })()}
