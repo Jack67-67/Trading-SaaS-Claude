@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react";
 import {
-  Bot, ShieldCheck, ShieldX, Pause, Play, Zap, AlertTriangle,
-  ChevronDown, ChevronUp, CheckCircle2, Info, Clock,
+  Bot, ShieldX, Pause, Play, Zap, AlertTriangle,
+  ChevronDown, ChevronUp, CheckCircle2, Info, TrendingDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -19,7 +19,7 @@ import {
   type AutotradingRecommendation,
 } from "@/lib/autotrading-ai";
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Props ────────────────────────────────────────────────────────────────────
 
 export interface AutotradingControlCenterProps {
   sessionId: string;
@@ -37,22 +37,9 @@ export interface AutotradingControlCenterProps {
   monthlyLossPct: number | null;
 }
 
-// ── Small helpers ─────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-function lastActionLabel(action: string | null): string {
-  if (!action) return "—";
-  const labels: Record<string, string> = {
-    autotrading_on:   "Autotrading enabled",
-    autotrading_off:  "Autotrading disabled",
-    controls_updated: "Safety controls updated",
-    paused:           "Session paused",
-    resumed:          "Session resumed",
-    kill_switch:      "Kill switch activated",
-  };
-  return labels[action] ?? action;
-}
-
-function timeAgoShort(iso: string): string {
+function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
   if (mins < 1)  return "just now";
@@ -62,15 +49,137 @@ function timeAgoShort(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+const ACTION_LABEL: Record<string, string> = {
+  autotrading_on:   "Autotrading enabled",
+  autotrading_off:  "Autotrading disabled",
+  controls_updated: "Safety limits updated",
+  paused:           "Paused",
+  resumed:          "Resumed",
+  kill_switch:      "Kill switch activated",
+};
+
+// ── Decision status bar ───────────────────────────────────────────────────────
+// The single most important element — tells the user what is happening
+// and what (if anything) they should do right now.
+
+type DecisionLevel = "ok" | "info" | "warn" | "paused" | "stopped" | "off";
+
+interface DecisionStatus {
+  level: DecisionLevel;
+  headline: string;
+  subline: string;
+  actionLabel?: string;
+  actionFn?: () => void;
+}
+
+function buildDecision(
+  status: string,
+  autotradingEnabled: boolean,
+  pauseReason: string | null,
+  lastAction: string | null,
+  lastActionAt: string | null,
+  recs: AutotradingRecommendation[],
+  onPause: (reason: string) => void,
+  onResume: () => void,
+): DecisionStatus {
+  const isStopped = status === "stopped";
+  const isPaused  = status === "paused";
+
+  if (isStopped) {
+    return {
+      level: "stopped",
+      headline: "Session permanently stopped",
+      subline: "The kill switch was activated. Create a new session to continue trading.",
+    };
+  }
+
+  if (isPaused) {
+    return {
+      level: "paused",
+      headline: pauseReason ?? "Session paused",
+      subline: "Review the conditions below before resuming.",
+      actionLabel: "Resume trading",
+      actionFn: onResume,
+    };
+  }
+
+  if (!autotradingEnabled) {
+    return {
+      level: "off",
+      headline: "Autotrading is off — monitoring disabled",
+      subline: "Enable the toggle below to activate safety checks on each refresh.",
+    };
+  }
+
+  // Active + autotrading on — check for warnings
+  const warnings = recs.filter(r => r.severity === "warning");
+  if (warnings.length > 0) {
+    const top = warnings[0];
+    const suggestPause = top.suggestedAction === "pause";
+    const suggestReduce = top.suggestedAction === "reduce_capital";
+    return {
+      level: "warn",
+      headline: top.title,
+      subline: suggestPause
+        ? "Consider pausing until conditions improve."
+        : suggestReduce
+        ? "Consider reducing capital allocation in Safety Limits."
+        : "Review the details below and decide whether to act.",
+      actionLabel: suggestPause ? "Pause now" : undefined,
+      actionFn: suggestPause ? () => onPause(top.title) : undefined,
+    };
+  }
+
+  const infoRecs = recs.filter(r => r.severity === "info");
+  if (infoRecs.length > 0) {
+    return {
+      level: "info",
+      headline: "Running — minor items to review",
+      subline: infoRecs[0].title + ". " + (
+        lastAction && lastActionAt
+          ? `${ACTION_LABEL[lastAction] ?? lastAction} ${timeAgo(lastActionAt)}.`
+          : "No recent actions."
+      ),
+    };
+  }
+
+  return {
+    level: "ok",
+    headline: "Running smoothly — no action needed",
+    subline: lastAction && lastActionAt
+      ? `${ACTION_LABEL[lastAction] ?? lastAction} · ${timeAgo(lastActionAt)}`
+      : "Safety checks active. All limits within range.",
+  };
+}
+
+const DECISION_STYLE: Record<DecisionLevel, {
+  bg: string; border: string; icon: React.ElementType;
+  iconColor: string; headlineColor: string; btnBg: string; btnText: string;
+}> = {
+  ok:      { bg: "bg-profit/[0.04]",       border: "border-profit/15",     icon: CheckCircle2,   iconColor: "text-profit",     headlineColor: "text-profit",     btnBg: "",          btnText: "" },
+  info:    { bg: "bg-accent/[0.04]",        border: "border-accent/15",     icon: Info,           iconColor: "text-accent",     headlineColor: "text-text-primary", btnBg: "bg-accent/15 border-accent/25 text-accent hover:bg-accent/25", btnText: "" },
+  warn:    { bg: "bg-amber-500/[0.06]",     border: "border-amber-500/25",  icon: AlertTriangle,  iconColor: "text-amber-400",  headlineColor: "text-amber-300",  btnBg: "bg-amber-500/15 border-amber-500/25 text-amber-300 hover:bg-amber-500/25", btnText: "" },
+  paused:  { bg: "bg-amber-500/[0.06]",     border: "border-amber-500/20",  icon: Pause,          iconColor: "text-amber-400",  headlineColor: "text-amber-300",  btnBg: "bg-amber-500/15 border-amber-500/25 text-amber-300 hover:bg-amber-500/25", btnText: "" },
+  stopped: { bg: "bg-loss/[0.06]",          border: "border-loss/20",       icon: ShieldX,        iconColor: "text-loss",       headlineColor: "text-loss",       btnBg: "",          btnText: "" },
+  off:     { bg: "bg-surface-2/50",         border: "border-border",        icon: Bot,            iconColor: "text-text-muted", headlineColor: "text-text-secondary", btnBg: "", btnText: "" },
+};
+
 // ── Recommendation row ────────────────────────────────────────────────────────
 
-function RecRow({ rec }: { rec: AutotradingRecommendation }) {
-  const isOk = rec.severity === "ok";
+function RecRow({
+  rec,
+  onPause,
+  onOpenLimits,
+}: {
+  rec: AutotradingRecommendation;
+  onPause: (reason: string) => void;
+  onOpenLimits: () => void;
+}) {
+  const isOk   = rec.severity === "ok";
   const isWarn = rec.severity === "warning";
+
   return (
-    <div className={cn(
-      "flex items-start gap-3 px-4 py-3 border-b border-border/60 last:border-0",
-    )}>
+    <div className="flex items-start gap-3 px-5 py-3.5 border-b border-border/60 last:border-0">
       <div className="mt-0.5 shrink-0">
         {isOk
           ? <CheckCircle2 size={13} className="text-profit" />
@@ -78,6 +187,7 @@ function RecRow({ rec }: { rec: AutotradingRecommendation }) {
           ? <AlertTriangle size={13} className="text-amber-400" />
           : <Info size={13} className="text-accent" />}
       </div>
+
       <div className="flex-1 min-w-0">
         <p className={cn(
           "text-xs font-semibold",
@@ -86,6 +196,33 @@ function RecRow({ rec }: { rec: AutotradingRecommendation }) {
           {rec.title}
         </p>
         <p className="text-xs text-text-muted mt-0.5 leading-relaxed">{rec.body}</p>
+
+        {/* Inline action */}
+        {rec.suggestedAction && !isOk && (
+          <div className="mt-2">
+            {rec.suggestedAction === "pause" && (
+              <button
+                onClick={() => onPause(rec.title)}
+                className="text-2xs font-semibold text-amber-400 hover:text-amber-300 bg-amber-400/10 border border-amber-400/20 rounded px-2 py-0.5 transition-colors"
+              >
+                Pause trading →
+              </button>
+            )}
+            {rec.suggestedAction === "reduce_capital" && (
+              <button
+                onClick={onOpenLimits}
+                className="text-2xs font-semibold text-accent hover:text-accent-hover bg-accent/10 border border-accent/20 rounded px-2 py-0.5 transition-colors"
+              >
+                Adjust in Safety Limits →
+              </button>
+            )}
+            {rec.suggestedAction === "review" && (
+              <span className="text-2xs text-text-muted/60">
+                Consider reviewing your strategy parameters.
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -109,25 +246,14 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
   const [killConfirm, setKillConfirm] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // Safety controls form state
   const [capital, setCapital] = useState(initCapital);
-  const [weekly, setWeekly] = useState(initWeekly);
+  const [weekly, setWeekly]   = useState(initWeekly);
   const [monthly, setMonthly] = useState(initMonthly);
   const [pauseEvt, setPauseEvt] = useState(initPauseOnEvents);
 
   const isStopped = status === "stopped";
-  const isPaused = status === "paused";
-  const isActive = status === "active";
-
-  // AI recommendations
-  const recommendations = metrics
-    ? generateAutotradingRecommendations(metrics, {
-        weeklyLossPct,
-        monthlyLossPct,
-        maxWeeklyLossPct: initWeekly,
-        maxMonthlyLossPct: initMonthly,
-      })
-    : [];
+  const isPaused  = status === "paused";
+  const isActive  = status === "active";
 
   function act(fn: () => Promise<{ error: string } | undefined>) {
     setActionError(null);
@@ -137,69 +263,93 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
     });
   }
 
-  // ── Status banner ─────────────────────────────────────────────────────────
+  const doResume = () => act(() => resumeSession(sessionId));
+  const doPause  = (reason: string) => act(() => pauseSession(sessionId, reason));
 
-  const statusBanner = isStopped ? (
-    <div className="flex items-center gap-3 px-4 py-3 bg-loss/[0.06] border-b border-loss/20">
-      <ShieldX size={14} className="text-loss shrink-0" />
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold text-loss">Session stopped — kill switch activated</p>
-        <p className="text-xs text-text-muted/70 mt-0.5">This session cannot be restarted. Create a new session to continue.</p>
-      </div>
-    </div>
-  ) : isPaused ? (
-    <div className="flex items-center gap-3 px-4 py-3 bg-amber-500/[0.06] border-b border-amber-500/20">
-      <Pause size={14} className="text-amber-400 shrink-0" />
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold text-amber-300">Session paused</p>
-        {pauseReason && <p className="text-xs text-text-muted/70 mt-0.5">{pauseReason}</p>}
-      </div>
-      <button
-        disabled={isPending}
-        onClick={() => act(() => resumeSession(sessionId))}
-        className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 border border-amber-500/25 text-amber-300 px-3 py-1.5 text-xs font-semibold hover:bg-amber-500/25 transition-colors disabled:opacity-50"
-      >
-        <Play size={11} />
-        Resume
-      </button>
-    </div>
-  ) : autotradingEnabled ? (
-    <div className="flex items-center gap-3 px-4 py-3 bg-profit/[0.04] border-b border-profit/15">
-      <Bot size={14} className="text-profit shrink-0" />
-      <p className="text-xs font-semibold text-profit flex-1">Autotrading active — safety checks running on each refresh</p>
-    </div>
-  ) : (
-    <div className="flex items-center gap-3 px-4 py-3 bg-surface-2/50 border-b border-border">
-      <ShieldCheck size={14} className="text-text-muted shrink-0" />
-      <p className="text-xs text-text-muted flex-1">Manual mode — autotrading is off</p>
-    </div>
+  const recommendations = metrics
+    ? generateAutotradingRecommendations(metrics, {
+        weeklyLossPct,
+        monthlyLossPct,
+        maxWeeklyLossPct: initWeekly,
+        maxMonthlyLossPct: initMonthly,
+      })
+    : [];
+
+  const decision = buildDecision(
+    status, autotradingEnabled, pauseReason,
+    lastAction, lastActionAt, recommendations,
+    doPause, doResume,
   );
+
+  const dStyle = DECISION_STYLE[decision.level];
+  const DecisionIcon = dStyle.icon;
+
+  // Approaching-limit bar widths for weekly / monthly
+  const weeklyUsed  = weeklyLossPct  !== null ? Math.min(100, (Math.abs(Math.min(0, weeklyLossPct))  / initWeekly)  * 100) : null;
+  const monthlyUsed = monthlyLossPct !== null ? Math.min(100, (Math.abs(Math.min(0, monthlyLossPct)) / initMonthly) * 100) : null;
 
   return (
     <div className="rounded-2xl border border-border overflow-hidden">
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-5 py-3.5 bg-surface-1 border-b border-border">
-        <Bot size={15} className="text-accent shrink-0" />
-        <p className="text-sm font-semibold text-text-primary flex-1">Autotrading Control</p>
-        {lastAction && lastActionAt && (
-          <div className="flex items-center gap-1 text-2xs text-text-muted/50">
-            <Clock size={9} />
-            <span>{lastActionLabel(lastAction)} · {timeAgoShort(lastActionAt)}</span>
+      {/* ── Decision status bar — the primary signal ───────────────────────── */}
+      <div className={cn("px-5 py-4 border-b", dStyle.bg, dStyle.border.replace("border-", "border-b-"))}>
+        <div className="flex items-start gap-3">
+          <div className={cn(
+            "w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5",
+            decision.level === "ok"      && "bg-profit/15",
+            decision.level === "info"    && "bg-accent/15",
+            decision.level === "warn"    && "bg-amber-400/15",
+            decision.level === "paused"  && "bg-amber-400/15",
+            decision.level === "stopped" && "bg-loss/15",
+            decision.level === "off"     && "bg-surface-3",
+          )}>
+            <DecisionIcon size={14} className={dStyle.iconColor} />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <p className={cn("text-sm font-semibold leading-snug", dStyle.headlineColor)}>
+              {decision.headline}
+            </p>
+            <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
+              {decision.subline}
+            </p>
+          </div>
+
+          {decision.actionLabel && decision.actionFn && (
+            <button
+              disabled={isPending}
+              onClick={decision.actionFn}
+              className={cn(
+                "shrink-0 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50",
+                dStyle.btnBg
+              )}
+            >
+              {decision.level === "paused" ? <Play size={11} /> : null}
+              {isPending ? "…" : decision.actionLabel}
+            </button>
+          )}
+        </div>
+
+        {/* Loss limit progress bars — shown when autotrading on and actively losing */}
+        {autotradingEnabled && isActive && (weeklyUsed !== null || monthlyUsed !== null) && (
+          <div className="mt-3 flex items-center gap-5">
+            {weeklyUsed !== null && weeklyUsed > 0 && (
+              <LimitBar label="Weekly loss" used={weeklyUsed} limitPct={initWeekly} currentPct={weeklyLossPct} />
+            )}
+            {monthlyUsed !== null && monthlyUsed > 0 && (
+              <LimitBar label="Monthly loss" used={monthlyUsed} limitPct={initMonthly} currentPct={monthlyLossPct} />
+            )}
           </div>
         )}
       </div>
 
-      {/* ── Status banner ──────────────────────────────────────────────────── */}
-      {statusBanner}
-
-      {/* ── Toggle row (disabled when stopped) ────────────────────────────── */}
+      {/* ── Autotrading toggle ─────────────────────────────────────────────── */}
       {!isStopped && (
-        <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-border">
+        <div className="flex items-center justify-between gap-4 px-5 py-3.5 border-b border-border">
           <div>
             <p className="text-sm font-semibold text-text-primary">Enable autotrading</p>
             <p className="text-xs text-text-muted mt-0.5">
-              Safety checks run automatically after each refresh.
+              Safety checks run on every refresh.
             </p>
           </div>
           <button
@@ -209,7 +359,6 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
             onClick={() => act(() => toggleAutotrading(sessionId, !autotradingEnabled))}
             className={cn(
               "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
-              "focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent",
               "disabled:cursor-not-allowed disabled:opacity-50",
               autotradingEnabled ? "bg-profit" : "bg-surface-3"
             )}
@@ -222,49 +371,30 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
         </div>
       )}
 
-      {/* ── Safety controls ────────────────────────────────────────────────── */}
+      {/* ── Safety limits (collapsible) ────────────────────────────────────── */}
       {!isStopped && (
         <div className="border-b border-border">
           <button
-            onClick={() => setControlsOpen((v) => !v)}
+            onClick={() => setControlsOpen(v => !v)}
             className="flex items-center justify-between w-full px-5 py-3 hover:bg-surface-2/40 transition-colors text-left"
           >
-            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
-              Safety Limits
-            </span>
-            {controlsOpen
-              ? <ChevronUp size={13} className="text-text-muted" />
-              : <ChevronDown size={13} className="text-text-muted" />}
+            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Safety Limits</span>
+            {controlsOpen ? <ChevronUp size={13} className="text-text-muted" /> : <ChevronDown size={13} className="text-text-muted" />}
           </button>
 
           {controlsOpen && (
             <div className="px-5 pb-5 space-y-4 bg-surface-0/50">
-
               <NumericField
-                label="Capital allocation"
-                unit="%"
-                value={capital}
-                onChange={setCapital}
-                min={1} max={100}
-                hint="Percentage of portfolio allocated to this session"
+                label="Capital allocation" unit="%" value={capital} onChange={setCapital}
+                min={1} max={100} hint="Percentage of portfolio allocated to this session"
               />
-
               <NumericField
-                label="Max weekly loss"
-                unit="%"
-                value={weekly}
-                onChange={setWeekly}
-                min={1} max={50}
-                hint="Auto-pause if the session loses more than this % in 7 days"
+                label="Max weekly loss" unit="%" value={weekly} onChange={setWeekly}
+                min={1} max={50} hint="Auto-pause if this session loses more than this in 7 days"
               />
-
               <NumericField
-                label="Max monthly loss"
-                unit="%"
-                value={monthly}
-                onChange={setMonthly}
-                min={1} max={80}
-                hint="Auto-pause if the session loses more than this % in 30 days"
+                label="Max monthly loss" unit="%" value={monthly} onChange={setMonthly}
+                min={1} max={80} hint="Auto-pause if this session loses more than this in 30 days"
               />
 
               <div className="flex items-center justify-between gap-4">
@@ -275,7 +405,7 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
                 <button
                   role="switch"
                   aria-checked={pauseEvt}
-                  onClick={() => setPauseEvt((v) => !v)}
+                  onClick={() => setPauseEvt(v => !v)}
                   className={cn(
                     "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
                     pauseEvt ? "bg-accent" : "bg-surface-3"
@@ -307,22 +437,27 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
 
       {/* ── AI recommendations ─────────────────────────────────────────────── */}
       {recommendations.length > 0 && (
-        <div className="border-b border-border">
-          <div className="px-5 py-3 border-b border-border/60 flex items-center gap-2">
-            <Zap size={12} className="text-accent" />
-            <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">AI Recommendations</p>
+        <div className={cn("border-b border-border", !isStopped && "")}>
+          <div className="px-5 py-2.5 border-b border-border/60 flex items-center gap-2 bg-surface-1/50">
+            <Zap size={11} className="text-text-muted/60" />
+            <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider">Analysis</p>
           </div>
           <div className="bg-surface-0">
-            {recommendations.map((rec) => (
-              <RecRow key={rec.id} rec={rec} />
+            {recommendations.map(rec => (
+              <RecRow
+                key={rec.id}
+                rec={rec}
+                onPause={doPause}
+                onOpenLimits={() => setControlsOpen(true)}
+              />
             ))}
           </div>
         </div>
       )}
 
-      {/* ── Manual controls (pause / kill switch) ─────────────────────────── */}
+      {/* ── Manual controls ─────────────────────────────────────────────────── */}
       {!isStopped && (
-        <div className="px-5 py-4 flex items-center justify-between gap-3 flex-wrap">
+        <div className="px-5 py-3.5 flex items-center justify-between gap-3 flex-wrap bg-surface-0/30">
           {isActive && (
             <button
               disabled={isPending}
@@ -334,19 +469,19 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
             </button>
           )}
 
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
             {!killConfirm ? (
               <button
                 disabled={isPending}
                 onClick={() => setKillConfirm(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-loss/30 bg-loss/[0.04] px-3 py-2 text-xs font-semibold text-loss/70 hover:text-loss hover:border-loss/50 hover:bg-loss/[0.08] transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-loss/25 px-3 py-2 text-xs font-semibold text-loss/60 hover:text-loss hover:border-loss/50 hover:bg-loss/[0.06] transition-colors disabled:opacity-50"
               >
                 <ShieldX size={11} />
                 Kill switch
               </button>
             ) : (
               <div className="flex items-center gap-2">
-                <p className="text-xs text-loss/80">Permanently stop? Cannot undo.</p>
+                <span className="text-xs text-loss/80">Permanently stop? Cannot undo.</span>
                 <button
                   disabled={isPending}
                   onClick={() => { setKillConfirm(false); act(() => killSwitch(sessionId)); }}
@@ -354,10 +489,7 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
                 >
                   {isPending ? "Stopping…" : "Confirm stop"}
                 </button>
-                <button
-                  onClick={() => setKillConfirm(false)}
-                  className="text-xs text-text-muted hover:text-text-secondary transition-colors"
-                >
+                <button onClick={() => setKillConfirm(false)} className="text-xs text-text-muted hover:text-text-secondary transition-colors">
                   Cancel
                 </button>
               </div>
@@ -374,6 +506,39 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Loss limit progress bar ───────────────────────────────────────────────────
+
+function LimitBar({
+  label, used, limitPct, currentPct,
+}: {
+  label: string; used: number; limitPct: number; currentPct: number | null;
+}) {
+  const isNear = used > 75;
+  const isCritical = used > 90;
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-2xs text-text-muted">{label}</span>
+        <span className={cn(
+          "text-2xs font-mono font-semibold",
+          isCritical ? "text-loss" : isNear ? "text-amber-400" : "text-text-muted/70"
+        )}>
+          {currentPct !== null ? `${currentPct.toFixed(1)}%` : "—"} / −{limitPct}%
+        </span>
+      </div>
+      <div className="h-1 bg-surface-3 rounded-full overflow-hidden">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all",
+            isCritical ? "bg-loss" : isNear ? "bg-amber-400" : "bg-text-muted/40"
+          )}
+          style={{ width: `${used}%` }}
+        />
+      </div>
     </div>
   );
 }
@@ -397,7 +562,7 @@ function NumericField({
             value={value}
             min={min}
             max={max}
-            onChange={(e) => {
+            onChange={e => {
               const v = parseFloat(e.target.value);
               if (!isNaN(v)) onChange(Math.min(max, Math.max(min, v)));
             }}
@@ -410,7 +575,7 @@ function NumericField({
         type="range"
         min={min} max={max} step={1}
         value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={e => onChange(Number(e.target.value))}
         className="w-full h-1 rounded-full accent-accent cursor-pointer"
       />
       <p className="text-2xs text-text-muted/60 mt-1">{hint}</p>
