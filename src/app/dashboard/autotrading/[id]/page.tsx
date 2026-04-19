@@ -13,6 +13,7 @@ import { getTodayGuard } from "@/lib/economic-calendar";
 import { EventGuard } from "@/components/dashboard/event-guard";
 import {
   generateAutotradingRecommendations,
+  generateEventRecommendations,
   computeLiveState,
   type AutotradingMetrics,
   type MarketStateLevel,
@@ -181,13 +182,16 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
   const guard = getTodayGuard();
   const showGuard = guard && (guard.level === "danger" || guard.level === "caution");
 
-  // AI recs
-  const recs = metrics ? generateAutotradingRecommendations(metrics, {
+  // AI recs — metric-based + event-based merged
+  const metricRecs = metrics ? generateAutotradingRecommendations(metrics, {
     weeklyLossPct: wLoss,
     monthlyLossPct: mLoss,
     maxWeeklyLossPct: maxWeeklyLoss,
     maxMonthlyLossPct: maxMonthlyLoss,
   }) : [];
+  const eventRecs = generateEventRecommendations(guard, pauseOnEvents);
+  // Event warnings come first (more urgent)
+  const recs = [...eventRecs, ...metricRecs];
   const warnings = recs.filter(r => r.severity === "warning");
 
   // Status config

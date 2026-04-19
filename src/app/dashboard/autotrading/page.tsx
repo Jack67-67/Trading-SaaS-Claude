@@ -21,6 +21,16 @@ import {
   type NextActionTimingLevel,
 } from "@/lib/autotrading-ai";
 
+type RawTrade = {
+  timestamp: string;
+  symbol: string;
+  entry_price: number;
+  exit_price: number;
+  shares: number;
+  pnl: number;
+  return_pct: number;
+};
+
 export const metadata: Metadata = { title: "Autotrading" };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -93,6 +103,8 @@ type ParsedSession = {
   monthlyLossPct: number | null;
   allocatedCapital: number;
   pnl: number;
+  recentTrades: RawTrade[];
+  totalTrades: number;
 };
 
 function parseSession(raw: RawSession): ParsedSession {
@@ -107,6 +119,8 @@ function parseSession(raw: RawSession): ParsedSession {
   const now = Date.now();
   const eq7d  = findEquityAt(curve, now - 7  * DAY_MS);
   const eq30d = findEquityAt(curve, now - 30 * DAY_MS);
+
+  const allTrades = (results?.trades ?? []) as RawTrade[];
 
   return {
     id:            String(raw.id ?? ""),
@@ -131,6 +145,8 @@ function parseSession(raw: RawSession): ParsedSession {
     monthlyLossPct: eq30d && eq30d > 0 ? ((currentEquity - eq30d) / eq30d) * 100 : null,
     allocatedCapital: cap * (capPct / 100),
     pnl: currentEquity - cap,
+    recentTrades: allTrades.slice(-5).reverse(),
+    totalTrades: allTrades.length,
   };
 }
 
@@ -468,6 +484,10 @@ function SessionCard({ sess }: { sess: ParsedSession }) {
             </div>
           </div>
         )}
+
+        {/* Mini trade log */}
+        <MiniTradeLog trades={sess.recentTrades} totalTrades={sess.totalTrades} />
+
       </div>
     </Link>
   );
@@ -572,6 +592,42 @@ function LiveStateStrip({ live }: { live: LiveState }) {
         />
       </div>
 
+    </div>
+  );
+}
+
+// ── Mini trade log (last 5 trades, compact) ───────────────────────────────────
+
+function MiniTradeLog({ trades, totalTrades }: { trades: RawTrade[]; totalTrades: number }) {
+  if (trades.length === 0) return null;
+  return (
+    <div className="mt-3 ml-11 border-t border-border/60 pt-3">
+      <p className="text-2xs text-text-muted/60 uppercase tracking-wider font-semibold mb-1.5">
+        Last trades · {totalTrades} total
+      </p>
+      <div className="space-y-1">
+        {trades.map((t, i) => {
+          const isWin = t.pnl >= 0;
+          const dir   = t.exit_price >= t.entry_price ? "L" : "S";
+          const date  = new Date(t.timestamp);
+          const dateStr = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+          return (
+            <div key={i} className={cn("flex items-center gap-2 border-l-2 pl-2", isWin ? "border-l-profit/40" : "border-l-loss/40")}>
+              <span className={cn(
+                "text-2xs font-bold px-1 rounded border shrink-0",
+                dir === "L" ? "text-profit bg-profit/10 border-profit/20" : "text-loss bg-loss/10 border-loss/20"
+              )}>{dir}</span>
+              <span className="text-2xs font-mono text-text-muted/70 flex-1 truncate">
+                ${t.entry_price.toFixed(2)} → ${t.exit_price.toFixed(2)}
+              </span>
+              <span className={cn("text-2xs font-mono font-semibold tabular-nums shrink-0", isWin ? "text-profit" : "text-loss")}>
+                {isWin ? "+" : ""}{t.return_pct.toFixed(2)}%
+              </span>
+              <span className="text-2xs font-mono text-text-muted/40 shrink-0 w-12 text-right">{dateStr}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -25,6 +25,78 @@ interface SafetySnapshot {
   maxMonthlyLossPct: number;
 }
 
+// ── Event-driven recommendations ──────────────────────────────────────────────
+// Accepts a simplified guard shape so this file stays import-free.
+
+interface SimpleGuard {
+  level: string;          // "danger" | "caution" | "upcoming"
+  daysUntil: number;
+  events: Array<{
+    id: string;
+    short: string;
+    category: string;
+    impact: string;
+    description: string;
+  }>;
+}
+
+/**
+ * Returns event-specific recommendations based on today's economic calendar
+ * guard and the session's pause_on_events setting.
+ * Uses the same AutotradingRecommendation interface so they render in the
+ * same UI components as metric-based recommendations.
+ */
+export function generateEventRecommendations(
+  guard: SimpleGuard | null,
+  pauseOnEvents: boolean,
+): AutotradingRecommendation[] {
+  if (!guard || guard.level === "upcoming") return [];
+
+  const event = guard.events.find(e => e.impact === "high") ?? guard.events[0];
+  const dayDesc = guard.daysUntil === 0 ? "today"
+    : guard.daysUntil === 1 ? "tomorrow"
+    : `in ${guard.daysUntil} days`;
+
+  const isHigh = event.impact === "high";
+  const isDanger = guard.level === "danger";
+
+  // Pausing automatically → confirm it in the recommendation
+  if (pauseOnEvents && isDanger) {
+    return [{
+      id: `event-autopause-${event.id}`,
+      severity: "warning",
+      title: `Auto-pausing — ${event.short} ${dayDesc}`,
+      body: `Autotrading is configured to pause automatically for high-impact events. ${event.description}`,
+      suggestedAction: undefined,
+    }];
+  }
+
+  // Danger + not auto-pausing → urgent action recommendation
+  if (isDanger && isHigh) {
+    const action: Record<string, string> = {
+      fomc: "Pause autotrading — Fed decisions cause sharp, unpredictable moves across all instruments.",
+      cpi:  "Avoid new entries — CPI surprises create gap risk at the open and can invalidate intraday setups.",
+      nfp:  "Pause or avoid entries — NFP causes first-hour volatility that can stop out otherwise-valid setups.",
+    };
+    return [{
+      id: `event-danger-${event.id}`,
+      severity: "warning",
+      title: `${event.short} ${dayDesc} — high volatility risk`,
+      body: action[event.category] ?? `${event.description} Consider pausing until the event passes.`,
+      suggestedAction: "pause",
+    }];
+  }
+
+  // Caution window → reduce risk recommendation
+  return [{
+    id: `event-caution-${event.id}`,
+    severity: "info",
+    title: `${event.short} ${dayDesc} — reduce risk`,
+    body: `${event.description} Consider reducing capital allocation or tightening loss limits before the event.`,
+    suggestedAction: "reduce_capital",
+  }];
+}
+
 export function generateAutotradingRecommendations(
   metrics: AutotradingMetrics,
   safety: SafetySnapshot,
