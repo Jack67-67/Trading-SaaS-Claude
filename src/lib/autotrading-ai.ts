@@ -100,6 +100,8 @@ export function generateEventRecommendations(
 export function generateAutotradingRecommendations(
   metrics: AutotradingMetrics,
   safety: SafetySnapshot,
+  trend?: PerformanceTrend | null,
+  equityVol?: EquityVolatility,
 ): AutotradingRecommendation[] {
   const recs: AutotradingRecommendation[] = [];
 
@@ -188,6 +190,58 @@ export function generateAutotradingRecommendations(
         severity: "info",
         title: "Approaching monthly loss limit",
         body: `Monthly P&L at ${safety.monthlyLossPct.toFixed(1)}% — ${remaining.toFixed(1)}pp buffer remaining before auto-pause (−${safety.maxMonthlyLossPct}%).`,
+      });
+    }
+  }
+
+  // ── Performance trend ─────────────────────────────────────────────────────
+
+  if (trend && trend.level !== "insufficient") {
+    if (trend.level === "declining" && trend.consecutiveLosses >= 4) {
+      recs.push({
+        id: "trend_consecutive_losses",
+        severity: "warning",
+        title: `${trend.consecutiveLosses} consecutive losing trades`,
+        body: `The last ${trend.consecutiveLosses} trades all closed at a loss. Reduce capital allocation by at least 50% and wait for 2 consecutive profitable trades before restoring full size.`,
+        suggestedAction: "reduce_capital",
+      });
+    } else if (trend.level === "declining" && trend.deteriorating) {
+      recs.push({
+        id: "trend_deteriorating",
+        severity: "warning",
+        title: "Strategy performance degrading",
+        body: `Recent win rate ${trend.recentWinRate.toFixed(0)}% vs ${trend.overallWinRate.toFixed(0)}% historical. The edge is shrinking — consider pausing until you see 3 profitable trades in a row.`,
+        suggestedAction: "pause",
+      });
+    } else if (trend.level === "volatile") {
+      recs.push({
+        id: "trend_volatile",
+        severity: "info",
+        title: "Inconsistent recent results",
+        body: `${trend.insight} Tighten stop-loss or reduce position size to limit exposure during unstable conditions.`,
+        suggestedAction: "reduce_capital",
+      });
+    } else if (trend.level === "improving" && recs.filter(r => r.severity !== "ok").length === 0) {
+      recs.push({
+        id: "trend_improving",
+        severity: "info",
+        title: "Positive momentum",
+        body: trend.insight + " Strategy is performing above its historical baseline.",
+      });
+    }
+  }
+
+  // ── Equity volatility ─────────────────────────────────────────────────────
+
+  if (equityVol === "high") {
+    const hasVolWarn = recs.some(r => r.id === "severe_drawdown" || r.id === "trend_volatile");
+    if (!hasVolWarn) {
+      recs.push({
+        id: "equity_high_vol",
+        severity: "warning",
+        title: "High equity curve volatility",
+        body: "Recent session returns are unusually large swing-to-swing. This pattern often precedes larger drawdowns. Reduce capital allocation or tighten loss limits.",
+        suggestedAction: "reduce_capital",
       });
     }
   }
@@ -542,6 +596,144 @@ export function estimateNextScan(interval: string, lastRefreshed: string | null)
   if (mins < 1)  return "< 1 min";
   if (mins < 60) return `~${mins} min`;
   return `~${Math.floor(mins / 60)}h`;
+}
+
+// ── Performance trend analysis ────────────────────────────────────────────────
+// Analyzes recent trade history for deterioration, improvement, or volatility.
+// Uses a rolling window approach: last-5 vs previous-5 trades.
+
+export interface TradeSummary {
+  pnl:       number;
+  returnPct: number;
+}
+
+export interface PerformanceTrend {
+  level:              "improving" | "declining" | "volatile" | "stable" | "insufficient";
+  consecutiveLosses:  number;
+  consecutiveWins:    number;
+  recentWinRate:      number;     // win% of last 5 trades (0–100)
+  overallWinRate:     number;     // win% of all provided trades (0–100)
+  recentProfitFactor: number;     // gross profit / gross loss of last 5 trades
+  deteriorating:      boolean;    // recentWinRate significantly below overallWinRate
+  rallying:           boolean;    // recentWinRate significantly above overallWinRate
+  insight:            string;     // human-readable one-liner
+}
+
+export function computePerformanceTrend(trades: TradeSummary[]): PerformanceTrend {
+  const WINDOW = 5;
+
+  if (trades.length < 3) {
+    return {
+      level: "insufficient",
+      consecutiveLosses: 0,
+      consecutiveWins: 0,
+      recentWinRate: 0,
+      overallWinRate: 0,
+      recentProfitFactor: 1,
+      deteriorating: false,
+      rallying: false,
+      insight: "Not enough trades to assess trend.",
+    };
+  }
+
+  // Consecutive loss / win streak from the tail
+  let consecutiveLosses = 0;
+  let consecutiveWins   = 0;
+  for (let i = trades.length - 1; i >= 0; i--) {
+    if (trades[i].pnl < 0) {
+      if (consecutiveWins > 0) break;
+      consecutiveLosses++;
+    } else {
+      if (consecutiveLosses > 0) break;
+      consecutiveWins++;
+    }
+  }
+
+  // Overall win rate
+  const wins        = trades.filter(t => t.pnl > 0).length;
+  const overallWinRate = (wins / trades.length) * 100;
+
+  // Recent window (last WINDOW trades)
+  const recent      = trades.slice(-WINDOW);
+  const recentWins  = recent.filter(t => t.pnl > 0).length;
+  const recentWinRate = (recentWins / recent.length) * 100;
+
+  // Recent profit factor
+  const recentGross = recent.reduce((s, t) => s + Math.max(0, t.pnl), 0);
+  const recentLoss  = recent.reduce((s, t) => s + Math.abs(Math.min(0, t.pnl)), 0);
+  const recentProfitFactor = recentLoss > 0 ? recentGross / recentLoss : recentGross > 0 ? 4 : 1;
+
+  // Volatility: std dev of recent returns relative to mean
+  const avgRet  = recent.reduce((s, t) => s + Math.abs(t.returnPct), 0) / recent.length;
+  const variance = recent.reduce((s, t) => s + Math.pow(Math.abs(t.returnPct) - avgRet, 2), 0) / recent.length;
+  const stdDev  = Math.sqrt(variance);
+  const isHighVol = avgRet > 0 && (stdDev / avgRet) > 1.5;
+
+  const deteriorating = trades.length >= WINDOW && (recentWinRate < overallWinRate - 20);
+  const rallying      = trades.length >= WINDOW && (recentWinRate > overallWinRate + 20);
+
+  // Determine level
+  let level: PerformanceTrend["level"];
+  let insight: string;
+
+  if (consecutiveLosses >= 4) {
+    level = "declining";
+    insight = `${consecutiveLosses} consecutive losing trades — strategy in active drawdown streak.`;
+  } else if (deteriorating && recentWinRate < 35) {
+    level = "declining";
+    insight = `Recent win rate ${recentWinRate.toFixed(0)}% vs ${overallWinRate.toFixed(0)}% historical — performance degrading.`;
+  } else if (isHighVol && avgRet > 2) {
+    level = "volatile";
+    insight = `High return variance (σ ${stdDev.toFixed(1)}%) — strategy producing inconsistent outcomes.`;
+  } else if (rallying && recentWinRate >= 60) {
+    level = "improving";
+    insight = `Recent win rate ${recentWinRate.toFixed(0)}% — momentum building above historical ${overallWinRate.toFixed(0)}%.`;
+  } else if (consecutiveWins >= 3 && recentProfitFactor > 1.5) {
+    level = "improving";
+    insight = `${consecutiveWins} consecutive wins with profit factor ${recentProfitFactor.toFixed(2)} — strategy in positive phase.`;
+  } else if (deteriorating) {
+    level = "volatile";
+    insight = `Recent win rate ${recentWinRate.toFixed(0)}% slipping from historical ${overallWinRate.toFixed(0)}% — watch closely.`;
+  } else {
+    level = "stable";
+    insight = `Win rate ${recentWinRate.toFixed(0)}% in line with historical ${overallWinRate.toFixed(0)}% — no significant drift.`;
+  }
+
+  return {
+    level,
+    consecutiveLosses,
+    consecutiveWins,
+    recentWinRate,
+    overallWinRate,
+    recentProfitFactor,
+    deteriorating,
+    rallying,
+    insight,
+  };
+}
+
+// ── Equity curve volatility ───────────────────────────────────────────────────
+// Derives a session-level volatility reading from the equity curve.
+// Used to flag unusually choppy equity — a signal the strategy is struggling.
+
+export type EquityVolatility = "low" | "medium" | "high" | null;
+
+export function computeEquityVolatility(
+  curve: { equity: number }[],
+): EquityVolatility {
+  if (curve.length < 6) return null;
+  const pts = curve.slice(-10);
+  const returns: number[] = [];
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i - 1].equity > 0) {
+      returns.push((pts[i].equity - pts[i - 1].equity) / pts[i - 1].equity);
+    }
+  }
+  if (returns.length < 3) return null;
+  const avgAbs = returns.reduce((s, r) => s + Math.abs(r), 0) / returns.length;
+  if (avgAbs > 0.04) return "high";
+  if (avgAbs > 0.015) return "medium";
+  return "low";
 }
 
 export function computeLiveState(params: {

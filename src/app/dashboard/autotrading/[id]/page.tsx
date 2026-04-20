@@ -19,11 +19,15 @@ import {
   computeShadowSignal,
   inferTradeCloseReason,
   estimateNextScan,
+  computePerformanceTrend,
+  computeEquityVolatility,
   type AutotradingMetrics,
   type MarketStateLevel,
   type SignalProgress,
   type NextActionTimingLevel,
   type ShadowSignal,
+  type PerformanceTrend,
+  type EquityVolatility,
 } from "@/lib/autotrading-ai";
 import {
   computeExecutionReadiness,
@@ -241,6 +245,20 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
       : null;
 
   const nextScan = autoEnabled ? estimateNextScan(sessInterval, sessLastRef) : null;
+
+  // Performance trend
+  const trend: PerformanceTrend | null = allTrades.length >= 3
+    ? computePerformanceTrend(allTrades.map(t => ({ pnl: t.pnl, returnPct: t.return_pct })))
+    : null;
+
+  // Equity volatility
+  const equityVol: EquityVolatility = computeEquityVolatility(equityCurve);
+
+  // Daily trade count
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const dailyTradesCount = allTrades.filter(t => t.timestamp?.startsWith(todayStr)).length;
+
+  const maxDailyTrades = Number(sess.max_daily_trades ?? 10);
 
   // ── Stage 3: Trading mode + broker + readiness ────────────────────────────
   // trading_mode defaults to 'shadow' for existing sessions with autotrading on
@@ -1115,6 +1133,15 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
         metrics={metrics}
         weeklyLossPct={wLoss}
         monthlyLossPct={mLoss}
+        maxDailyTrades={maxDailyTrades}
+        dailyTradesCount={dailyTradesCount}
+        trend={trend}
+        equityVol={equityVol}
+        eventGuard={guard ? {
+          level: guard.level,
+          eventName: guard.events[0]?.short ?? "Event",
+          daysUntil: guard.daysUntil,
+        } : null}
       />
 
     </div>

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import {
   Bot, ShieldX, Pause, Play, Zap, AlertTriangle,
-  ChevronDown, ChevronUp, CheckCircle2, Info, TrendingDown,
+  ChevronDown, ChevronUp, CheckCircle2, Info, TrendingDown, TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -15,8 +15,12 @@ import {
 } from "@/app/actions/autotrading";
 import {
   generateAutotradingRecommendations,
+  generateEventRecommendations,
+  computePerformanceTrend,
   type AutotradingMetrics,
   type AutotradingRecommendation,
+  type PerformanceTrend,
+  type EquityVolatility,
 } from "@/lib/autotrading-ai";
 
 // ── Props ────────────────────────────────────────────────────────────────────
@@ -35,6 +39,12 @@ export interface AutotradingControlCenterProps {
   metrics: AutotradingMetrics | null;
   weeklyLossPct: number | null;
   monthlyLossPct: number | null;
+  maxDailyTrades:   number;
+  dailyTradesCount: number;
+  trend:            PerformanceTrend | null;
+  equityVol:        EquityVolatility;
+  // event guard data
+  eventGuard:       { level: string; eventName: string; daysUntil: number } | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -250,6 +260,7 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
   const [weekly, setWeekly]   = useState(initWeekly);
   const [monthly, setMonthly] = useState(initMonthly);
   const [pauseEvt, setPauseEvt] = useState(initPauseOnEvents);
+  const [maxTrades, setMaxTrades] = useState(props.maxDailyTrades);
 
   const isStopped = status === "stopped";
   const isPaused  = status === "paused";
@@ -272,12 +283,30 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
         monthlyLossPct,
         maxWeeklyLossPct: initWeekly,
         maxMonthlyLossPct: initMonthly,
-      })
+      }, props.trend, props.equityVol)
     : [];
+
+  // Merge in event recs (shown even when metrics is null)
+  const eventRecs = props.eventGuard
+    ? (() => {
+        const g = props.eventGuard!;
+        if (g.level === "danger" && !initPauseOnEvents) {
+          return [{
+            id: `ctrl-event-${g.eventName}`,
+            severity: "warning" as const,
+            title: `${g.eventName} ${g.daysUntil === 0 ? "today" : g.daysUntil === 1 ? "tomorrow" : `in ${g.daysUntil} days`} — high volatility risk`,
+            body: `Auto-pause is OFF. High-impact event active. Consider pausing or reducing position size until after the release.`,
+            suggestedAction: "pause" as const,
+          }];
+        }
+        return [];
+      })()
+    : [];
+  const allRecs = [...eventRecs, ...recommendations];
 
   const decision = buildDecision(
     status, autotradingEnabled, pauseReason,
-    lastAction, lastActionAt, recommendations,
+    lastAction, lastActionAt, allRecs,
     doPause, doResume,
   );
 
@@ -341,6 +370,14 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
             )}
           </div>
         )}
+        {autotradingEnabled && isActive && props.dailyTradesCount > 0 && (
+          <div className="mt-3 flex items-center gap-5">
+            <DailyTradesBar
+              count={props.dailyTradesCount}
+              max={props.maxDailyTrades}
+            />
+          </div>
+        )}
       </div>
 
       {/* ── Autotrading toggle ─────────────────────────────────────────────── */}
@@ -396,6 +433,10 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
                 label="Max monthly loss" unit="%" value={monthly} onChange={setMonthly}
                 min={1} max={80} hint="Auto-pause if this session loses more than this in 30 days"
               />
+              <NumericField
+                label="Max daily trades" unit="" value={maxTrades} onChange={setMaxTrades}
+                min={1} max={100} hint="Auto-pause when this many trades have been placed today"
+              />
 
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -425,6 +466,7 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
                   maxWeeklyLossPct: weekly,
                   maxMonthlyLossPct: monthly,
                   pauseOnEvents: pauseEvt,
+                  maxDailyTrades: maxTrades,
                 }))}
                 className="w-full rounded-lg bg-accent/10 border border-accent/20 text-accent text-xs font-semibold py-2 hover:bg-accent/20 transition-colors disabled:opacity-50"
               >
@@ -436,14 +478,27 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
       )}
 
       {/* ── AI recommendations ─────────────────────────────────────────────── */}
-      {recommendations.length > 0 && (
+      {allRecs.length > 0 && (
         <div className={cn("border-b border-border", !isStopped && "")}>
           <div className="px-5 py-2.5 border-b border-border/60 flex items-center gap-2 bg-surface-1/50">
             <Zap size={11} className="text-text-muted/60" />
             <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider">Analysis</p>
+            {props.trend && props.trend.level !== "insufficient" && props.trend.level !== "stable" && (
+              <span className={cn(
+                "ml-auto inline-flex items-center gap-1 text-2xs font-semibold px-2 py-0.5 rounded-full border",
+                props.trend.level === "improving" && "text-profit bg-profit/10 border-profit/20",
+                props.trend.level === "declining" && "text-loss bg-loss/10 border-loss/20",
+                props.trend.level === "volatile"  && "text-amber-400 bg-amber-400/10 border-amber-400/20",
+              )}>
+                {props.trend.level === "improving" && <TrendingUp size={10} />}
+                {props.trend.level === "declining" && <TrendingDown size={10} />}
+                {props.trend.level === "volatile"  && <AlertTriangle size={10} />}
+                {props.trend.level}
+              </span>
+            )}
           </div>
           <div className="bg-surface-0">
-            {recommendations.map(rec => (
+            {allRecs.map(rec => (
               <RecRow
                 key={rec.id}
                 rec={rec}
@@ -528,6 +583,36 @@ function LimitBar({
           isCritical ? "text-loss" : isNear ? "text-amber-400" : "text-text-muted/70"
         )}>
           {currentPct !== null ? `${currentPct.toFixed(1)}%` : "—"} / −{limitPct}%
+        </span>
+      </div>
+      <div className="h-1 bg-surface-3 rounded-full overflow-hidden">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all",
+            isCritical ? "bg-loss" : isNear ? "bg-amber-400" : "bg-text-muted/40"
+          )}
+          style={{ width: `${used}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ── Daily trades bar ──────────────────────────────────────────────────────────
+
+function DailyTradesBar({ count, max }: { count: number; max: number }) {
+  const used = Math.min(100, (count / max) * 100);
+  const isNear = used > 75;
+  const isCritical = used >= 100;
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-2xs text-text-muted">Daily trades</span>
+        <span className={cn(
+          "text-2xs font-mono font-semibold",
+          isCritical ? "text-loss" : isNear ? "text-amber-400" : "text-text-muted/70"
+        )}>
+          {count} / {max}
         </span>
       </div>
       <div className="h-1 bg-surface-3 rounded-full overflow-hidden">

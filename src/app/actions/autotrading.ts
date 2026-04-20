@@ -5,10 +5,11 @@ import { revalidatePath } from "next/cache";
 import { getTodayGuard } from "@/lib/economic-calendar";
 
 export interface SafetyControls {
-  maxCapitalPct: number;
+  maxCapitalPct:    number;
   maxWeeklyLossPct: number;
   maxMonthlyLossPct: number;
-  pauseOnEvents: boolean;
+  pauseOnEvents:    boolean;
+  maxDailyTrades:   number;
 }
 
 // ── Toggle autotrading on/off ────────────────────────────────────────────────
@@ -56,6 +57,9 @@ export async function updateSafetyControls(
   if (controls.maxMonthlyLossPct < 1 || controls.maxMonthlyLossPct > 80) {
     return { error: "Monthly loss limit must be between 1 and 80" };
   }
+  if (controls.maxDailyTrades < 1 || controls.maxDailyTrades > 100) {
+    return { error: "Daily trade limit must be between 1 and 100" };
+  }
 
   const { error } = await supabase
     .from("paper_trade_sessions")
@@ -64,6 +68,7 @@ export async function updateSafetyControls(
       max_weekly_loss_pct:  controls.maxWeeklyLossPct,
       max_monthly_loss_pct: controls.maxMonthlyLossPct,
       pause_on_events:      controls.pauseOnEvents,
+      max_daily_trades:     controls.maxDailyTrades,
       last_action:          "controls_updated",
       last_action_at:       new Date().toISOString(),
     })
@@ -185,12 +190,13 @@ export async function runSafetyChecks(
     max_weekly_loss_pct: number;
     max_monthly_loss_pct: number;
     pause_on_events: boolean;
+    max_daily_trades: number;
     last_results: Record<string, unknown> | null;
   };
 
   const { data: sess, error: sessErr } = await supabase
     .from("paper_trade_sessions")
-    .select("status, autotrading_enabled, max_weekly_loss_pct, max_monthly_loss_pct, pause_on_events, last_results")
+    .select("status, autotrading_enabled, max_weekly_loss_pct, max_monthly_loss_pct, pause_on_events, max_daily_trades, last_results")
     .eq("id", sessionId)
     .eq("user_id", user.id)
     .single() as unknown as { data: SessRow | null; error: unknown };
@@ -200,6 +206,17 @@ export async function runSafetyChecks(
   // Only guard active autotrading sessions
   if (sess.status !== "active" || !sess.autotrading_enabled) {
     return { paused: false };
+  }
+
+  // Daily trades check
+  const maxDailyTrades = sess.max_daily_trades ?? 10;
+  const trades = ((sess.last_results?.trades ?? []) as Array<{ timestamp: string }>);
+  const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const todayCount = trades.filter(t => t.timestamp?.startsWith(todayStr)).length;
+  if (todayCount >= maxDailyTrades) {
+    const reason = `Daily trade limit reached: ${todayCount}/${maxDailyTrades} trades today`;
+    await pauseSession(sessionId, reason);
+    return { paused: true, reason };
   }
 
   const curve = ((sess.last_results?.equity_curve ?? []) as EquityPoint[]);
