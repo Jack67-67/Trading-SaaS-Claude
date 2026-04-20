@@ -146,7 +146,8 @@ export async function killSwitch(
       last_action_at:      new Date().toISOString(),
     })
     .eq("id", sessionId)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .neq("status", "stopped");   // idempotency: skip if already stopped
 
   if (error) return { error: error.message };
   revalidatePath(`/dashboard/paper-trading/${sessionId}`);

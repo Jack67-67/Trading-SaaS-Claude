@@ -18,6 +18,25 @@ export async function setTradingMode(
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return { error: "Not authenticated" };
 
+  // Server-side transition guard: live_prep requires shadow first + broker linked
+  if (mode === "live_prep") {
+    type SessCheck = { trading_mode: string | null; broker_connection_id: string | null };
+    const { data: current } = await supabase
+      .from("paper_trade_sessions")
+      .select("trading_mode, broker_connection_id")
+      .eq("id", sessionId)
+      .eq("user_id", user.id)
+      .single() as unknown as { data: SessCheck | null };
+
+    if (!current) return { error: "Session not found" };
+    if (current.trading_mode !== "shadow") {
+      return { error: "Must be in Shadow mode before enabling Live Prep" };
+    }
+    if (!current.broker_connection_id) {
+      return { error: "A broker connection must be linked before enabling Live Prep" };
+    }
+  }
+
   const autoEnabled   = mode === "shadow" || mode === "live_prep";
   const livePrepAt    = mode === "live_prep" ? new Date().toISOString() : null;
 

@@ -30,6 +30,7 @@ import {
   type ReadinessSummary,
 } from "@/lib/execution-readiness";
 import { TradingModeSelector } from "@/components/dashboard/trading-mode-selector";
+import { LiveSafetyChecklist } from "@/components/dashboard/live-safety-checklist";
 import type { TradingMode } from "@/app/actions/live-trading";
 
 export const metadata: Metadata = { title: "Autotrading Controls" };
@@ -316,6 +317,7 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
     maxMonthlyLossPct:    maxMonthlyLoss,
     sessionStopped:       isStopped,
     sessionPaused:        isPaused,
+    interval:             sessInterval,
     eventDanger:          guard?.level === "danger",
     eventName:            guard?.events?.[0]?.short ?? null,
     dataFreshMins,
@@ -473,6 +475,30 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
           />
         </div>
       </div>
+
+      {/* ── Live safety checklist (shadow + live_prep) ─────────────────────── */}
+      {(tradingMode === "shadow" || tradingMode === "live_prep") && (
+        <LiveSafetyChecklist
+          brokerConnected={brokerConnected}
+          brokerStatus={linkedBroker?.status ?? null}
+          accountActive={linkedBroker?.cached_account_status === "ACTIVE"}
+          hasBuyingPower={
+            linkedBroker?.cached_buying_power !== null &&
+            linkedBroker?.cached_buying_power !== undefined &&
+            linkedBroker.cached_buying_power >= estimatedOrderCost
+          }
+          buyingPower={linkedBroker?.cached_buying_power ?? null}
+          estimatedOrderCost={estimatedOrderCost}
+          weeklyLossOk={wLoss === null || wLoss > -maxWeeklyLoss}
+          monthlyLossOk={mLoss === null || mLoss > -maxMonthlyLoss}
+          eventDanger={guard?.level === "danger"}
+          eventName={guard?.events?.[0]?.short ?? null}
+          sessionStopped={isStopped}
+          sessionPaused={isPaused}
+          hasStrategy={hasResults}
+          liveDisabled={tradingMode !== "live"}
+        />
+      )}
 
       {/* ── Live status ────────────────────────────────────────────────────── */}
       {(() => {

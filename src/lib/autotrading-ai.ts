@@ -467,7 +467,8 @@ export function computeShadowSignal(params: {
   };
   const baseSL   = baseSLMap[interval] ?? 0.020;
   const ddFactor = 1 + Math.max(0, (metrics.max_drawdown_pct - 10) / 200);
-  const slPct    = Math.min(baseSL * ddFactor, baseSL * 2);
+  // Clamp: min 0.5% (avoids noise-stop-outs), max 10% (avoids catastrophic loss on a single trade)
+  const slPct    = Math.min(Math.max(0.005, baseSL * ddFactor), 0.10);
 
   // Take-profit: risk:reward derived from profit factor, capped at 4:1
   const riskReward = Math.min(4, Math.max(1, metrics.profit_factor));
@@ -476,7 +477,10 @@ export function computeShadowSignal(params: {
   // Position size: risk 1% of allocated capital per trade
   const allocatedCap = initialCapital * (maxCapitalPct / 100);
   const riskAmount   = allocatedCap * 0.01;
-  const positionSize = Math.max(1, Math.floor(riskAmount / (lastPrice * slPct)));
+  const rawSize      = Math.floor(riskAmount / (lastPrice * slPct));
+  // Reject signal if we can't even size 1 share — forcing 1 share would blow the risk model
+  if (rawSize < 1) return null;
+  const positionSize = rawSize;
 
   const confidence: "low" | "medium" | "high" =
     metrics.sharpe_ratio >= 1.5 && metrics.profit_factor >= 2.0 && metrics.win_rate_pct >= 55

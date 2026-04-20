@@ -47,6 +47,7 @@ export interface ReadinessParams {
 
   // Data freshness
   dataFreshMins:       number | null;     // null = never scanned
+  interval?:           string;            // candle interval — used for staleness threshold
 }
 
 export function computeExecutionReadiness(p: ReadinessParams): ReadinessSummary {
@@ -164,17 +165,21 @@ export function computeExecutionReadiness(p: ReadinessParams): ReadinessSummary 
   });
 
   // ── 9. Data freshness (warning, not blocking) ─────────────────────────────
+  // Threshold is interval-aware: short timeframes go stale much faster
   if (p.dataFreshMins !== null) {
-    const fresh = p.dataFreshMins < 60;
+    const freshnessLimits: Record<string, number> = {
+      "1m": 3, "3m": 5, "5m": 10, "15m": 20, "30m": 35,
+      "1h": 70, "2h": 130, "4h": 250, "1d": 1500, "3d": 4500, "1w": 10500,
+    };
+    const threshold = p.interval ? (freshnessLimits[p.interval] ?? 60) : 60;
+    const fresh = p.dataFreshMins < threshold;
     checks.push({
       id:       "data_fresh",
       label:    "Signal data is current",
       passed:   fresh,
-      detail:   p.dataFreshMins < 30
-        ? `Last scan ${Math.round(p.dataFreshMins)}m ago — signals are current.`
-        : p.dataFreshMins < 60
-        ? `Last scan ${Math.round(p.dataFreshMins)}m ago — signals may be slightly stale.`
-        : `Last scan ${Math.round(p.dataFreshMins)}m ago — consider refreshing before going live.`,
+      detail:   fresh
+        ? `Last scan ${Math.round(p.dataFreshMins)}m ago — signals are current for ${p.interval ?? "this"} interval.`
+        : `Last scan ${Math.round(p.dataFreshMins)}m ago — stale for ${p.interval ?? "this"} interval (limit ${threshold}m). Consider refreshing.`,
       blocking: false,
     });
   }
