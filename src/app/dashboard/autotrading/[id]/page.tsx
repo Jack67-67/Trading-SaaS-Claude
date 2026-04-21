@@ -35,6 +35,7 @@ import {
 } from "@/lib/execution-readiness";
 import { TradingModeSelector } from "@/components/dashboard/trading-mode-selector";
 import { LiveSafetyChecklist } from "@/components/dashboard/live-safety-checklist";
+import { ShadowModePanel } from "@/components/dashboard/shadow-mode-panel";
 import { ExecutionOrderLog } from "@/components/dashboard/execution-order-log";
 import type { TradingMode } from "@/app/actions/live-trading";
 import type { ExecutionOrder } from "@/lib/execution-engine";
@@ -503,13 +504,35 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
         <div className="px-5 py-4">
           <TradingModeSelector
             sessionId={params.id}
+            sessionName={sessName}
             currentMode={tradingMode}
             brokerConnected={userBrokers.some(b => b.status === "connected")}
             sessionStopped={isStopped}
             allReadinessPassed={readiness.allBlockersPassed}
+            maxCapitalPct={maxCapitalPct}
+            allocatedCapital={allocatedCap}
+            symbol={sessSymbol}
           />
         </div>
       </div>
+
+      {/* ── Shadow mode clarity panel ───────────────────────────────────────── */}
+      {tradingMode === "shadow" && (
+        <ShadowModePanel
+          symbol={sessSymbol}
+          interval={sessInterval}
+          hasSignal={shadowSignal !== null}
+          signalReason={shadowSignal?.reason ?? null}
+          entryApprox={shadowSignal?.entryApprox ?? null}
+          stopLoss={shadowSignal?.stopLoss ?? null}
+          positionSize={shadowSignal?.positionSize ?? null}
+          riskAmount={shadowSignal?.riskAmount ?? null}
+          confidence={shadowSignal?.confidence ?? null}
+          tradeCount={allTrades.length}
+          winRate={metrics?.win_rate_pct ?? null}
+          profitFactor={metrics?.profit_factor ?? null}
+        />
+      )}
 
       {/* ── Live safety checklist (shadow + live_prep + live) ──────────────── */}
       {(tradingMode === "shadow" || tradingMode === "live_prep" || tradingMode === "live") && (
@@ -524,14 +547,20 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
           }
           buyingPower={linkedBroker?.cached_buying_power ?? null}
           estimatedOrderCost={estimatedOrderCost}
+          hasStrategy={hasResults}
+          profitFactor={metrics?.profit_factor ?? null}
+          totalTrades={metrics?.total_trades ?? null}
+          sharpeRatio={metrics?.sharpe_ratio ?? null}
           weeklyLossOk={wLoss === null || wLoss > -maxWeeklyLoss}
           monthlyLossOk={mLoss === null || mLoss > -maxMonthlyLoss}
+          maxCapitalPct={maxCapitalPct}
+          maxWeeklyLossPct={maxWeeklyLoss}
+          maxMonthlyLossPct={maxMonthlyLoss}
+          pauseOnEvents={pauseOnEvents}
           eventDanger={guard?.level === "danger"}
           eventName={guard?.events?.[0]?.short ?? null}
           sessionStopped={isStopped}
           sessionPaused={isPaused}
-          hasStrategy={hasResults}
-          liveDisabled={tradingMode !== "live"}
         />
       )}
 
@@ -894,21 +923,15 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
             </div>
 
             {/* Go live section */}
-            <div className="px-5 py-4 border-t border-border bg-surface-1 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold text-text-primary">Enable live trading</p>
-                <p className="text-xs text-text-muted mt-0.5">
-                  {allPassed
-                    ? "All readiness checks passed — live execution is architecturally ready."
-                    : `${readiness.totalBlockers - readiness.passedBlockers} blocker${readiness.totalBlockers - readiness.passedBlockers !== 1 ? "s" : ""} must be resolved before going live.`}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Lock size={12} className="text-text-muted/50" />
-                <span className="text-xs font-medium text-text-muted bg-surface-3 border border-border rounded-lg px-3 py-1.5">
-                  Coming in Stage 4
-                </span>
-              </div>
+            <div className="px-5 py-4 border-t border-border bg-surface-1">
+              <p className="text-sm font-semibold text-text-primary">
+                {allPassed ? "Ready — use the Trading Mode selector above to go live." : "Resolve blockers before activating live trading."}
+              </p>
+              <p className="text-xs text-text-muted mt-0.5">
+                {allPassed
+                  ? 'Select "Live" in the Trading Mode panel to start the activation flow.'
+                  : `${readiness.totalBlockers - readiness.passedBlockers} blocker${readiness.totalBlockers - readiness.passedBlockers !== 1 ? "s" : ""} must be resolved before the Live button unlocks.`}
+              </p>
             </div>
           </div>
         );
