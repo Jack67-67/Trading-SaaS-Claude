@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
-export type TradingMode = "paper" | "shadow" | "live_prep";
+export type TradingMode = "paper" | "shadow" | "live_prep" | "live";
 
 // ── Set trading mode ──────────────────────────────────────────────────────────
 // Paper → no signals. Shadow → signals visible. Live Prep → full preview.
@@ -18,27 +18,53 @@ export async function setTradingMode(
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return { error: "Not authenticated" };
 
-  // Server-side transition guard: live_prep requires shadow first + broker linked
-  if (mode === "live_prep") {
-    type SessCheck = { trading_mode: string | null; broker_connection_id: string | null };
-    const { data: current } = await supabase
+  // Server-side transition guards
+  if (mode === "live_prep" || mode === "live") {
+    type SessCheck = {
+      trading_mode: string | null;
+      broker_connection_id: string | null;
+      cached_account_status: string | null;
+    };
+    const db = supabase as any;
+    const { data: current } = await db
       .from("paper_trade_sessions")
       .select("trading_mode, broker_connection_id")
       .eq("id", sessionId)
       .eq("user_id", user.id)
-      .single() as unknown as { data: SessCheck | null };
+      .single() as { data: SessCheck | null };
 
     if (!current) return { error: "Session not found" };
-    if (current.trading_mode !== "shadow") {
+
+    if (mode === "live_prep" && current.trading_mode !== "shadow") {
       return { error: "Must be in Shadow mode before enabling Live Prep" };
     }
+    if (mode === "live" && current.trading_mode !== "live_prep") {
+      return { error: "Must complete Live Prep before activating Live trading" };
+    }
     if (!current.broker_connection_id) {
-      return { error: "A broker connection must be linked before enabling Live Prep" };
+      return { error: "A broker connection must be linked before enabling this mode" };
+    }
+
+    // For live activation, verify broker account is ACTIVE
+    if (mode === "live") {
+      const { data: broker } = await db
+        .from("broker_connections")
+        .select("cached_account_status, status")
+        .eq("id", current.broker_connection_id)
+        .eq("user_id", user.id)
+        .single() as { data: { cached_account_status: string | null; status: string } | null };
+
+      if (!broker || broker.status !== "connected") {
+        return { error: "Broker connection is not verified. Refresh it in Settings first." };
+      }
+      if (broker.cached_account_status !== "ACTIVE") {
+        return { error: "Broker account is not ACTIVE. Cannot activate live trading." };
+      }
     }
   }
 
-  const autoEnabled   = mode === "shadow" || mode === "live_prep";
-  const livePrepAt    = mode === "live_prep" ? new Date().toISOString() : null;
+  const autoEnabled = mode === "shadow" || mode === "live_prep" || mode === "live";
+  const livePrepAt  = mode === "live_prep" ? new Date().toISOString() : null;
 
   const { error } = await supabase
     .from("paper_trade_sessions")

@@ -19,7 +19,18 @@
       "Bash(Last analysis: Xm ago\" bar on the dashboard:*)",
       "Bash(git push:*)",
       "Bash(gh repo:*)",
-      "Bash(grep -r export.*Logo /Users/idatedsjo/Downloads/trading-backtest-saas/src/components/ui/logo.tsx)"
+      "Bash(grep -r export.*Logo /Users/idatedsjo/Downloads/trading-backtest-saas/src/components/ui/logo.tsx)",
+      "Bash(git -C:*)",
+      "Bash(git -C /Users/idatedsjo/Downloads/trading-backtest-saas push)",
+      "WebFetch(domain:trading-saas-backend-kssa.onrender.com)",
+      "Bash(cat /Users/idatedsjo/Downloads/trading-backtest-saas/eslint.config.*)",
+      "Bash(supabase status:*)",
+      "Bash(supabase --version)",
+      "Bash(npm run:*)",
+      "Bash(to do?\" section showing 3 large equal-weight action cards::*)",
+      "Bash(wc:*)",
+      "Bash(find /Users/idatedsjo/Downloads/trading-backtest-saas/src -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
+      "Bash(ls:*)"
     ]
   }
 }

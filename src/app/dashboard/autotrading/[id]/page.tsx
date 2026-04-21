@@ -35,7 +35,9 @@ import {
 } from "@/lib/execution-readiness";
 import { TradingModeSelector } from "@/components/dashboard/trading-mode-selector";
 import { LiveSafetyChecklist } from "@/components/dashboard/live-safety-checklist";
+import { ExecutionOrderLog } from "@/components/dashboard/execution-order-log";
 import type { TradingMode } from "@/app/actions/live-trading";
+import type { ExecutionOrder } from "@/lib/execution-engine";
 
 export const metadata: Metadata = { title: "Autotrading Controls" };
 
@@ -264,7 +266,8 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
   // trading_mode defaults to 'shadow' for existing sessions with autotrading on
   const rawMode = (sess.trading_mode as string | null) ?? null;
   const tradingMode: TradingMode =
-    rawMode === "live_prep" ? "live_prep"
+    rawMode === "live"      ? "live"
+    : rawMode === "live_prep" ? "live_prep"
     : rawMode === "shadow"  ? "shadow"
     : rawMode === "paper"   ? "paper"
     : autoEnabled           ? "shadow"   // legacy: autotrading_enabled=true → shadow
@@ -341,6 +344,14 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
     dataFreshMins,
   });
 
+  // ── Execution orders ──────────────────────────────────────────────────────
+  let executionOrders: ExecutionOrder[] = [];
+  try {
+    const { getSessionOrders } = await import("@/app/actions/orders");
+    const ordersResult = await getSessionOrders(params.id, 50);
+    if (!("error" in ordersResult)) executionOrders = ordersResult;
+  } catch { /* pre-migration: execution_orders table may not exist */ }
+
   return (
     <div className="space-y-6 animate-fade-in max-w-3xl">
 
@@ -381,7 +392,12 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
                   )} />
                   {isStopped ? "Stopped" : isPaused ? "Paused" : isRunning ? "Running" : "Off"}
                 </span>
-                {tradingMode === "live_prep" ? (
+                {tradingMode === "live" ? (
+                  <span className="text-2xs font-semibold text-profit bg-profit/10 border border-profit/30 rounded-full px-2 py-0.5 flex items-center gap-1 animate-pulse">
+                    <Radio size={9} />
+                    LIVE TRADING
+                  </span>
+                ) : tradingMode === "live_prep" ? (
                   <span className="text-2xs font-semibold text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded-full px-2 py-0.5 flex items-center gap-1">
                     <Zap size={9} />
                     LIVE PREP
@@ -490,12 +506,13 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
             currentMode={tradingMode}
             brokerConnected={userBrokers.some(b => b.status === "connected")}
             sessionStopped={isStopped}
+            allReadinessPassed={readiness.allBlockersPassed}
           />
         </div>
       </div>
 
-      {/* ── Live safety checklist (shadow + live_prep) ─────────────────────── */}
-      {(tradingMode === "shadow" || tradingMode === "live_prep") && (
+      {/* ── Live safety checklist (shadow + live_prep + live) ──────────────── */}
+      {(tradingMode === "shadow" || tradingMode === "live_prep" || tradingMode === "live") && (
         <LiveSafetyChecklist
           brokerConnected={brokerConnected}
           brokerStatus={linkedBroker?.status ?? null}
@@ -1143,6 +1160,22 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
           daysUntil: guard.daysUntil,
         } : null}
       />
+
+      {/* ── Signal & execution order log ────────────────────────────────────── */}
+      <div className="rounded-2xl border border-border overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-border flex items-center gap-2">
+          <History size={12} className="text-text-muted" />
+          <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+            Signal & Order Log
+          </p>
+          {executionOrders.length > 0 && (
+            <span className="ml-auto text-2xs text-text-muted">{executionOrders.length} entries</span>
+          )}
+        </div>
+        <div className="px-5 py-4">
+          <ExecutionOrderLog orders={executionOrders} />
+        </div>
+      </div>
 
     </div>
   );

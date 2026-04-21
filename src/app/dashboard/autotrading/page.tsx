@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import {
   Bot, Plus, TrendingUp, TrendingDown, Minus, Pause, ShieldX,
   Activity, Zap, AlertTriangle, CheckCircle2, Clock, ArrowRight,
-  DollarSign, RefreshCw, Eye,
+  DollarSign, RefreshCw, Eye, BarChart2, ChevronRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatPercent, pnlColor } from "@/lib/utils";
@@ -838,6 +838,23 @@ export default async function AutotradingPage() {
 
           {/* ── Event guard + AI warnings ───────────────────────────────── */}
           <AlertsSection sessions={sessions} guard={guard} />
+
+          {/* ── Portfolio Overview link ──────────────────────────────────── */}
+          <Link
+            href="/dashboard/autotrading/portfolio"
+            className="flex items-center justify-between rounded-2xl border border-border bg-surface-1 px-5 py-4 hover:bg-surface-2 hover:border-border-hover transition-all group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
+                <BarChart2 size={14} className="text-accent" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-text-primary">Portfolio Overview</p>
+                <p className="text-xs text-text-muted">Multi-strategy risk controls, portfolio kill switch, order log</p>
+              </div>
+            </div>
+            <ChevronRight size={14} className="text-text-muted group-hover:text-text-secondary transition-colors" />
+          </Link>
 
           {/* ── Session list ─────────────────────────────────────────────── */}
           <div>
