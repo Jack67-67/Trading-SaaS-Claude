@@ -36,6 +36,7 @@ import {
 import { TradingModeSelector } from "@/components/dashboard/trading-mode-selector";
 import { LiveSafetyChecklist } from "@/components/dashboard/live-safety-checklist";
 import { ShadowModePanel } from "@/components/dashboard/shadow-mode-panel";
+import { BrokerAccountPanel } from "@/components/dashboard/broker-account-panel";
 import { ExecutionOrderLog } from "@/components/dashboard/execution-order-log";
 import type { TradingMode } from "@/app/actions/live-trading";
 import type { ExecutionOrder } from "@/lib/execution-engine";
@@ -279,6 +280,7 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
   // Fetch linked broker connection (display data only — no credentials)
   type BrokerRow = {
     id: string;
+    broker: string;
     status: string;
     display_name: string | null;
     account_number: string | null;
@@ -300,7 +302,7 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
       if (brokerConnectionId) {
         const { data } = await db
           .from("broker_connections")
-          .select("id, status, display_name, account_number, cached_account_status, cached_buying_power, cached_equity, last_verified_at")
+          .select("id, broker, status, display_name, account_number, cached_account_status, cached_buying_power, cached_equity, last_verified_at")
           .eq("id", brokerConnectionId)
           .eq("user_id", u.id)
           .single() as { data: BrokerRow | null };
@@ -515,6 +517,16 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
           />
         </div>
       </div>
+
+      {/* ── Broker account panel ────────────────────────────────────────────── */}
+      <BrokerAccountPanel
+        sessionId={params.id}
+        linkedBroker={linkedBroker}
+        userBrokers={userBrokers}
+        strategyAllocation={allocatedCap}
+        strategyPct={maxCapitalPct}
+        initialCapital={initCap}
+      />
 
       {/* ── Shadow mode clarity panel ───────────────────────────────────────── */}
       {tradingMode === "shadow" && (

@@ -30,7 +30,8 @@
       "Bash(to do?\" section showing 3 large equal-weight action cards::*)",
       "Bash(wc:*)",
       "Bash(find /Users/idatedsjo/Downloads/trading-backtest-saas/src -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(find /Users/idatedsjo/Downloads/trading-backtest-saas -type f -name *broker*)"
     ]
   }
 }
