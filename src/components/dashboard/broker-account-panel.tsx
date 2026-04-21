@@ -4,13 +4,13 @@ import { useState, useTransition } from "react";
 import {
   Link2, Link2Off, RefreshCw, ChevronDown, ChevronUp,
   AlertTriangle, CheckCircle2, Wallet, TrendingUp, DollarSign,
-  ShieldCheck, Activity, ExternalLink, Unlink,
+  ShieldCheck, Activity, ExternalLink, Unlink, Eye, EyeOff,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { getBrokerLiveData, type BrokerConnectionRow } from "@/app/actions/broker";
+import { getBrokerLiveData, saveBrokerConnection, type BrokerConnectionRow } from "@/app/actions/broker";
 import { linkBrokerToSession } from "@/app/actions/live-trading";
-import type { BrokerAccount, BrokerPosition } from "@/lib/broker";
+import type { BrokerAccount, BrokerPosition, BrokerType } from "@/lib/broker";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -123,16 +123,140 @@ function PositionRow({ pos }: { pos: BrokerPosition }) {
   );
 }
 
-// ── No broker linked: link selector ──────────────────────────────────────────
+// ── Inline connect form (no broker accounts at all) ───────────────────────────
+
+const BROKER_OPTIONS: { value: BrokerType; label: string; desc: string }[] = [
+  { value: "alpaca_paper", label: "Alpaca Paper Trading", desc: "Simulated trades — safe for testing" },
+  { value: "alpaca_live",  label: "Alpaca Live Trading",  desc: "Real account — use with caution"    },
+];
+
+function InlineConnectForm({ onConnected }: { onConnected: () => void }) {
+  const [broker, setBroker]         = useState<BrokerType>("alpaca_paper");
+  const [apiKey, setApiKey]         = useState("");
+  const [apiSecret, setApiSecret]   = useState("");
+  const [showSecret, setShowSecret] = useState(false);
+  const [error, setError]           = useState<string | null>(null);
+  const [pending, startTransition]  = useTransition();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    startTransition(async () => {
+      const res = await saveBrokerConnection(broker, apiKey.trim(), apiSecret.trim());
+      if ("error" in res) { setError(res.error); return; }
+      onConnected();
+    });
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="px-5 py-5 space-y-4">
+      <div className="flex items-start gap-3 mb-1">
+        <div className="w-8 h-8 rounded-xl bg-accent/10 flex items-center justify-center shrink-0 mt-0.5">
+          <Link2 size={14} className="text-accent" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-text-primary">Connect a broker account</p>
+          <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
+            Connect your Alpaca account to see real balance and buying power. Read-only — no orders placed.
+          </p>
+        </div>
+      </div>
+
+      {/* Broker type selector */}
+      <div className="grid gap-2">
+        {BROKER_OPTIONS.map(opt => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setBroker(opt.value)}
+            className={cn(
+              "flex items-center gap-3 w-full rounded-xl border px-4 py-3 text-left transition-colors",
+              broker === opt.value ? "border-accent bg-accent/5" : "border-border bg-surface-0 hover:border-border-hover",
+            )}
+          >
+            <div className={cn(
+              "w-3.5 h-3.5 rounded-full border-2 shrink-0 flex items-center justify-center",
+              broker === opt.value ? "border-accent" : "border-text-muted",
+            )}>
+              {broker === opt.value && <div className="w-2 h-2 rounded-full bg-accent" />}
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-text-primary">{opt.label}</p>
+              <p className="text-2xs text-text-muted">{opt.desc}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Credentials */}
+      <div className="space-y-2">
+        <input
+          type="text"
+          placeholder="API Key ID"
+          value={apiKey}
+          onChange={e => setApiKey(e.target.value)}
+          className="w-full h-9 px-3 rounded-lg border border-border bg-surface-0 text-xs font-mono text-text-primary focus:border-accent focus:outline-none transition-colors placeholder:text-text-muted"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <div className="relative">
+          <input
+            type={showSecret ? "text" : "password"}
+            placeholder="API Secret Key"
+            value={apiSecret}
+            onChange={e => setApiSecret(e.target.value)}
+            className="w-full h-9 px-3 pr-9 rounded-lg border border-border bg-surface-0 text-xs font-mono text-text-primary focus:border-accent focus:outline-none transition-colors placeholder:text-text-muted"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button
+            type="button"
+            onClick={() => setShowSecret(v => !v)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
+          >
+            {showSecret ? <EyeOff size={12} /> : <Eye size={12} />}
+          </button>
+        </div>
+        <p className="text-2xs text-text-muted leading-relaxed">
+          Credentials are encrypted and only used server-side. Use a read-only key if available.
+        </p>
+      </div>
+
+      {error && (
+        <div className="flex items-start gap-2 rounded-lg bg-loss/10 border border-loss/20 px-3 py-2">
+          <AlertTriangle size={12} className="text-loss mt-0.5 shrink-0" />
+          <p className="text-xs text-loss">{error}</p>
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={pending || !apiKey.trim() || !apiSecret.trim()}
+        className={cn(
+          "inline-flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold transition-all",
+          !pending && apiKey.trim() && apiSecret.trim()
+            ? "bg-accent text-white hover:bg-accent/90"
+            : "bg-surface-3 border border-border text-text-muted cursor-not-allowed opacity-50",
+        )}
+      >
+        {pending ? <><RefreshCw size={11} className="animate-spin" /> Connecting…</> : <><Link2 size={11} /> Connect</>}
+      </button>
+    </form>
+  );
+}
+
+// ── Link existing broker to session ──────────────────────────────────────────
 
 function LinkBrokerSection({
   sessionId,
   userBrokers,
   onLinked,
+  onNeedConnect,
 }: {
-  sessionId:   string;
-  userBrokers: AvailableBroker[];
-  onLinked:    (brokerId: string) => void;
+  sessionId:     string;
+  userBrokers:   AvailableBroker[];
+  onLinked:      (brokerId: string) => void;
+  onNeedConnect: () => void;
 }) {
   const [selected, setSelected]    = useState<string | null>(null);
   const [error, setError]          = useState<string | null>(null);
@@ -145,11 +269,8 @@ function LinkBrokerSection({
     setError(null);
     startTransition(async () => {
       const res = await linkBrokerToSession(sessionId, selected);
-      if (res?.error) {
-        setError(res.error);
-      } else {
-        onLinked(selected);
-      }
+      if (res?.error) { setError(res.error); return; }
+      onLinked(selected);
     });
   }
 
@@ -162,95 +283,78 @@ function LinkBrokerSection({
         <div>
           <p className="text-sm font-semibold text-text-primary">Link a broker account</p>
           <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
-            Linking a broker shows your real balance and buying power alongside the strategy.
-            No orders will be placed — this is read-only.
+            Shows real balance and buying power alongside the strategy. Read-only — no orders placed.
           </p>
         </div>
       </div>
 
-      {connectedBrokers.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border px-4 py-4 text-center space-y-2">
-          <p className="text-xs text-text-muted">No broker connections found.</p>
-          <Link
-            href="/dashboard/settings"
-            className="inline-flex items-center gap-1.5 text-xs text-accent hover:text-accent/80 font-medium transition-colors"
+      <div className="space-y-2">
+        {connectedBrokers.map(b => (
+          <button
+            key={b.id}
+            type="button"
+            onClick={() => setSelected(b.id)}
+            className={cn(
+              "w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all",
+              selected === b.id
+                ? "border-accent bg-accent/5"
+                : "border-border bg-surface-0 hover:border-border-hover hover:bg-surface-1",
+            )}
           >
-            Connect a broker in Settings
-            <ExternalLink size={10} />
-          </Link>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {connectedBrokers.map(b => (
-            <button
-              key={b.id}
-              type="button"
-              onClick={() => setSelected(b.id)}
-              className={cn(
-                "w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all",
-                selected === b.id
-                  ? "border-accent bg-accent/5"
-                  : "border-border bg-surface-0 hover:border-border-hover hover:bg-surface-1",
-              )}
-            >
-              <div className={cn(
-                "w-3.5 h-3.5 rounded-full border-2 shrink-0 flex items-center justify-center",
-                selected === b.id ? "border-accent" : "border-text-muted",
-              )}>
-                {selected === b.id && <div className="w-2 h-2 rounded-full bg-accent" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-text-primary">
-                    {b.display_name ?? b.broker}
-                  </span>
-                  <span className={cn(
-                    "text-2xs font-semibold px-1.5 py-0.5 rounded border",
-                    BROKER_BADGE[b.broker] ?? "bg-surface-3 text-text-muted border-border",
-                  )}>
-                    {b.broker === "alpaca_paper" ? "Paper" : "Live"}
-                  </span>
-                </div>
-              </div>
-              <span className="flex items-center gap-1 text-2xs text-profit shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-profit" />
-                Connected
-              </span>
-            </button>
-          ))}
-
-          {error && (
-            <div className="flex items-start gap-2 rounded-lg bg-loss/10 border border-loss/20 px-3 py-2">
-              <AlertTriangle size={12} className="text-loss mt-0.5 shrink-0" />
-              <p className="text-xs text-loss">{error}</p>
+            <div className={cn(
+              "w-3.5 h-3.5 rounded-full border-2 shrink-0 flex items-center justify-center",
+              selected === b.id ? "border-accent" : "border-text-muted",
+            )}>
+              {selected === b.id && <div className="w-2 h-2 rounded-full bg-accent" />}
             </div>
-          )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-text-primary">{b.display_name ?? b.broker}</span>
+                <span className={cn(
+                  "text-2xs font-semibold px-1.5 py-0.5 rounded border",
+                  BROKER_BADGE[b.broker] ?? "bg-surface-3 text-text-muted border-border",
+                )}>
+                  {b.broker === "alpaca_paper" ? "Paper" : "Live"}
+                </span>
+              </div>
+            </div>
+            <span className="flex items-center gap-1 text-2xs text-profit shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-profit" />
+              Connected
+            </span>
+          </button>
+        ))}
+      </div>
 
-          <div className="flex items-center gap-3 pt-1">
-            <button
-              onClick={handleLink}
-              disabled={!selected || pending}
-              className={cn(
-                "inline-flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold transition-all",
-                selected && !pending
-                  ? "bg-accent text-white hover:bg-accent/90"
-                  : "bg-surface-3 border border-border text-text-muted cursor-not-allowed opacity-50",
-              )}
-            >
-              {pending
-                ? <><RefreshCw size={11} className="animate-spin" /> Linking…</>
-                : <><Link2 size={11} /> Link to session</>}
-            </button>
-            <Link
-              href="/dashboard/settings"
-              className="text-xs text-text-muted hover:text-text-secondary transition-colors flex items-center gap-1"
-            >
-              Add new broker
-              <ExternalLink size={9} />
-            </Link>
-          </div>
+      {error && (
+        <div className="flex items-start gap-2 rounded-lg bg-loss/10 border border-loss/20 px-3 py-2">
+          <AlertTriangle size={12} className="text-loss mt-0.5 shrink-0" />
+          <p className="text-xs text-loss">{error}</p>
         </div>
       )}
+
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleLink}
+          disabled={!selected || pending}
+          className={cn(
+            "inline-flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold transition-all",
+            selected && !pending
+              ? "bg-accent text-white hover:bg-accent/90"
+              : "bg-surface-3 border border-border text-text-muted cursor-not-allowed opacity-50",
+          )}
+        >
+          {pending ? <><RefreshCw size={11} className="animate-spin" /> Linking…</> : <><Link2 size={11} /> Link to session</>}
+        </button>
+        <button
+          type="button"
+          onClick={onNeedConnect}
+          className="text-xs text-text-muted hover:text-text-secondary transition-colors flex items-center gap-1"
+        >
+          Add new broker
+          <ExternalLink size={9} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -361,16 +465,19 @@ export function BrokerAccountPanel({
   strategyPct,
   initialCapital,
 }: BrokerAccountPanelProps) {
-  const [broker, setBroker]        = useState<LinkedBroker | null>(linkedBroker);
-  const [live, setLive]            = useState<LiveData | null>(null);
-  const [expanded, setExpanded]    = useState(false);
-  const [error, setError]          = useState<string | null>(null);
-  const [unlinking, startUnlink]   = useTransition();
-  const [refreshing, startRefresh] = useTransition();
+  const [broker, setBroker]          = useState<LinkedBroker | null>(linkedBroker);
+  const [live, setLive]              = useState<LiveData | null>(null);
+  const [expanded, setExpanded]      = useState(false);
+  const [error, setError]            = useState<string | null>(null);
+  const [showConnectForm, setShowConnectForm] = useState(false);
+  const [unlinking, startUnlink]     = useTransition();
+  const [refreshing, startRefresh]   = useTransition();
 
-  // When user links a broker, we'll need to refresh the page to get full broker data.
-  // For now, just reload to get the server component to re-fetch.
+  // When user links or connects a broker, reload to get full server-side data
   function handleLinked(_brokerId: string) {
+    window.location.reload();
+  }
+  function handleConnected() {
     window.location.reload();
   }
 
@@ -411,20 +518,28 @@ export function BrokerAccountPanel({
 
   // ── No broker linked ───────────────────────────────────────────────────────
   if (!broker) {
+    const hasBrokers = userBrokers.some(b => b.status === "connected");
     return (
       <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden">
         <div className="px-5 py-3.5 border-b border-border flex items-center gap-2">
           <Link2Off size={12} className="text-text-muted" />
           <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Broker Account</p>
-          <span className="ml-auto text-2xs text-text-muted/60 bg-surface-3 border border-border rounded px-1.5 py-0.5">
-            Not linked
+          <span className="ml-auto flex items-center gap-1 text-2xs text-text-muted/60 bg-surface-3 border border-border rounded px-2 py-0.5">
+            <ShieldCheck size={9} className="text-profit/50" />
+            Read-only
           </span>
         </div>
-        <LinkBrokerSection
-          sessionId={sessionId}
-          userBrokers={userBrokers}
-          onLinked={handleLinked}
-        />
+        {/* Show inline connect if no brokers at all, or link selector if brokers exist */}
+        {!hasBrokers || showConnectForm ? (
+          <InlineConnectForm onConnected={handleConnected} />
+        ) : (
+          <LinkBrokerSection
+            sessionId={sessionId}
+            userBrokers={userBrokers}
+            onLinked={handleLinked}
+            onNeedConnect={() => setShowConnectForm(true)}
+          />
+        )}
       </div>
     );
   }

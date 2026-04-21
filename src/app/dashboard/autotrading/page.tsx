@@ -5,6 +5,7 @@ import {
   Bot, Plus, TrendingUp, TrendingDown, Minus, Pause, ShieldX,
   Activity, Zap, AlertTriangle, CheckCircle2, Clock, ArrowRight,
   DollarSign, RefreshCw, Eye, BarChart2, ChevronRight,
+  Link2, Link2Off, ShieldCheck, Wallet,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatPercent, pnlColor } from "@/lib/utils";
@@ -80,7 +81,20 @@ const ACTION_LABEL: Record<string, string> = {
 
 type RawSession = Record<string, unknown>;
 
-type TradingMode = "paper" | "shadow" | "live_prep";
+// Broker row from DB (cached data — no credentials)
+type BrokerConnRow = {
+  id:                    string;
+  broker:                string;
+  status:                string;
+  display_name:          string | null;
+  cached_buying_power:   number | null;
+  cached_equity:         number | null;
+  cached_account_status: string | null;
+  cached_positions_count: number | null;
+  last_verified_at:      string | null;
+};
+
+type TradingMode = "paper" | "shadow" | "live_prep" | "live";
 
 type ParsedSession = {
   id: string;
@@ -108,6 +122,7 @@ type ParsedSession = {
   pnl: number;
   recentTrades: RawTrade[];
   totalTrades: number;
+  brokerConnectionId: string | null;
 };
 
 function parseSession(raw: RawSession): ParsedSession {
@@ -157,7 +172,188 @@ function parseSession(raw: RawSession): ParsedSession {
     pnl: currentEquity - cap,
     recentTrades: allTrades.slice(-5).reverse(),
     totalTrades: allTrades.length,
+    brokerConnectionId: (raw.broker_connection_id as string | null) ?? null,
   };
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const BROKER_BADGE: Record<string, string> = {
+  alpaca_paper: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  alpaca_live:  "bg-profit/10 text-profit border-profit/20",
+};
+
+function relTime(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1)  return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+// ── Broker summary section ────────────────────────────────────────────────────
+
+function BrokerSummarySection({
+  brokers,
+  sessions,
+}: {
+  brokers: BrokerConnRow[];
+  sessions: ParsedSession[];
+}) {
+  const connected    = brokers.filter(b => b.status === "connected");
+  const errored      = brokers.filter(b => b.status === "error");
+  const totalBP      = connected.reduce((s, b) => s + (b.cached_buying_power ?? 0), 0);
+  const linkedSessCount = sessions.filter(s => s.brokerConnectionId !== null).length;
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden">
+      {/* Header */}
+      <div className="px-5 py-3.5 border-b border-border flex items-center gap-2">
+        <Link2 size={12} className={connected.length > 0 ? "text-profit" : "text-text-muted"} />
+        <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+          Broker Accounts
+        </p>
+        <span className="ml-auto flex items-center gap-1 text-2xs text-text-muted/60 bg-surface-3 border border-border rounded px-2 py-0.5">
+          <ShieldCheck size={9} className="text-profit/60" />
+          Read-only · No orders placed
+        </span>
+      </div>
+
+      {brokers.length === 0 ? (
+        /* No broker connected */
+        <div className="px-5 py-5 flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-xl bg-surface-3 flex items-center justify-center shrink-0">
+              <Link2Off size={14} className="text-text-muted" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-text-secondary">No broker connected</p>
+              <p className="text-xs text-text-muted mt-0.5 leading-relaxed max-w-sm">
+                Connect an Alpaca account to see real capital and buying power alongside your strategy allocation.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/dashboard/settings"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface-2 px-4 py-2 text-xs font-semibold text-text-secondary hover:text-text-primary hover:bg-surface-3 hover:border-border-hover transition-all shrink-0"
+          >
+            <Link2 size={11} />
+            Connect broker
+            <ChevronRight size={10} className="text-text-muted" />
+          </Link>
+        </div>
+      ) : (
+        <div>
+          {/* Broker rows */}
+          <div className="divide-y divide-border/50">
+            {brokers.map(b => {
+              const isConnected = b.status === "connected";
+              const isError     = b.status === "error";
+              const linkedCount = sessions.filter(s => s.brokerConnectionId === b.id).length;
+              return (
+                <div key={b.id} className="px-5 py-3.5 flex items-center gap-3 flex-wrap">
+                  {/* Status dot */}
+                  <span className={cn(
+                    "w-2 h-2 rounded-full shrink-0",
+                    isConnected ? "bg-profit" : isError ? "bg-loss" : "bg-amber-400",
+                  )} />
+                  {/* Name + type badge */}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm font-medium text-text-primary truncate">
+                      {b.display_name ?? b.broker}
+                    </span>
+                    <span className={cn(
+                      "text-2xs font-semibold px-1.5 py-0.5 rounded border shrink-0",
+                      BROKER_BADGE[b.broker] ?? "bg-surface-3 text-text-muted border-border",
+                    )}>
+                      {b.broker === "alpaca_paper" ? "Paper" : "Live"}
+                    </span>
+                    {b.cached_account_status && (
+                      <span className={cn(
+                        "text-2xs font-semibold px-1.5 py-0.5 rounded-full shrink-0",
+                        b.cached_account_status === "ACTIVE"
+                          ? "bg-profit/10 text-profit"
+                          : "bg-amber-400/10 text-amber-400",
+                      )}>
+                        {b.cached_account_status}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Metrics */}
+                  <div className="flex items-center gap-4 ml-auto flex-wrap text-right">
+                    {b.cached_buying_power !== null && (
+                      <div>
+                        <p className="text-xs font-mono font-semibold text-text-primary">
+                          {fmt$(b.cached_buying_power)}
+                        </p>
+                        <p className="text-2xs text-text-muted">buying power</p>
+                      </div>
+                    )}
+                    {b.cached_equity !== null && (
+                      <div>
+                        <p className="text-xs font-mono text-text-secondary">
+                          {fmt$(b.cached_equity)}
+                        </p>
+                        <p className="text-2xs text-text-muted">equity</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-xs text-text-muted">
+                        {linkedCount} session{linkedCount !== 1 ? "s" : ""} linked
+                      </p>
+                      {b.last_verified_at && (
+                        <p className="text-2xs text-text-muted/50">
+                          Synced {relTime(b.last_verified_at)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer: total + warnings + manage link */}
+          <div className="px-5 py-3 border-t border-border/60 bg-surface-0/40 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-4 flex-wrap">
+              {totalBP > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <Wallet size={11} className="text-text-muted" />
+                  <span className="text-xs text-text-muted">
+                    Total buying power:
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-text-primary">
+                    {fmt$(totalBP)}
+                  </span>
+                </div>
+              )}
+              {errored.length > 0 && (
+                <span className="flex items-center gap-1 text-xs text-loss">
+                  <AlertTriangle size={11} />
+                  {errored.length} connection{errored.length !== 1 ? "s" : ""} have errors
+                </span>
+              )}
+              {linkedSessCount < sessions.length && sessions.length > 0 && (
+                <span className="text-2xs text-text-muted/60">
+                  {sessions.length - linkedSessCount} session{sessions.length - linkedSessCount !== 1 ? "s" : ""} have no broker linked
+                </span>
+              )}
+            </div>
+            <Link
+              href="/dashboard/settings"
+              className="text-xs text-text-muted hover:text-text-secondary transition-colors flex items-center gap-1"
+            >
+              Manage in Settings
+              <ChevronRight size={10} />
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -171,7 +367,7 @@ function StatusDot({ running }: { running: boolean }) {
   );
 }
 
-function GlobalStatusHero({ sessions }: { sessions: ParsedSession[] }) {
+function GlobalStatusHero({ sessions, brokers }: { sessions: ParsedSession[]; brokers: BrokerConnRow[] }) {
   const runSessions = sessions.filter(s => s.autoEnabled && s.status === "active");
   const pausedCount = sessions.filter(s => s.status === "paused").length;
   const stoppedCount = sessions.filter(s => s.status === "stopped").length;
@@ -183,6 +379,9 @@ function GlobalStatusHero({ sessions }: { sessions: ParsedSession[] }) {
   const totalStarting  = sessions.reduce((a, s) => a + s.initialCapital, 0);
   const totalPnL       = totalEquity - totalStarting;
   const totalPnLPct    = totalStarting > 0 ? (totalPnL / totalStarting) * 100 : 0;
+  const totalBrokerBP  = brokers
+    .filter(b => b.status === "connected")
+    .reduce((s, b) => s + (b.cached_buying_power ?? 0), 0);
 
   // Running since = earliest start_date among active auto sessions
   const oldestActive = runSessions.sort(
@@ -259,33 +458,55 @@ function GlobalStatusHero({ sessions }: { sessions: ParsedSession[] }) {
 
         {/* Capital + PnL row */}
         {sessions.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-5">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-5">
             <div>
-              <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-0.5">Allocated Capital</p>
+              <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-0.5">Allocated</p>
               <p className="text-xl font-bold font-mono tabular-nums text-text-primary">
                 {fmt$(totalAllocated)}
               </p>
               {totalAllocated < totalStarting && (
-                <p className="text-2xs text-text-muted/60 mt-0.5">of {fmt$(totalStarting)} total</p>
+                <p className="text-2xs text-text-muted/60 mt-0.5">of {fmt$(totalStarting)}</p>
               )}
             </div>
             <div>
-              <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-0.5">Current Equity</p>
+              <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-0.5">Sim Equity</p>
               <p className="text-xl font-bold font-mono tabular-nums text-text-primary">
                 {fmt$(totalEquity)}
               </p>
             </div>
             <div>
-              <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-0.5">Total P&L</p>
+              <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-0.5">Sim P&L</p>
               <p className={cn("text-xl font-bold font-mono tabular-nums", pnlColor(totalPnL))}>
                 {totalPnL >= 0 ? "+" : ""}{fmt$(totalPnL)}
               </p>
-            </div>
-            <div>
-              <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-0.5">Return</p>
-              <p className={cn("text-xl font-bold font-mono tabular-nums", pnlColor(totalPnLPct))}>
+              <p className={cn("text-2xs font-mono", pnlColor(totalPnLPct))}>
                 {totalPnLPct >= 0 ? "+" : ""}{totalPnLPct.toFixed(2)}%
               </p>
+            </div>
+            <div className={cn(
+              "col-span-2 sm:col-span-2 rounded-xl border px-3 py-2",
+              totalBrokerBP > 0 ? "border-profit/20 bg-profit/[0.02]" : "border-border bg-surface-0",
+            )}>
+              <p className="text-2xs text-text-muted uppercase tracking-wider font-semibold mb-0.5 flex items-center gap-1">
+                <Link2 size={9} className={totalBrokerBP > 0 ? "text-profit/60" : "text-text-muted/40"} />
+                Broker Buying Power
+              </p>
+              {totalBrokerBP > 0 ? (
+                <>
+                  <p className="text-xl font-bold font-mono tabular-nums text-profit">
+                    {fmt$(totalBrokerBP)}
+                  </p>
+                  {totalAllocated > 0 && (
+                    <p className="text-2xs text-text-muted/70 mt-0.5">
+                      Strategy uses {((totalAllocated / totalBrokerBP) * 100).toFixed(1)}% of BP
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-text-muted/50 mt-0.5">
+                  No broker linked
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -373,7 +594,7 @@ function AlertsSection({
   );
 }
 
-function SessionCard({ sess }: { sess: ParsedSession }) {
+function SessionCard({ sess, broker }: { sess: ParsedSession; broker: BrokerConnRow | null }) {
   const isStopped = sess.status === "stopped";
   const isPaused  = sess.status === "paused";
   const isRunning = sess.autoEnabled && !isStopped && !isPaused;
@@ -531,6 +752,50 @@ function SessionCard({ sess }: { sess: ParsedSession }) {
 
         {/* Mini trade log */}
         <MiniTradeLog trades={sess.recentTrades} totalTrades={sess.totalTrades} />
+
+        {/* Broker status row — shown when autotrading is active */}
+        {sess.autoEnabled && (
+          <div className={cn(
+            "mt-3 ml-11 pt-2.5 border-t border-border/60 flex items-center gap-2",
+          )}>
+            {broker ? (
+              <>
+                <span className={cn(
+                  "w-1.5 h-1.5 rounded-full shrink-0",
+                  broker.status === "connected" ? "bg-profit" : "bg-loss",
+                )} />
+                <span className={cn(
+                  "text-2xs font-semibold px-1.5 py-0.5 rounded border shrink-0",
+                  BROKER_BADGE[broker.broker] ?? "bg-surface-3 text-text-muted border-border",
+                )}>
+                  {broker.broker === "alpaca_paper" ? "Paper" : "Live"}
+                </span>
+                <span className="text-2xs text-text-muted truncate">
+                  {broker.display_name ?? broker.broker}
+                </span>
+                {broker.cached_buying_power !== null && (
+                  <span className="text-2xs font-mono text-text-secondary ml-auto shrink-0">
+                    {fmt$(broker.cached_buying_power)} BP
+                  </span>
+                )}
+                <span className="text-2xs text-text-muted/50 flex items-center gap-1 shrink-0">
+                  <ShieldCheck size={9} className="text-profit/50" />
+                  Read-only
+                </span>
+              </>
+            ) : (
+              <>
+                <Link2Off size={10} className="text-text-muted/40 shrink-0" />
+                <span className="text-2xs text-text-muted/50">No broker linked</span>
+                {(sess.tradingMode === "shadow" || sess.tradingMode === "live_prep") && (
+                  <span className="text-2xs text-amber-400/70 ml-auto">
+                    Link a broker to enable readiness checks
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
       </div>
     </Link>
@@ -734,6 +999,7 @@ function ActivityFeed({ sessions }: { sessions: ParsedSession[] }) {
 export default async function AutotradingPage() {
   let renderError: string | null = null;
   let sessions: ParsedSession[] = [];
+  let brokers: BrokerConnRow[]  = [];
 
   try {
     const supabase = createClient();
@@ -757,10 +1023,24 @@ export default async function AutotradingPage() {
     } else {
       sessions = (data ?? []).map(parseSession);
     }
+
+    // Fetch broker connections (cached data — no credentials, pre-migration safe)
+    try {
+      const db = supabase as any;
+      const { data: bData } = await db
+        .from("broker_connections")
+        .select("id, broker, status, display_name, cached_buying_power, cached_equity, cached_account_status, cached_positions_count, last_verified_at")
+        .eq("user_id", user!.id) as { data: BrokerConnRow[] | null };
+      brokers = bData ?? [];
+    } catch { /* broker_connections table may not exist yet */ }
+
   } catch (e) {
     if (e != null && typeof e === "object" && "digest" in e) throw e;
     renderError = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
   }
+
+  // Build broker lookup map for session cards
+  const brokerById = new Map<string, BrokerConnRow>(brokers.map(b => [b.id, b]));
 
   const guard = getTodayGuard();
 
@@ -776,7 +1056,7 @@ export default async function AutotradingPage() {
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-text-primary">Control Center</h1>
           <p className="text-sm text-text-secondary mt-0.5">
-            Paper mode only — no real money. Safety checks run on every refresh.
+            Monitor strategies, manage broker connections, and track capital.
           </p>
         </div>
         <Link
@@ -834,7 +1114,10 @@ export default async function AutotradingPage() {
       {sessions.length > 0 && (
         <>
           {/* ── Global status hero ───────────────────────────────────────── */}
-          <GlobalStatusHero sessions={sessions} />
+          <GlobalStatusHero sessions={sessions} brokers={brokers} />
+
+          {/* ── Broker accounts summary ──────────────────────────────────── */}
+          <BrokerSummarySection brokers={brokers} sessions={sessions} />
 
           {/* ── Event guard + AI warnings ───────────────────────────────── */}
           <AlertsSection sessions={sessions} guard={guard} />
@@ -863,7 +1146,11 @@ export default async function AutotradingPage() {
             </p>
             <div className="space-y-3">
               {sessions.map(sess => (
-                <SessionCard key={sess.id} sess={sess} />
+                <SessionCard
+                  key={sess.id}
+                  sess={sess}
+                  broker={sess.brokerConnectionId ? (brokerById.get(sess.brokerConnectionId) ?? null) : null}
+                />
               ))}
             </div>
           </div>
