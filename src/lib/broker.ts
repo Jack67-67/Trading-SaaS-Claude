@@ -1,5 +1,5 @@
 // ── Broker API wrapper ──────────────────────────────────────────────────────
-// Read-only Alpaca integration. No order placement.
+// Alpaca integration — read + write (order placement).
 // Called server-side only (server actions / route handlers).
 
 export type BrokerType = "alpaca_paper" | "alpaca_live";
@@ -72,6 +72,38 @@ async function alpacaFetch<T>(
   return res.json();
 }
 
+async function alpacaWrite<T>(
+  broker: BrokerType,
+  apiKey: string,
+  apiSecret: string,
+  method: "POST" | "DELETE" | "PATCH",
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(`${ALPACA_BASE[broker]}${path}`, {
+    method,
+    headers: {
+      "APCA-API-KEY-ID":     apiKey,
+      "APCA-API-SECRET-KEY": apiSecret,
+      "Content-Type":        "application/json",
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const b = await res.json();
+      msg = b.message || b.error || msg;
+    } catch { /* ignore */ }
+    throw new Error(msg);
+  }
+
+  if (res.status === 204) return undefined as unknown as T;
+  return res.json();
+}
+
 export async function fetchBrokerData(
   broker: BrokerType,
   apiKey: string,
@@ -109,5 +141,107 @@ export async function fetchBrokerData(
     return { account, positions };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Connection failed" };
+  }
+}
+
+// ── Order types ───────────────────────────────────────────────────────────────
+
+export interface BrokerOrderResult {
+  id:               string;
+  client_order_id:  string;
+  status:           string;
+  symbol:           string;
+  qty:              number;
+  filled_qty:       number;
+  filled_avg_price: number | null;
+  side:             string;
+  type:             string;
+  submitted_at:     string;
+  filled_at:        string | null;
+}
+
+function parseOrderResult(raw: Record<string, unknown>): BrokerOrderResult {
+  return {
+    id:               String(raw.id ?? ""),
+    client_order_id:  String(raw.client_order_id ?? ""),
+    status:           String(raw.status ?? ""),
+    symbol:           String(raw.symbol ?? ""),
+    qty:              Number(raw.qty ?? 0),
+    filled_qty:       Number(raw.filled_qty ?? 0),
+    filled_avg_price: raw.filled_avg_price != null ? Number(raw.filled_avg_price) : null,
+    side:             String(raw.side ?? ""),
+    type:             String(raw.type ?? ""),
+    submitted_at:     String(raw.submitted_at ?? new Date().toISOString()),
+    filled_at:        raw.filled_at ? String(raw.filled_at) : null,
+  };
+}
+
+// ── Place bracket order ───────────────────────────────────────────────────────
+// Market entry + GTC stop-loss + GTC take-profit (bracket).
+
+export async function placeBracketOrder(
+  broker: BrokerType,
+  apiKey: string,
+  apiSecret: string,
+  params: {
+    symbol:         string;
+    qty:            number;
+    side:           "buy" | "sell";
+    stopLoss:       number;
+    takeProfit:     number;
+    clientOrderId?: string;
+  },
+): Promise<BrokerOrderResult | BrokerError> {
+  try {
+    const raw = await alpacaWrite<Record<string, unknown>>(
+      broker, apiKey, apiSecret, "POST", "/v2/orders",
+      {
+        symbol:        params.symbol,
+        qty:           String(params.qty),
+        side:          params.side,
+        type:          "market",
+        time_in_force: "day",
+        order_class:   "bracket",
+        stop_loss:     { stop_price:  params.stopLoss.toFixed(2) },
+        take_profit:   { limit_price: params.takeProfit.toFixed(2) },
+        ...(params.clientOrderId ? { client_order_id: params.clientOrderId } : {}),
+      },
+    );
+    return parseOrderResult(raw);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Order placement failed" };
+  }
+}
+
+// ── Cancel an order ───────────────────────────────────────────────────────────
+
+export async function cancelBrokerOrder(
+  broker: BrokerType,
+  apiKey: string,
+  apiSecret: string,
+  orderId: string,
+): Promise<BrokerError | undefined> {
+  try {
+    await alpacaWrite<void>(broker, apiKey, apiSecret, "DELETE", `/v2/orders/${orderId}`);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Cancel failed" };
+  }
+}
+
+// ── Fetch order status ────────────────────────────────────────────────────────
+
+export async function getBrokerOrderStatus(
+  broker: BrokerType,
+  apiKey: string,
+  apiSecret: string,
+  orderId: string,
+): Promise<BrokerOrderResult | BrokerError> {
+  try {
+    const raw = await alpacaFetch<Record<string, unknown>>(
+      broker, apiKey, apiSecret, `/v2/orders/${orderId}`,
+    );
+    return parseOrderResult(raw);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Status fetch failed" };
   }
 }

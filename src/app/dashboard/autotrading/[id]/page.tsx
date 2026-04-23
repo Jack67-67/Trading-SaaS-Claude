@@ -38,6 +38,7 @@ import { LiveSafetyChecklist } from "@/components/dashboard/live-safety-checklis
 import { ShadowModePanel } from "@/components/dashboard/shadow-mode-panel";
 import { BrokerAccountPanel } from "@/components/dashboard/broker-account-panel";
 import { ExecutionOrderLog } from "@/components/dashboard/execution-order-log";
+import { LiveExecutionPanel } from "@/components/dashboard/live-execution-panel";
 import type { TradingMode } from "@/app/actions/live-trading";
 import type { ExecutionOrder } from "@/lib/execution-engine";
 
@@ -355,6 +356,11 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
     if (!("error" in ordersResult)) executionOrders = ordersResult;
   } catch { /* pre-migration: execution_orders table may not exist */ }
 
+  // Daily live trade count (from execution_orders, not simulation trades)
+  const dailyLiveTradeCount = executionOrders.filter(
+    o => o.tradingMode === "live" && o.signalAt?.startsWith(todayStr),
+  ).length;
+
   return (
     <div className="space-y-6 animate-fade-in max-w-3xl">
 
@@ -543,6 +549,23 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
           tradeCount={allTrades.length}
           winRate={metrics?.win_rate_pct ?? null}
           profitFactor={metrics?.profit_factor ?? null}
+        />
+      )}
+
+      {/* ── Live execution panel (live mode only) ──────────────────────────── */}
+      {tradingMode === "live" && (
+        <LiveExecutionPanel
+          sessionId={params.id}
+          symbol={sessSymbol}
+          interval={sessInterval}
+          shadowSignal={shadowSignal}
+          executionOrders={executionOrders}
+          sessionPaused={isPaused}
+          sessionStopped={isStopped}
+          allReadinessPassed={readiness.allBlockersPassed}
+          buyingPower={linkedBroker?.cached_buying_power ?? null}
+          dailyLiveTradeCount={dailyLiveTradeCount}
+          maxDailyTrades={maxDailyTrades}
         />
       )}
 
