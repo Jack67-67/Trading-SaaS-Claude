@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import {
   Bot, ShieldX, Pause, Play, Zap, AlertTriangle,
   ChevronDown, ChevronUp, CheckCircle2, Info, TrendingDown, TrendingUp,
+  Lock, Unlock, ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -22,6 +23,68 @@ import {
   type PerformanceTrend,
   type EquityVolatility,
 } from "@/lib/autotrading-ai";
+
+// ── Risk profiles ─────────────────────────────────────────────────────────────
+
+interface RiskProfile {
+  id:               string;
+  label:            string;
+  description:      string;
+  capitalPct:       number;
+  weeklyLossPct:    number;
+  monthlyLossPct:   number;
+  dailyTrades:      number;
+  pauseOnEvents:    boolean;
+}
+
+const RISK_PROFILES: RiskProfile[] = [
+  {
+    id:             "conservative",
+    label:          "Conservative",
+    description:    "Small size, tight stops — protect capital first",
+    capitalPct:     20,
+    weeklyLossPct:  2,
+    monthlyLossPct: 6,
+    dailyTrades:    2,
+    pauseOnEvents:  true,
+  },
+  {
+    id:             "balanced",
+    label:          "Balanced",
+    description:    "Moderate risk — good starting point for most strategies",
+    capitalPct:     50,
+    weeklyLossPct:  5,
+    monthlyLossPct: 12,
+    dailyTrades:    5,
+    pauseOnEvents:  true,
+  },
+  {
+    id:             "aggressive",
+    label:          "Aggressive",
+    description:    "Full exposure — only for validated, high-confidence strategies",
+    capitalPct:     100,
+    weeklyLossPct:  10,
+    monthlyLossPct: 25,
+    dailyTrades:    10,
+    pauseOnEvents:  false,
+  },
+];
+
+function detectProfile(
+  capital: number, weekly: number, monthly: number,
+  trades: number, pauseEvt: boolean,
+): string | null {
+  for (const p of RISK_PROFILES) {
+    if (
+      p.capitalPct     === capital &&
+      p.weeklyLossPct  === weekly  &&
+      p.monthlyLossPct === monthly &&
+      p.dailyTrades    === trades  &&
+      p.pauseOnEvents  === pauseEvt
+    ) return p.id;
+  }
+  return null;
+}
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -256,11 +319,23 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
   const [killConfirm, setKillConfirm] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const [capital, setCapital] = useState(initCapital);
-  const [weekly, setWeekly]   = useState(initWeekly);
-  const [monthly, setMonthly] = useState(initMonthly);
-  const [pauseEvt, setPauseEvt] = useState(initPauseOnEvents);
+  const [capital, setCapital]     = useState(initCapital);
+  const [weekly, setWeekly]       = useState(initWeekly);
+  const [monthly, setMonthly]     = useState(initMonthly);
+  const [pauseEvt, setPauseEvt]   = useState(initPauseOnEvents);
   const [maxTrades, setMaxTrades] = useState(props.maxDailyTrades);
+  const [overrideMode, setOverrideMode] = useState(false);
+
+  const activeProfile = detectProfile(capital, weekly, monthly, maxTrades, pauseEvt);
+
+  function applyProfile(p: RiskProfile) {
+    setCapital(p.capitalPct);
+    setWeekly(p.weeklyLossPct);
+    setMonthly(p.monthlyLossPct);
+    setMaxTrades(p.dailyTrades);
+    setPauseEvt(p.pauseOnEvents);
+    setOverrideMode(false);
+  }
 
   const isStopped = status === "stopped";
   const isPaused  = status === "paused";
@@ -415,63 +490,167 @@ export function AutotradingControlCenter(props: AutotradingControlCenterProps) {
             onClick={() => setControlsOpen(v => !v)}
             className="flex items-center justify-between w-full px-5 py-3 hover:bg-surface-2/40 transition-colors text-left"
           >
-            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Safety Limits</span>
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={12} className="text-text-muted/60" />
+              <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Safety Limits</span>
+              {activeProfile && (
+                <span className="text-2xs font-semibold px-2 py-0.5 rounded-full border text-accent bg-accent/10 border-accent/20 capitalize">
+                  {activeProfile}
+                </span>
+              )}
+              {!activeProfile && (
+                <span className="text-2xs font-semibold px-2 py-0.5 rounded-full border text-amber-400 bg-amber-400/10 border-amber-400/20">
+                  Custom
+                </span>
+              )}
+            </div>
             {controlsOpen ? <ChevronUp size={13} className="text-text-muted" /> : <ChevronDown size={13} className="text-text-muted" />}
           </button>
 
           {controlsOpen && (
-            <div className="px-5 pb-5 space-y-4 bg-surface-0/50">
-              <NumericField
-                label="Capital allocation" unit="%" value={capital} onChange={setCapital}
-                min={1} max={100} hint="Percentage of portfolio allocated to this session"
-              />
-              <NumericField
-                label="Max weekly loss" unit="%" value={weekly} onChange={setWeekly}
-                min={1} max={50} hint="Auto-pause if this session loses more than this in 7 days"
-              />
-              <NumericField
-                label="Max monthly loss" unit="%" value={monthly} onChange={setMonthly}
-                min={1} max={80} hint="Auto-pause if this session loses more than this in 30 days"
-              />
-              <NumericField
-                label="Max daily trades" unit="" value={maxTrades} onChange={setMaxTrades}
-                min={1} max={100} hint="Auto-pause when this many trades have been placed today"
-              />
+            <div className="bg-surface-0/50">
 
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold text-text-primary">Pause on major events</p>
-                  <p className="text-xs text-text-muted mt-0.5">Auto-pause when FOMC, CPI, or NFP is today</p>
+              {/* ── Risk profile selector ── */}
+              <div className="px-5 pt-4 pb-3 border-b border-border/60">
+                <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider mb-2.5">
+                  Risk Profile
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {RISK_PROFILES.map(p => {
+                    const isActive = activeProfile === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => applyProfile(p)}
+                        className={cn(
+                          "flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-all",
+                          isActive
+                            ? "border-accent bg-accent/10"
+                            : "border-border bg-surface-1 hover:border-border-hover hover:bg-surface-2/50",
+                        )}
+                      >
+                        <span className={cn(
+                          "text-xs font-bold",
+                          isActive ? "text-accent" : "text-text-secondary",
+                        )}>
+                          {p.label}
+                        </span>
+                        <span className="text-2xs text-text-muted leading-snug">{p.description}</span>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <span className="text-2xs font-mono text-text-muted/70">{p.capitalPct}% cap</span>
+                          <span className="text-2xs font-mono text-text-muted/70">−{p.weeklyLossPct}%/wk</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* ── Advanced override toggle ── */}
+              <div className="px-5 py-3 border-b border-border/60 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  {overrideMode
+                    ? <Unlock size={12} className="text-amber-400 shrink-0" />
+                    : <Lock    size={12} className="text-text-muted/60 shrink-0" />}
+                  <div>
+                    <p className="text-xs font-semibold text-text-primary">Advanced Override</p>
+                    <p className="text-xs text-text-muted">
+                      {overrideMode
+                        ? "Limits unlocked — changes bypass the safety profile"
+                        : "Lock limits to profile presets"}
+                    </p>
+                  </div>
                 </div>
                 <button
                   role="switch"
-                  aria-checked={pauseEvt}
-                  onClick={() => setPauseEvt(v => !v)}
+                  aria-checked={overrideMode}
+                  onClick={() => setOverrideMode(v => !v)}
                   className={cn(
                     "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
-                    pauseEvt ? "bg-accent" : "bg-surface-3"
+                    overrideMode ? "bg-amber-400" : "bg-surface-3",
                   )}
                 >
                   <span className={cn(
                     "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform",
-                    pauseEvt ? "translate-x-4" : "translate-x-0"
+                    overrideMode ? "translate-x-4" : "translate-x-0",
                   )} />
                 </button>
               </div>
 
-              <button
-                disabled={isPending}
-                onClick={() => act(() => updateSafetyControls(sessionId, {
-                  maxCapitalPct: capital,
-                  maxWeeklyLossPct: weekly,
-                  maxMonthlyLossPct: monthly,
-                  pauseOnEvents: pauseEvt,
-                  maxDailyTrades: maxTrades,
-                }))}
-                className="w-full rounded-lg bg-accent/10 border border-accent/20 text-accent text-xs font-semibold py-2 hover:bg-accent/20 transition-colors disabled:opacity-50"
-              >
-                {isPending ? "Saving…" : "Save limits"}
-              </button>
+              {/* Override warning */}
+              {overrideMode && (
+                <div className="mx-5 mt-3 mb-1 flex items-start gap-2 rounded-xl px-3 py-2.5 bg-amber-400/[0.07] border border-amber-400/25">
+                  <AlertTriangle size={12} className="text-amber-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-300/90 leading-snug">
+                    Override active — your limits no longer match a safety profile.
+                    Ensure you understand the risk before saving.
+                  </p>
+                </div>
+              )}
+
+              {/* ── Limit fields ── */}
+              <div className={cn("px-5 pb-5 pt-3 space-y-4", !overrideMode && "opacity-60 pointer-events-none select-none")}>
+                <NumericField
+                  label="Capital allocation" unit="%" value={capital} onChange={setCapital}
+                  min={1} max={100} hint="Percentage of portfolio allocated to this session"
+                />
+                <NumericField
+                  label="Max weekly loss" unit="%" value={weekly} onChange={setWeekly}
+                  min={1} max={50} hint="Auto-pause if this session loses more than this in 7 days"
+                />
+                <NumericField
+                  label="Max monthly loss" unit="%" value={monthly} onChange={setMonthly}
+                  min={1} max={80} hint="Auto-pause if this session loses more than this in 30 days"
+                />
+                <NumericField
+                  label="Max daily trades" unit="" value={maxTrades} onChange={setMaxTrades}
+                  min={1} max={100} hint="Auto-pause when this many trades have been placed today"
+                />
+
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold text-text-primary">Pause on major events</p>
+                    <p className="text-xs text-text-muted mt-0.5">Auto-pause when FOMC, CPI, or NFP is today</p>
+                  </div>
+                  <button
+                    role="switch"
+                    aria-checked={pauseEvt}
+                    onClick={() => setPauseEvt(v => !v)}
+                    className={cn(
+                      "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                      pauseEvt ? "bg-accent" : "bg-surface-3",
+                    )}
+                  >
+                    <span className={cn(
+                      "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform",
+                      pauseEvt ? "translate-x-4" : "translate-x-0",
+                    )} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Save button */}
+              <div className="px-5 pb-5">
+                <button
+                  disabled={isPending}
+                  onClick={() => act(() => updateSafetyControls(sessionId, {
+                    maxCapitalPct:    capital,
+                    maxWeeklyLossPct: weekly,
+                    maxMonthlyLossPct: monthly,
+                    pauseOnEvents:    pauseEvt,
+                    maxDailyTrades:   maxTrades,
+                  }))}
+                  className={cn(
+                    "w-full rounded-lg border text-xs font-semibold py-2 transition-colors disabled:opacity-50",
+                    overrideMode
+                      ? "bg-amber-400/10 border-amber-400/30 text-amber-300 hover:bg-amber-400/20"
+                      : "bg-accent/10 border-accent/20 text-accent hover:bg-accent/20",
+                  )}
+                >
+                  {isPending ? "Saving…" : overrideMode ? "Save custom limits" : "Save limits"}
+                </button>
+              </div>
             </div>
           )}
         </div>

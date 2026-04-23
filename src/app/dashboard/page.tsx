@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { MessageSquare, Sparkles, ArrowRight, CheckCircle2 } from "lucide-react";
+import { MessageSquare, Sparkles, ArrowRight, CheckCircle2, Radio, Eye, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TryExampleButton } from "@/components/dashboard/try-example-button";
 import { AlertsBar } from "@/components/dashboard/alerts-bar";
@@ -76,6 +76,132 @@ function ExampleResultPreview() {
   );
 }
 
+// ── Active trading status panel ────────────────────────────────────────────────
+
+type ActiveSession = {
+  id: string;
+  name: string;
+  symbol: string;
+  interval: string;
+  tradingMode: string;
+  pnl: number | null;
+  pnlPct: number | null;
+  initCap: number;
+};
+
+const MODE_META: Record<string, { label: string; icon: React.ElementType; color: string; border: string; bg: string }> = {
+  live:      { label: "LIVE",      icon: Radio,    color: "text-profit",     border: "border-profit/25",    bg: "bg-profit/[0.05]" },
+  live_prep: { label: "Live Prep", icon: Radio,    color: "text-amber-400",  border: "border-amber-400/25", bg: "bg-amber-400/[0.04]" },
+  shadow:    { label: "Shadow",    icon: Eye,      color: "text-accent",     border: "border-accent/25",    bg: "bg-accent/[0.04]" },
+  paper:     { label: "Paper",     icon: FileText, color: "text-text-muted", border: "border-border",       bg: "bg-surface-1" },
+};
+
+function ActiveTradingPanel({ sessions }: { sessions: ActiveSession[] }) {
+  if (sessions.length === 0) return null;
+
+  const hasLive = sessions.some(s => s.tradingMode === "live");
+  const panelBorder = hasLive ? "border-profit/20" : "border-accent/20";
+  const panelBg     = hasLive ? "bg-profit/[0.03]"  : "bg-accent/[0.02]";
+
+  return (
+    <div className={cn("rounded-2xl border overflow-hidden", panelBorder, panelBg)}>
+      {/* Header */}
+      <div className={cn("px-5 py-3 border-b flex items-center justify-between gap-3", panelBorder)}>
+        <div className="flex items-center gap-2">
+          {hasLive ? (
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-profit opacity-70" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-profit" />
+            </span>
+          ) : (
+            <span className="w-2 h-2 rounded-full bg-accent/60" />
+          )}
+          <p className={cn("text-xs font-bold uppercase tracking-wider", hasLive ? "text-profit" : "text-accent")}>
+            {hasLive ? "Live Trading Active" : "Autotrading Active"}
+          </p>
+          <span className="text-2xs text-text-muted/60">
+            {sessions.length} session{sessions.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+        <Link
+          href="/dashboard/autotrading"
+          className="text-2xs text-text-muted hover:text-text-secondary transition-colors flex items-center gap-1"
+        >
+          View all <ArrowRight size={10} />
+        </Link>
+      </div>
+
+      {/* Session rows */}
+      <div className="divide-y divide-border/50">
+        {sessions.map(sess => {
+          const meta = MODE_META[sess.tradingMode] ?? MODE_META.paper;
+          const ModeIcon = meta.icon;
+          const isPos = sess.pnlPct !== null && sess.pnlPct >= 0;
+          const isNeg = sess.pnlPct !== null && sess.pnlPct < 0;
+
+          return (
+            <Link
+              key={sess.id}
+              href={`/dashboard/autotrading/${sess.id}`}
+              className="flex items-center gap-3 px-5 py-3 hover:bg-surface-1/60 transition-colors group flex-wrap"
+            >
+              {/* Mode badge */}
+              <span className={cn(
+                "inline-flex items-center gap-1.5 text-2xs font-bold px-2 py-1 rounded-lg border shrink-0",
+                meta.color, meta.border, meta.bg,
+              )}>
+                {sess.tradingMode === "live" && (
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-profit opacity-70" />
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-profit" />
+                  </span>
+                )}
+                <ModeIcon size={10} />
+                {meta.label}
+              </span>
+
+              {/* Name + symbol */}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-text-primary truncate group-hover:text-accent transition-colors">
+                  {sess.name}
+                </p>
+                <p className="text-2xs text-text-muted font-mono">{sess.symbol} · {sess.interval}</p>
+              </div>
+
+              {/* P&L */}
+              <div className="text-right shrink-0">
+                {sess.pnlPct !== null ? (
+                  <>
+                    <p className={cn(
+                      "text-sm font-bold font-mono tabular-nums",
+                      isPos ? "text-profit" : isNeg ? "text-loss" : "text-text-muted",
+                    )}>
+                      {isPos ? "+" : ""}{sess.pnlPct.toFixed(2)}%
+                    </p>
+                    {sess.pnl !== null && (
+                      <p className={cn(
+                        "text-2xs font-mono",
+                        isPos ? "text-profit/60" : isNeg ? "text-loss/60" : "text-text-muted/60",
+                      )}>
+                        {sess.pnl >= 0 ? "+" : ""}
+                        {sess.pnl.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs text-text-muted/50">No data</p>
+                )}
+              </div>
+
+              <ArrowRight size={12} className="text-text-muted/30 group-hover:text-accent/50 transition-colors shrink-0" />
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default async function HomePage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -88,6 +214,38 @@ export default async function HomePage() {
   const hour = new Date().getHours();
   const greeting =
     hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+  // Active autotrading sessions (shadow / live_prep / live)
+  let activeSessions: ActiveSession[] = [];
+  try {
+    const db = supabase as any;
+    const { data: sessList } = await db
+      .from("paper_trade_sessions")
+      .select("id, name, symbol, interval, trading_mode, status, last_results, initial_capital")
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .in("trading_mode", ["live", "live_prep", "shadow"])
+      .order("last_action_at", { ascending: false })
+      .limit(5) as { data: Record<string, unknown>[] | null };
+
+    activeSessions = (sessList ?? []).map(s => {
+      const ec = ((s.last_results as any)?.equity_curve ?? []) as { equity: number }[];
+      const initCap   = Number(s.initial_capital ?? 100_000);
+      const lastEquity = ec.length > 0 ? ec[ec.length - 1].equity : null;
+      const pnl    = lastEquity !== null ? lastEquity - initCap : null;
+      const pnlPct = pnl !== null && initCap > 0 ? (pnl / initCap) * 100 : null;
+      return {
+        id:          String(s.id ?? ""),
+        name:        String(s.name ?? ""),
+        symbol:      String(s.symbol ?? ""),
+        interval:    String(s.interval ?? ""),
+        tradingMode: String(s.trading_mode ?? "paper"),
+        pnl,
+        pnlPct,
+        initCap,
+      };
+    });
+  } catch { /* pre-migration: table/columns may not exist */ }
 
   // Light query — just enough to know if the user has data for the Overview link
   let hasData = false;
@@ -162,6 +320,11 @@ export default async function HomePage() {
           No emotion. No guesswork. Just data.
         </p>
       </div>
+
+      {/* ── Active trading status ─────────────────────────────── */}
+      {activeSessions.length > 0 && (
+        <ActiveTradingPanel sessions={activeSessions} />
+      )}
 
       {/* ── Event guard ───────────────────────────────────────── */}
       {todayGuard && todayGuard.level !== "upcoming" && (

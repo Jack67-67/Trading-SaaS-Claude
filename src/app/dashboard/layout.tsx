@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/layout/sidebar";
-import { TopBar } from "@/components/layout/top-bar";
+import { TopBar, type LiveInfo } from "@/components/layout/top-bar";
 import { ToastProvider } from "@/components/ui/toast";
 
 export const metadata: Metadata = {
@@ -27,7 +27,6 @@ export default async function DashboardLayout({
       .order("completed_at", { ascending: false })
       .limit(30);
 
-    // Take only the latest run per strategy, then check thresholds
     const latestByStrategy = new Map<string, Record<string, number>>();
     for (const run of (recentRuns ?? [])) {
       if (!latestByStrategy.has(run.strategy_id as string)) {
@@ -42,13 +41,47 @@ export default async function DashboardLayout({
     }
   }
 
+  // Live trading status for topbar indicator
+  let liveInfo: LiveInfo | null = null;
+  if (user) {
+    try {
+      const db = supabase as any;
+      const { data: liveSessions } = await db
+        .from("paper_trade_sessions")
+        .select("id, name, symbol, trading_mode, status, last_results, initial_capital")
+        .eq("user_id", user.id)
+        .eq("trading_mode", "live")
+        .eq("status", "active")
+        .order("last_action_at", { ascending: false })
+        .limit(5) as { data: Record<string, unknown>[] | null };
+
+      if (liveSessions && liveSessions.length > 0) {
+        const first = liveSessions[0];
+        const equityCurve = ((first.last_results as any)?.equity_curve ?? []) as { equity: number }[];
+        const initCap     = Number(first.initial_capital ?? 100_000);
+        const lastEquity  = equityCurve.length > 0 ? equityCurve[equityCurve.length - 1].equity : null;
+        const pnl         = lastEquity !== null ? lastEquity - initCap : null;
+        const pnlPct      = pnl !== null && initCap > 0 ? (pnl / initCap) * 100 : null;
+
+        liveInfo = {
+          count:   liveSessions.length,
+          id:      String(first.id ?? ""),
+          name:    String(first.name ?? ""),
+          symbol:  String(first.symbol ?? ""),
+          pnl,
+          pnlPct,
+        };
+      }
+    } catch { /* pre-migration: paper_trade_sessions may not have trading_mode yet */ }
+  }
+
   return (
     <ToastProvider>
       <div className="min-h-screen flex">
         <Sidebar alertCount={alertCount} />
 
         <div className="flex-1 ml-60 flex flex-col min-h-screen transition-[margin] duration-200">
-          <TopBar />
+          <TopBar liveInfo={liveInfo} />
           <main className="flex-1 p-6">{children}</main>
         </div>
       </div>

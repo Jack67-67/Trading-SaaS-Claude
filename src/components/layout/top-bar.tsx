@@ -2,9 +2,20 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { LogOut, User, ChevronDown, ChevronRight, Bell } from "lucide-react";
+import { LogOut, User, ChevronDown, ChevronRight, Bell, Radio } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
+
+// ── Live trading info (passed from server layout) ─────────────────────────────
+
+export interface LiveInfo {
+  count:   number;
+  id:      string;
+  name:    string;
+  symbol:  string;
+  pnl:     number | null;
+  pnlPct:  number | null;
+}
 
 const SECTION_LABELS: Record<string, string> = {
   "/dashboard": "Home",
@@ -42,7 +53,7 @@ function useBreadcrumb(pathname: string): { section: string; detail: string | nu
   };
 }
 
-export function TopBar() {
+export function TopBar({ liveInfo }: { liveInfo?: LiveInfo | null }) {
   const { user, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -83,6 +94,38 @@ export function TopBar() {
           </>
         )}
       </div>
+
+      {/* Live trading indicator */}
+      {liveInfo && (
+        <a
+          href={`/dashboard/autotrading/${liveInfo.id}`}
+          className={cn(
+            "hidden sm:flex items-center gap-2 rounded-lg border px-3 py-1.5 transition-colors",
+            "border-profit/30 bg-profit/[0.06] hover:bg-profit/[0.10]",
+          )}
+        >
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-profit opacity-70" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-profit" />
+          </span>
+          <Radio size={11} className="text-profit" />
+          <span className="text-xs font-bold text-profit uppercase tracking-wide">
+            Live
+          </span>
+          <span className="text-xs text-text-secondary font-mono">{liveInfo.symbol}</span>
+          {liveInfo.pnlPct !== null && (
+            <span className={cn(
+              "text-xs font-bold font-mono tabular-nums",
+              liveInfo.pnlPct >= 0 ? "text-profit" : "text-loss",
+            )}>
+              {liveInfo.pnlPct >= 0 ? "+" : ""}{liveInfo.pnlPct.toFixed(2)}%
+            </span>
+          )}
+          {liveInfo.count > 1 && (
+            <span className="text-2xs text-text-muted/60">+{liveInfo.count - 1}</span>
+          )}
+        </a>
+      )}
 
       {/* AI notification bell */}
       <div className="flex items-center gap-2 mr-1">
