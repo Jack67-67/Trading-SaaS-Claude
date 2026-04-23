@@ -717,7 +717,7 @@ function SessionCard({ sess, broker }: { sess: ParsedSession; broker: BrokerConn
         {sess.metrics && (
           <div className="mt-3 ml-11 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2 border-t border-border/60 pt-3">
             <div>
-              <p className="text-2xs text-text-muted">Total return</p>
+              <p className="text-2xs text-text-muted">{sess.tradingMode === "live" ? "Backtest return" : "Total return"}</p>
               <p className={cn("text-sm font-mono font-bold tabular-nums", pnlColor(sess.returnPct ?? 0))}>
                 {sess.returnPct !== null ? formatPercent(sess.returnPct) : "—"}
               </p>

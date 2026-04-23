@@ -465,11 +465,17 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
               )}
             </div>
             <div>
-              <p className="text-2xs text-text-muted mb-0.5">Current Equity</p>
+              <p className="text-2xs text-text-muted mb-0.5">
+                Sim Equity
+                {tradingMode === "live" && <span className="ml-1 text-amber-400/70">(backtest)</span>}
+              </p>
               <p className="text-base font-bold font-mono tabular-nums text-text-primary">{fmt$(currentEquity)}</p>
             </div>
             <div>
-              <p className="text-2xs text-text-muted mb-0.5">P&L</p>
+              <p className="text-2xs text-text-muted mb-0.5">
+                Sim P&L
+                {tradingMode === "live" && <span className="ml-1 text-amber-400/70">(backtest)</span>}
+              </p>
               <p className={cn("text-base font-bold font-mono tabular-nums", pnlColor(pnl))}>
                 {pnl >= 0 ? "+" : ""}{fmt$(pnl)}
               </p>
@@ -479,7 +485,7 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
             </div>
             {wLoss !== null && (
               <div>
-                <p className="text-2xs text-text-muted mb-0.5">7-day P&L</p>
+                <p className="text-2xs text-text-muted mb-0.5">7-day Sim P&L</p>
                 <p className={cn("text-base font-bold font-mono tabular-nums", pnlColor(wLoss))}>
                   {wLoss >= 0 ? "+" : ""}{wLoss.toFixed(1)}%
                 </p>
@@ -491,6 +497,12 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
               </div>
             )}
           </div>
+          {tradingMode === "live" && (
+            <p className="mt-3 text-2xs text-amber-400/70 flex items-center gap-1.5 border-t border-border/40 pt-3">
+              <Info size={10} />
+              Equity and P&L above are from backtest simulation. See Live Portfolio below for real performance.
+            </p>
+          )}
         </div>
       </div>
 
@@ -1000,13 +1012,93 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
         </div>
       )}
 
+      {/* ── Live Portfolio Performance (live mode only) ─────────────────────── */}
+      {tradingMode === "live" && (() => {
+        const liveOrders = executionOrders.filter(o => o.tradingMode === "live");
+        const closedLive = liveOrders.filter(o => o.status === "filled" || o.status === "cancelled");
+        const openLive   = liveOrders.filter(o => o.status === "open" || o.status === "pending");
+
+        // Compute real P&L from filled orders
+        const realizedPnl = closedLive.reduce((sum, o) => {
+          if (o.status !== "filled" || o.filledAvgPrice === null || o.filledQty === null) return sum;
+          const entryValue = (o.entryPrice ?? 0) * o.filledQty;
+          const exitValue  = o.filledAvgPrice * o.filledQty;
+          return sum + (o.side === "buy" ? exitValue - entryValue : entryValue - exitValue);
+        }, 0);
+
+        const todayIso  = new Date().toISOString().slice(0, 10);
+        const todayPnl  = closedLive
+          .filter(o => o.filledAt?.startsWith(todayIso))
+          .reduce((sum, o) => {
+            if (o.filledAvgPrice === null || o.filledQty === null) return sum;
+            const entry = (o.entryPrice ?? 0) * o.filledQty;
+            const exit  = o.filledAvgPrice * o.filledQty;
+            return sum + (o.side === "buy" ? exit - entry : entry - exit);
+          }, 0);
+
+        const liveStartCap = allocatedCap;
+        const livePnlPct   = liveStartCap > 0 ? (realizedPnl / liveStartCap) * 100 : 0;
+
+        return (
+          <div className="rounded-2xl border border-profit/25 bg-profit/[0.02] overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-profit/15 flex items-center gap-2">
+              <Radio size={11} className="text-profit" />
+              <p className="text-xs font-semibold text-profit uppercase tracking-wider">
+                Live Portfolio Performance
+              </p>
+              <span className="ml-auto text-2xs text-text-muted/60 bg-surface-3 border border-border rounded px-2 py-0.5">
+                Real orders only
+              </span>
+            </div>
+            {liveOrders.length === 0 ? (
+              <div className="px-5 py-5 text-center">
+                <p className="text-sm text-text-muted">No live orders placed yet.</p>
+                <p className="text-2xs text-text-muted/60 mt-1">Use the Live Execution panel above to place your first real order.</p>
+              </div>
+            ) : (
+              <div className="px-5 py-5 grid grid-cols-2 sm:grid-cols-4 gap-5">
+                <MetricCell
+                  label="Total Live P&L"
+                  value={(realizedPnl >= 0 ? "+" : "") + fmt$(realizedPnl)}
+                  valueClass={pnlColor(realizedPnl)}
+                  sub={`${livePnlPct >= 0 ? "+" : ""}${livePnlPct.toFixed(2)}% vs allocated`}
+                />
+                <MetricCell
+                  label="Today's P&L"
+                  value={(todayPnl >= 0 ? "+" : "") + fmt$(todayPnl)}
+                  valueClass={pnlColor(todayPnl)}
+                />
+                <MetricCell
+                  label="Closed Orders"
+                  value={String(closedLive.length)}
+                  sub={`${openLive.length} open`}
+                />
+                <MetricCell
+                  label="Open P&L"
+                  value={openLive.length > 0 ? "—" : "$0"}
+                  valueClass="text-text-muted"
+                  sub={openLive.length > 0 ? "refresh for live prices" : undefined}
+                />
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* ── Performance detail (if results exist) ─────────────────────────── */}
       {hasResults && (
         <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden">
           <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
-            <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
-              Performance
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                {tradingMode === "live" ? "Strategy Performance · Backtest Simulation" : "Performance"}
+              </p>
+              {tradingMode === "live" && (
+                <span className="text-2xs text-amber-400/80 bg-amber-400/8 border border-amber-400/20 rounded px-1.5 py-0.5">
+                  not real
+                </span>
+              )}
+            </div>
             {lastBarDate && (
               <span className="text-2xs text-text-muted/60 font-mono">as of {lastBarDate}</span>
             )}
