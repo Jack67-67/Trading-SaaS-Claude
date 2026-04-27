@@ -31,23 +31,28 @@ export async function updateSession(request: NextRequest) {
 
   // IMPORTANT: Do NOT remove this getUser() call.
   // It refreshes the auth token and must run on every request.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Wrapped in try/catch so a Supabase network error never hangs the middleware.
+  let user = null;
+  try {
+    const result = await supabase.auth.getUser();
+    user = result.data.user;
+  } catch {
+    // Supabase unreachable — fall through as unauthenticated.
+    // The page will load; protected routes will redirect to login.
+  }
+
+  const { pathname } = request.nextUrl;
+
+  const isAuthRoute =
+    pathname.startsWith("/auth/login") ||
+    pathname.startsWith("/auth/register");
+  const isProtectedRoute = pathname.startsWith("/dashboard");
 
   // Redirect unauthenticated users away from protected routes
-  const isAuthRoute =
-    request.nextUrl.pathname.startsWith("/auth/login") ||
-    request.nextUrl.pathname.startsWith("/auth/register");
-  const isProtectedRoute =
-    request.nextUrl.pathname.startsWith("/dashboard");
-  const isCallbackRoute =
-    request.nextUrl.pathname.startsWith("/auth/callback");
-
   if (!user && isProtectedRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
-    url.searchParams.set("redirect", request.nextUrl.pathname);
+    url.searchParams.set("redirect", pathname);
     return NextResponse.redirect(url);
   }
 
