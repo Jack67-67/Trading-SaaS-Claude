@@ -414,7 +414,7 @@ function buildShareText({
   lines.push(`Verdict: ${verdict.label}`);
   lines.push(`"${verdict.tldr}"`);
   lines.push("");
-  lines.push("Tested on real market data · Quanterra Backtesting");
+  lines.push("Tested on real market data · ZLUGO Backtesting");
 
   return lines.join("\n");
 }

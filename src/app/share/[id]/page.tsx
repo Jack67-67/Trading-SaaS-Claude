@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: { id: string } }) {
   return {
     title: "Backtest Result",
-    description: "View this backtest result on Quanterra.",
+    description: "View this backtest result on ZLUGO.",
   };
 }
 
@@ -150,8 +150,7 @@ export default async function SharePage({ params }: PageProps) {
 
       {/* ── Brand strip ───────────────────────────────────────── */}
       <div className="flex items-center gap-2 mb-8">
-        <Sparkles size={15} className="text-accent" />
-        <span className="text-sm font-bold text-text-primary tracking-tight">Quanterra</span>
+        <span className="text-sm font-bold text-text-primary tracking-widest uppercase">ZLUGO</span>
         <span className="text-text-muted/30 text-sm">·</span>
         <span className="text-xs text-text-muted">Backtest Result</span>
       </div>
@@ -253,7 +252,7 @@ export default async function SharePage({ params }: PageProps) {
           className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-bold text-white hover:bg-accent-hover transition-colors"
         >
           <Sparkles size={14} />
-          Try Quanterra free
+          Try ZLUGO free
           <ExternalLink size={12} className="opacity-70" />
         </Link>
         <p className="text-2xs text-text-muted/40">

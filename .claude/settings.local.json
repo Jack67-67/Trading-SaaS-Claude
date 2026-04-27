@@ -31,7 +31,8 @@
       "Bash(wc:*)",
       "Bash(find /Users/idatedsjo/Downloads/trading-backtest-saas/src -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
       "Bash(ls:*)",
-      "Bash(find /Users/idatedsjo/Downloads/trading-backtest-saas -type f -name *broker*)"
+      "Bash(find /Users/idatedsjo/Downloads/trading-backtest-saas -type f -name *broker*)",
+      "Bash(cat src/app/share/[id]/page.tsx)"
     ]
   }
 }

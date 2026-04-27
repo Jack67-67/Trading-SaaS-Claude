@@ -12,7 +12,9 @@ export const metadata: Metadata = {
     process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
   ),
   icons: {
-    icon: "/favicon.ico",
+    icon: [{ url: "/branding/zlugo-logo.png", type: "image/png" }],
+    shortcut: "/branding/zlugo-logo.png",
+    apple: "/branding/zlugo-logo.png",
   },
 };
 

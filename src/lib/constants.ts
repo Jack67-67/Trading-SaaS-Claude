@@ -1,4 +1,4 @@
-export const APP_NAME = "Quanterra";
+export const APP_NAME = "ZLUGO";
 export const APP_DESCRIPTION = "Institutional-grade backtesting infrastructure for systematic traders.";
 
 export const TIMEFRAMES = [
