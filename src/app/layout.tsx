@@ -13,9 +13,9 @@ export const metadata: Metadata = {
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
   ),
   icons: {
-    icon: [{ url: "/branding/zlugo-logo.png", type: "image/png" }],
-    shortcut: "/branding/zlugo-logo.png",
-    apple: "/branding/zlugo-logo.png",
+    icon: [{ url: "/zlugo-logo.png", type: "image/png" }],
+    shortcut: "/zlugo-logo.png",
+    apple: "/zlugo-logo.png",
   },
 };
 

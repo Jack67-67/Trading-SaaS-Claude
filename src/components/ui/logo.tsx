@@ -25,7 +25,7 @@ export function Logo({ size = "md", showText = true, className }: LogoProps) {
   return (
     <div className={cn("flex items-center gap-2", className)}>
       <Image
-        src="/branding/zlugo-logo.png"
+        src="/zlugo-logo.png"
         alt={APP_NAME}
         width={px}
         height={px}
