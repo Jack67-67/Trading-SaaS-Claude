@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {
   ArrowRight, CheckCircle2, Sparkles, Code2,
-  Activity,
+  Activity, Bot, Clock, Lock,
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { APP_NAME } from "@/lib/constants";
@@ -11,70 +11,6 @@ export const metadata = {
   title: `Pricing — ${APP_NAME}`,
 };
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface PlanFeature {
-  text: string;
-  included: boolean;
-}
-
-interface Plan {
-  name: string;
-  price: string;
-  period?: string;
-  description: string;
-  cta: string;
-  ctaHref: string;
-  featured: boolean;
-  badge?: string;
-  features: PlanFeature[];
-}
-
-// ── Plans ─────────────────────────────────────────────────────────────────────
-
-const PLANS: Plan[] = [
-  {
-    name: "Free",
-    price: "$0",
-    description: "For traders getting started. Build strategies and run backtests at no cost.",
-    cta: "Get started free",
-    ctaHref: "/auth/register",
-    featured: false,
-    features: [
-      { text: "Up to 3 strategies", included: true },
-      { text: "Unlimited backtests", included: true },
-      { text: "Basic performance metrics (return, Sharpe, drawdown)", included: true },
-      { text: "Equity curve chart", included: true },
-      { text: "Python strategy editor", included: true },
-      { text: "AI insights and summaries", included: false },
-      { text: "Performance alerts", included: false },
-      { text: "Run comparison and trend tracking", included: false },
-      { text: "AI strategy generator", included: false },
-    ],
-  },
-  {
-    name: "Pro",
-    price: "$19",
-    period: "/ month",
-    description: "For serious traders who want AI-powered analysis, monitoring, and alerts.",
-    cta: "Start Pro",
-    ctaHref: "/auth/register",
-    featured: true,
-    badge: "Most popular",
-    features: [
-      { text: "Unlimited strategies", included: true },
-      { text: "Unlimited backtests", included: true },
-      { text: "Full performance analytics", included: true },
-      { text: "Equity curve chart", included: true },
-      { text: "Python strategy editor", included: true },
-      { text: "AI insights and summaries", included: true },
-      { text: "Performance alerts (critical, warning, info)", included: true },
-      { text: "Run comparison and trend tracking", included: true },
-      { text: "AI strategy generator", included: true },
-    ],
-  },
-];
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PricingPage() {
@@ -82,7 +18,7 @@ export default function PricingPage() {
     <div className="min-h-screen bg-surface-0 text-text-primary">
       <Navbar />
       <main className="pt-24 pb-20 px-6 lg:px-10">
-        <div className="max-w-4xl mx-auto space-y-14">
+        <div className="max-w-4xl mx-auto space-y-16">
           <Header />
           <PricingCards />
           <FeatureComparison />
@@ -127,10 +63,14 @@ function Navbar() {
 
 function Header() {
   return (
-    <div className="text-center space-y-3 max-w-xl mx-auto pt-6">
+    <div className="text-center space-y-4 max-w-xl mx-auto pt-6">
+      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-accent/30 bg-accent/8 text-xs font-semibold text-accent">
+        <Sparkles size={11} />
+        Early access — everything free right now
+      </div>
       <h1 className="text-4xl font-bold tracking-tight">Simple, transparent pricing</h1>
       <p className="text-text-secondary leading-relaxed">
-        Start for free. Upgrade when you need AI insights, alerts, and trend tracking.
+        Start with everything included. A Pro plan is coming — you&apos;ll always keep what you had for free.
       </p>
     </div>
   );
@@ -140,72 +80,104 @@ function Header() {
 
 function PricingCards() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-      {PLANS.map((plan) => (
-        <PlanCard key={plan.name} plan={plan} />
-      ))}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+      <FreeCard />
+      <ProCard />
     </div>
   );
 }
 
-function PlanCard({ plan }: { plan: Plan }) {
+function FreeCard() {
+  const features = [
+    "Up to 5 strategies",
+    "Unlimited backtests",
+    "Paper trading (simulated)",
+    "Shadow mode autotrading",
+    "AI strategy generator",
+    "AI insights and summaries",
+    "Performance analytics",
+    "Basic live autotrading",
+  ];
   return (
-    <div className={cn(
-      "relative rounded-2xl border p-7 flex flex-col gap-6 overflow-hidden",
-      plan.featured
-        ? "border-accent/40 bg-accent/[0.04]"
-        : "border-border bg-surface-1"
-    )}>
-      {/* Top accent line for featured */}
-      {plan.featured && (
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-accent/60 to-transparent" />
-      )}
-
-      {/* Header */}
+    <div className="rounded-2xl border border-border bg-surface-1 p-7 flex flex-col gap-6">
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-text-muted uppercase tracking-widest">{plan.name}</p>
-          {plan.badge && (
-            <span className="text-2xs font-bold bg-accent/15 text-accent border border-accent/30 rounded-full px-2.5 py-1">
-              {plan.badge}
-            </span>
-          )}
+          <p className="text-sm font-semibold text-text-muted uppercase tracking-widest">Free</p>
+          <span className="text-2xs font-bold bg-profit/10 text-profit border border-profit/25 rounded-full px-2.5 py-1">
+            Early access
+          </span>
         </div>
         <div className="flex items-baseline gap-1">
-          <span className="text-4xl font-bold tracking-tight">{plan.price}</span>
-          {plan.period && (
-            <span className="text-sm text-text-muted">{plan.period}</span>
-          )}
+          <span className="text-4xl font-bold tracking-tight">$0</span>
+          <span className="text-sm text-text-muted">/ forever</span>
         </div>
-        <p className="text-sm text-text-secondary leading-relaxed">{plan.description}</p>
+        <p className="text-sm text-text-secondary leading-relaxed">
+          Full access during early access. No credit card, no trial limit — just start.
+        </p>
       </div>
 
-      {/* CTA */}
       <Link
-        href={plan.ctaHref}
-        className={cn(
-          "w-full h-10 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors",
-          plan.featured
-            ? "bg-accent hover:bg-accent-hover text-white"
-            : "bg-surface-2 hover:bg-surface-3 text-text-primary border border-border hover:border-border-hover"
-        )}
+        href="/auth/register"
+        className="w-full h-10 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors bg-surface-2 hover:bg-surface-3 text-text-primary border border-border hover:border-border-hover"
       >
-        {plan.featured && <Sparkles size={13} />}
-        {plan.cta}
+        Get started free
         <ArrowRight size={13} />
       </Link>
 
-      {/* Features */}
       <ul className="space-y-2.5">
-        {plan.features.map(({ text, included }) => (
-          <li key={text} className={cn(
-            "flex items-start gap-2.5 text-sm",
-            included ? "text-text-secondary" : "text-text-muted/50"
-          )}>
-            {included
-              ? <CheckCircle2 size={15} className="text-profit shrink-0 mt-0.5" />
-              : <div className="w-[15px] h-[15px] rounded-full border border-border/50 shrink-0 mt-0.5" />
-            }
+        {features.map((text) => (
+          <li key={text} className="flex items-start gap-2.5 text-sm text-text-secondary">
+            <CheckCircle2 size={15} className="text-profit shrink-0 mt-0.5" />
+            {text}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ProCard() {
+  const features = [
+    "Unlimited strategies",
+    "Live autotrading (real orders)",
+    "Advanced risk controls",
+    "More markets and instruments",
+    "Priority AI analysis",
+    "Team access (coming later)",
+    "Dedicated support",
+    "Everything in Free",
+  ];
+  return (
+    <div className="relative rounded-2xl border border-border/50 bg-surface-1/50 p-7 flex flex-col gap-6 overflow-hidden">
+      {/* Subtle top line */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-text-muted/20 to-transparent" />
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-text-muted/60 uppercase tracking-widest">Pro</p>
+          <span className="text-2xs font-bold bg-surface-3 text-text-muted border border-border rounded-full px-2.5 py-1 flex items-center gap-1.5">
+            <Clock size={10} />
+            Coming soon
+          </span>
+        </div>
+        <div className="flex items-baseline gap-1">
+          <span className="text-4xl font-bold tracking-tight text-text-muted/50">—</span>
+        </div>
+        <p className="text-sm text-text-muted/70 leading-relaxed">
+          Advanced live trading, more markets, and team features. Pricing will be announced before launch.
+        </p>
+      </div>
+
+      {/* Notify button — no payment logic */}
+      <div className="w-full h-10 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 bg-surface-0/60 text-text-muted/50 border border-border/40 cursor-default select-none">
+        <Lock size={13} />
+        Not available yet
+      </div>
+
+      <ul className="space-y-2.5">
+        {features.map((text) => (
+          <li key={text} className="flex items-start gap-2.5 text-sm text-text-muted/50">
+            <div className="w-[15px] h-[15px] rounded-full border border-border/40 shrink-0 mt-0.5" />
             {text}
           </li>
         ))}
@@ -218,53 +190,69 @@ function PlanCard({ plan }: { plan: Plan }) {
 
 const COMPARISON_SECTIONS = [
   {
-    label: "Core",
+    label: "Backtesting",
     icon: Code2,
     rows: [
-      { feature: "Strategy editor (Python)", free: true, pro: true },
-      { feature: "Number of strategies", free: "Up to 3", pro: "Unlimited" },
-      { feature: "Backtests per month", free: "Unlimited", pro: "Unlimited" },
-      { feature: "Historical data", free: true, pro: true },
-      { feature: "Equity curve + basic metrics", free: true, pro: true },
+      { feature: "Python strategy editor",         free: true,          pro: true },
+      { feature: "Number of strategies",           free: "Up to 5",     pro: "Unlimited" },
+      { feature: "Backtests per month",            free: "Unlimited",   pro: "Unlimited" },
+      { feature: "Historical data",                free: true,          pro: true },
+      { feature: "Equity curve + metrics",         free: true,          pro: true },
+      { feature: "AI insights and summaries",      free: true,          pro: true },
     ],
   },
   {
-    label: "AI",
-    icon: Sparkles,
-    rows: [
-      { feature: "AI strategy generator", free: false, pro: true },
-      { feature: "AI insights and summaries", free: false, pro: true },
-      { feature: "Strategy improvement suggestions", free: false, pro: true },
-    ],
-  },
-  {
-    label: "Monitoring",
+    label: "Trading",
     icon: Activity,
     rows: [
-      { feature: "Run comparison (vs. previous run)", free: false, pro: true },
-      { feature: "Trend tracking (Improving / Stable / Declining)", free: false, pro: true },
-      { feature: "Performance alerts (critical, warning, info)", free: false, pro: true },
-      { feature: "AI activity log", free: false, pro: true },
+      { feature: "Paper trading (simulated)",      free: true,          pro: true },
+      { feature: "Shadow mode (signal monitoring)",free: true,          pro: true },
+      { feature: "Basic live autotrading",         free: true,          pro: true },
+      { feature: "Full live autotrading",          free: false,         pro: "Coming soon" },
+      { feature: "More markets and instruments",   free: false,         pro: "Coming soon" },
+    ],
+  },
+  {
+    label: "AI & Monitoring",
+    icon: Sparkles,
+    rows: [
+      { feature: "AI strategy generator",          free: true,          pro: true },
+      { feature: "Performance alerts",             free: true,          pro: true },
+      { feature: "Run comparison",                 free: true,          pro: true },
+      { feature: "Priority AI analysis",           free: false,         pro: "Coming soon" },
+    ],
+  },
+  {
+    label: "Autotrading",
+    icon: Bot,
+    rows: [
+      { feature: "Broker connection (Alpaca)",     free: true,          pro: true },
+      { feature: "Risk controls & safety limits",  free: true,          pro: true },
+      { feature: "Kill switch",                    free: true,          pro: true },
+      { feature: "Advanced risk profiles",         free: false,         pro: "Coming soon" },
     ],
   },
 ];
 
 function FeatureComparison() {
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <h2 className="text-lg font-semibold text-text-primary text-center">What&apos;s included</h2>
 
       <div className="rounded-2xl border border-border overflow-hidden">
         {/* Column headers */}
         <div className="grid grid-cols-3 border-b border-border bg-surface-1">
           <div className="px-5 py-3.5 text-xs font-semibold text-text-muted uppercase tracking-wider">Feature</div>
-          <div className="px-5 py-3.5 text-xs font-semibold text-text-muted uppercase tracking-wider text-center border-l border-border">Free</div>
-          <div className="px-5 py-3.5 text-xs font-semibold text-accent uppercase tracking-wider text-center border-l border-border">Pro</div>
+          <div className="px-5 py-3.5 text-xs font-semibold text-profit uppercase tracking-wider text-center border-l border-border">
+            Free · Early access
+          </div>
+          <div className="px-5 py-3.5 text-xs font-semibold text-text-muted/50 uppercase tracking-wider text-center border-l border-border">
+            Pro · Coming soon
+          </div>
         </div>
 
         {COMPARISON_SECTIONS.map(({ label, icon: Icon, rows }, si) => (
           <div key={label}>
-            {/* Section label */}
             <div className={cn(
               "flex items-center gap-2 px-5 py-2.5 bg-surface-0/50 border-b border-border",
               si > 0 && "border-t"
@@ -278,8 +266,8 @@ function FeatureComparison() {
                 <div className="px-5 py-3 border-l border-border/50 flex items-center justify-center">
                   <CellValue value={free} />
                 </div>
-                <div className="px-5 py-3 border-l border-border/50 flex items-center justify-center bg-accent/[0.02]">
-                  <CellValue value={pro} />
+                <div className="px-5 py-3 border-l border-border/50 flex items-center justify-center bg-surface-0/20">
+                  <CellValue value={pro} muted />
                 </div>
               </div>
             ))}
@@ -290,34 +278,45 @@ function FeatureComparison() {
   );
 }
 
-function CellValue({ value }: { value: boolean | string }) {
+function CellValue({ value, muted }: { value: boolean | string; muted?: boolean }) {
   if (typeof value === "string") {
-    return <span className="text-xs text-text-secondary font-medium">{value}</span>;
+    return (
+      <span className={cn(
+        "text-xs font-medium",
+        muted ? "text-text-muted/50" : "text-text-secondary"
+      )}>
+        {value}
+      </span>
+    );
   }
   if (value) {
-    return <CheckCircle2 size={15} className="text-profit" />;
+    return <CheckCircle2 size={15} className={muted ? "text-text-muted/30" : "text-profit"} />;
   }
-  return <div className="w-4 h-px bg-border" />;
+  return <div className="w-4 h-px bg-border/50" />;
 }
 
 // ── FAQ ───────────────────────────────────────────────────────────────────────
 
 const FAQ_ITEMS = [
   {
-    q: "Can I use the Free plan indefinitely?",
-    a: "Yes. The Free plan has no time limit. You can create strategies and run backtests for as long as you want.",
+    q: "Is the free plan really free, forever?",
+    a: "Yes. During early access, everything is free with no time limit. When Pro launches, you'll keep your free tier — we'll never retroactively remove features you already have.",
   },
   {
-    q: "What do 'AI insights' actually mean?",
-    a: "After each backtest, the AI analyzes your results and generates a plain-language summary: what the key metrics mean, what's working, what's risky, and what to consider changing.",
+    q: "When is the Pro plan launching?",
+    a: "We haven't set a date yet. The focus right now is building the core product. We'll announce pricing before it goes live.",
   },
   {
-    q: "What are performance alerts?",
-    a: "Alerts fire automatically when something notable happens — drawdown spikes, return collapses, or strategy improvement. They're shown on your dashboard so you never miss a signal.",
+    q: "What's the difference between paper trading and live autotrading?",
+    a: "Paper trading runs fully simulated — no real money, no broker connection needed. Live autotrading connects to your broker (e.g. Alpaca) and places real orders. The Free plan includes basic live autotrading with safety limits built in.",
   },
   {
     q: "Is my strategy code private?",
     a: "Yes. Your strategy code and backtest results are private and only accessible to your account.",
+  },
+  {
+    q: "Do I need a broker account?",
+    a: "Only for live autotrading. Backtesting and paper trading work without any broker connection.",
   },
 ];
 
@@ -341,7 +340,7 @@ function Faq() {
 
 function Footer() {
   return (
-    <footer className="border-t border-border px-6 lg:px-10 py-8">
+    <footer className="border-t border-border px-6 lg:px-10 py-8 mt-6">
       <div className="max-w-4xl mx-auto flex items-center justify-between gap-6 flex-wrap">
         <Logo size="sm" />
         <div className="flex items-center gap-6 text-xs text-text-muted">

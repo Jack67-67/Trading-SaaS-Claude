@@ -169,7 +169,7 @@ export function TopBar({ liveInfo }: { liveInfo?: LiveInfo | null }) {
           <div className="absolute right-0 top-full mt-1.5 w-56 rounded-xl bg-surface-2 border border-border shadow-xl shadow-black/30 py-1.5 animate-fade-in">
             <div className="px-3 py-2 border-b border-border mb-1">
               <p className="text-sm text-text-primary font-medium truncate">{email}</p>
-              <p className="text-xs text-text-muted mt-0.5">Free Plan</p>
+              <p className="text-xs text-profit/70 mt-0.5">Free · Early Access</p>
             </div>
             <button
               onClick={() => { setMenuOpen(false); router.push("/dashboard/settings"); }}
