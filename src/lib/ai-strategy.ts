@@ -181,24 +181,24 @@ class Strategy:
     medium: {
       name: "RSI Mean Reversion",
       description:
-        "Buys oversold conditions (RSI < 30) and exits overbought conditions (RSI > 70). Well-suited for ranging and oscillating markets with mean-reverting price behavior.",
+        "Buys moderate oversold conditions (RSI < 35) and exits overbought conditions (RSI > 65). Practical thresholds that fire regularly on daily bars without waiting for extreme dislocations.",
       interval: "1d",
-      entry: { signal: "rsi_reversion", oversold: 30, overbought: 70 },
+      entry: { signal: "rsi_reversion", oversold: 35, overbought: 65 },
       risk: { stop_loss_pct: 3, take_profit_pct: 8, max_position_pct: 75 },
-      params: { rsi_period: 14, oversold_threshold: 30, overbought_threshold: 70 },
+      params: { rsi_period: 14, oversold_threshold: 35, overbought_threshold: 65 },
       code: `"""
 RSI Mean Reversion Strategy
 Balanced | Medium-term
+Uses RSI 35/65 thresholds — practical levels that fire regularly on
+daily bars without requiring extreme market dislocations.
 """
 
 class Strategy:
     def __init__(self, params):
         self.period = params.get("rsi_period", 14)
-        self.oversold = params.get("oversold_threshold", 30)
-        self.overbought = params.get("overbought_threshold", 70)
+        self.oversold = params.get("oversold_threshold", 35)
+        self.overbought = params.get("overbought_threshold", 65)
         self.prices = []
-        self.avg_gain = None
-        self.avg_loss = None
 
     def _rsi(self):
         if len(self.prices) < self.period + 1:
@@ -229,8 +229,8 @@ class Strategy:
     long: {
       name: "Triple EMA Trend",
       description:
-        "Systematic long-term trend following using triple EMA alignment (12/26/52). Enters when all three EMAs are stacked bullishly and exits on trend reversal.",
-      interval: "1w",
+        "Systematic trend following using triple EMA alignment (12/26/52) on daily bars. Enters when all three EMAs are stacked bullishly and exits on trend reversal. Daily bars give more trades and a more complete backtest than weekly.",
+      interval: "1d",
       entry: { signal: "ema_trend", fast: 12, medium: 26, slow: 52 },
       risk: { stop_loss_pct: 8, take_profit_pct: 30, max_position_pct: 80 },
       params: { fast_ema: 12, medium_ema: 26, slow_ema: 52 },
@@ -395,6 +395,54 @@ export function generateStrategy(
   timeframe: TimeframeHorizon,
 ): GeneratedStrategy {
   return TEMPLATES[risk][timeframe];
+}
+
+// ── Strategy name builder ───────────────────────────────────────────────────
+// Produces a unique, descriptive name from the symbol + template + goal text.
+// Falls back to the provided customName if the user supplied one.
+
+const STYLE_MAP: Record<string, string> = {
+  "SMA Crossover (20/50)":     "SMA Cross",
+  "SMA Crossover (50/100)":    "SMA Trend",
+  "Golden Cross (50/200)":     "Golden Cross",
+  "MACD Crossover":            "MACD Entry",
+  "RSI Mean Reversion":        "RSI Swing",
+  "Triple EMA Trend":          "EMA Trend",
+  "Bollinger Band Breakout":   "BB Breakout",
+  "Momentum (ROC)":            "Momentum",
+  "Volatility Breakout (ATR)": "ATR Breakout",
+};
+
+export function buildStrategyName(
+  template: GeneratedStrategy,
+  symbol: string,
+  goal: string,
+  customName?: string | null,
+): string {
+  if (customName?.trim()) return customName.trim();
+
+  // Extract base ticker: "BTC/USDT" → "BTC", "EUR/USD" → "EUR", "SPY" → "SPY"
+  const ticker = symbol.split("/")[0].toUpperCase();
+
+  const styleLabel = STYLE_MAP[template.name] ?? template.name;
+
+  // Derive a one-word flavor from the goal text when it adds signal
+  const g = goal.toLowerCase();
+  let flavor = "";
+  if (/\b(dip|oversold|bounce|buy.?the.?dip)\b/.test(g))        flavor = " Dip";
+  else if (/\b(breakout|break|squeeze|range)\b/.test(g))         flavor = " Breakout";
+  else if (/\b(momentum|aggressive|fast|acceleration)\b/.test(g)) flavor = " Momentum";
+  else if (/\b(trend|follow|direction|trending)\b/.test(g))      flavor = " Trend";
+  else if (/\b(swing|reversal|rebound|pullback)\b/.test(g))      flavor = " Swing";
+
+  // Short interval tag so the name stays unique across different timeframes
+  const INTERVAL_TAG: Record<string, string> = {
+    "15m": " 15m", "30m": " 30m", "1h": " 1H",
+    "4h": " 4H", "1d": "", "1w": " Weekly",
+  };
+  const intervalTag = INTERVAL_TAG[template.interval] ?? ` ${template.interval}`;
+
+  return `${ticker} ${styleLabel}${flavor}${intervalTag}`.trim();
 }
 
 // ── Confidence signal ──────────────────────────────────────────────────────

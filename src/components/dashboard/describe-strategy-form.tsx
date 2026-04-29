@@ -46,6 +46,7 @@ export function DescribeStrategyForm() {
   const [error, setError] = useState<string | null>(null);
 
   const [goal, setGoal] = useState("");
+  const [customName, setCustomName] = useState("");
   const [symbol, setSymbol] = useState("SPY");
   const [customSymbol, setCustomSymbol] = useState("");
   const [showIntervalOverride, setShowIntervalOverride] = useState(false);
@@ -67,6 +68,7 @@ export function DescribeStrategyForm() {
         fd.set("goal", goal.trim());
         fd.set("symbol", effectiveSymbol);
         fd.set("interval", effectiveInterval);
+        if (customName.trim()) fd.set("custom_name", customName.trim());
         const result = await describeStrategyAction(fd);
         if (result?.error) setError(result.error);
         // On success the action redirects; nothing else needed here
@@ -102,6 +104,27 @@ export function DescribeStrategyForm() {
         <p className="text-xs text-text-muted mt-1.5">
           Plain English is fine. Mention indicators, conditions, or signals — the AI handles the Python code.
         </p>
+      </div>
+
+      {/* ── Optional strategy name ──────────────────────────────── */}
+      <div>
+        <label className="block text-sm font-semibold text-text-primary mb-1.5">
+          Strategy name <span className="text-text-muted/60 font-normal">(optional)</span>
+        </label>
+        <input
+          type="text"
+          value={customName}
+          onChange={(e) => setCustomName(e.target.value)}
+          placeholder={`e.g. "SPY Momentum Dip" — leave blank to auto-generate`}
+          maxLength={80}
+          className={cn(fieldClass)}
+          disabled={isPending}
+        />
+        {!customName.trim() && (
+          <p className="text-xs text-text-muted mt-1.5">
+            Auto-name is generated from your symbol, signal type, and goal keywords.
+          </p>
+        )}
       </div>
 
       {/* ── Market ──────────────────────────────────────────────── */}

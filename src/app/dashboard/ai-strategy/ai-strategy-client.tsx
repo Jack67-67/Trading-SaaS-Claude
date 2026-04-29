@@ -74,6 +74,7 @@ export function AiStrategyClient({ initialGoal }: { initialGoal: string }) {
   const [timeframe, setTimeframe] = useState<TimeframeHorizon>("medium");
   const [symbol, setSymbol] = useState("SPY");
   const [goal, setGoal] = useState(initialGoal);
+  const [customName, setCustomName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const isFromSuggestion = !!initialGoal;
@@ -85,6 +86,7 @@ export function AiStrategyClient({ initialGoal }: { initialGoal: string }) {
     formData.set("timeframe", timeframe);
     formData.set("symbol", symbol);
     formData.set("goal", goal);
+    if (customName.trim()) formData.set("custom_name", customName.trim());
 
     startTransition(async () => {
       const result = await generateAndTestStrategyAction(formData);
@@ -171,6 +173,30 @@ export function AiStrategyClient({ initialGoal }: { initialGoal: string }) {
         <p className="text-xs text-text-muted">
           Be specific for better results: mention the asset, signal type, or what you want to optimize.
         </p>
+      </div>
+
+      {/* ── Optional custom name ─────────────────────────────────── */}
+      <div className="space-y-1.5">
+        <label className="block text-sm font-medium text-text-secondary">
+          Strategy name <span className="text-text-muted/60 font-normal">(optional)</span>
+        </label>
+        <input
+          type="text"
+          value={customName}
+          onChange={(e) => setCustomName(e.target.value)}
+          placeholder={`e.g. "My SPY Dip Buyer" — leave blank to auto-generate`}
+          maxLength={80}
+          className={cn(
+            "w-full px-4 py-2.5 rounded-xl text-sm text-text-primary placeholder:text-text-muted/40",
+            "bg-surface-1 border border-border transition-colors",
+            "hover:border-border-hover focus:outline-none focus:ring-1 focus:border-accent focus:ring-accent/30"
+          )}
+        />
+        {!customName.trim() && (
+          <p className="text-xs text-text-muted">
+            Auto-name will use your symbol, signal type, and goal keywords — e.g. &ldquo;SPY RSI Swing&rdquo;.
+          </p>
+        )}
       </div>
 
       {/* ── Recommended timeframe badge ──────────────────────────── */}
