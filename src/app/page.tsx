@@ -30,7 +30,7 @@ export default function LandingPage() {
 
 function Navbar() {
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-14 flex items-center justify-between px-6 lg:px-10 border-b border-border bg-surface-0/80 backdrop-blur-xl">
+    <header className="fixed top-0 left-0 right-0 z-50 h-14 flex items-center justify-between px-6 lg:px-10 border-b border-border bg-surface-0/90 backdrop-blur-md">
       <Logo size="sm" />
       <nav className="hidden sm:flex items-center gap-6 text-sm text-text-muted">
         <a href="#benefits" className="hover:text-text-primary transition-colors">Features</a>
@@ -40,13 +40,13 @@ function Navbar() {
       <div className="flex items-center gap-2.5">
         <Link
           href="/auth/login"
-          className="h-8 px-3.5 rounded-lg text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors flex items-center"
+          className="h-8 px-3.5 rounded-xl text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors flex items-center"
         >
           Sign in
         </Link>
         <Link
           href="/auth/register"
-          className="h-8 px-3.5 rounded-lg text-sm font-semibold bg-accent hover:bg-accent-hover text-white transition-colors flex items-center gap-1.5"
+          className="h-8 px-3.5 rounded-xl text-sm font-semibold bg-accent hover:bg-accent-hover text-white shadow-glow-sm hover:shadow-glow-md transition-all flex items-center gap-1.5"
         >
           Get started <ArrowRight size={13} />
         </Link>
@@ -61,8 +61,9 @@ function Hero() {
   return (
     <section className="relative pt-32 pb-20 px-6 lg:px-10 grid-bg overflow-hidden">
       {/* Gradient orbs */}
-      <div className="absolute top-0 left-1/4 w-[600px] h-[400px] bg-accent/6 rounded-full blur-3xl pointer-events-none -translate-x-1/2" />
-      <div className="absolute bottom-0 right-1/4 w-[400px] h-[300px] bg-accent/4 rounded-full blur-3xl pointer-events-none translate-x-1/2" />
+      <div className="absolute top-0 left-1/4 w-[700px] h-[500px] bg-accent/8 rounded-full blur-3xl pointer-events-none -translate-x-1/2 animate-breathe" />
+      <div className="absolute bottom-0 right-1/4 w-[500px] h-[350px] bg-accent/5 rounded-full blur-3xl pointer-events-none translate-x-1/2 animate-breathe" style={{ animationDelay: "2s" }} />
+      <div className="absolute top-1/2 left-1/2 w-[300px] h-[300px] bg-profit/3 rounded-full blur-3xl pointer-events-none -translate-x-1/2 -translate-y-1/2" />
 
       <div className="relative z-10 max-w-7xl mx-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
@@ -70,7 +71,7 @@ function Hero() {
           {/* Left — copy */}
           <div className="space-y-7">
             {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-accent/30 bg-accent/8 text-xs font-semibold text-accent">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-accent/30 bg-accent/8 text-xs font-semibold text-accent animate-glow-pulse">
               <Sparkles size={11} />
               AI-powered · Python-native
             </div>
@@ -78,8 +79,8 @@ function Hero() {
             {/* Headline */}
             <div className="space-y-4">
               <h1 className="text-4xl lg:text-5xl font-bold tracking-tight leading-[1.15]">
-                Stop trading on emotion.{" "}
-                <span className="text-accent">Test your strategy</span>{" "}
+                Stop trading on gut.{" "}
+                <span className="text-gradient-accent">Test your strategy</span>{" "}
                 before you risk real money.
               </h1>
               <p className="text-lg text-text-secondary leading-relaxed max-w-lg">
@@ -93,14 +94,14 @@ function Hero() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
               <Link
                 href="/auth/register"
-                className="group h-11 px-6 rounded-xl text-sm font-semibold bg-accent hover:bg-accent-hover text-white transition-colors flex items-center gap-2"
+                className="group h-11 px-6 rounded-xl text-sm font-semibold bg-accent hover:bg-accent-hover text-white shadow-glow-sm hover:shadow-glow-md transition-all flex items-center gap-2"
               >
                 <Sparkles size={14} />
                 Describe my strategy
               </Link>
               <Link
                 href="/auth/register"
-                className="h-11 px-6 rounded-xl text-sm font-semibold border border-border bg-surface-1 text-text-primary hover:bg-surface-2 hover:border-border-hover transition-colors flex items-center gap-2"
+                className="h-11 px-6 rounded-xl text-sm font-semibold border border-border bg-surface-1 text-text-primary hover:bg-surface-2 hover:border-border-hover transition-all flex items-center gap-2"
               >
                 <Code2 size={14} />
                 Build your own
@@ -142,7 +143,7 @@ function ProductMockup() {
   const [xN, yN] = pts[pts.length - 1];
 
   return (
-    <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden shadow-2xl shadow-black/40 ring-1 ring-white/5">
+    <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden shadow-elevated ring-1 ring-white/[0.06]" style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.06), 0 8px 48px rgba(0,0,0,0.6), 0 0 80px -20px rgba(59,130,246,0.15)" }}>
       {/* KPI strip */}
       <div className="grid grid-cols-3 divide-x divide-border border-b border-border">
         <KpiCell label="Total Return" value="+34.2%" positive />
@@ -197,7 +198,7 @@ function ProductMockup() {
 
 function KpiCell({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
   return (
-    <div className="px-5 py-4 bg-surface-1">
+    <div className="px-5 py-4 bg-surface-1/80">
       <p className="text-2xs font-semibold text-text-muted uppercase tracking-widest mb-2">{label}</p>
       <p className={cn("text-2xl font-bold font-mono tabular-nums tracking-tight", positive ? "text-profit" : "text-loss")}>
         {value}
@@ -373,10 +374,10 @@ function HowItWorks() {
           {STEPS.map(({ n, icon: Icon, title, desc }) => (
             <div key={n} className="relative flex flex-col gap-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center shrink-0 shadow-glow-sm">
                   <Icon size={17} className="text-accent" />
                 </div>
-                <span className="text-2xs font-mono font-bold text-text-muted tracking-widest">{n}</span>
+                <span className="text-2xs font-mono font-bold text-accent/50 tracking-widest">{n}</span>
               </div>
               <div className="space-y-1.5">
                 <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
@@ -396,7 +397,8 @@ function CtaBanner() {
   return (
     <section className="py-24 px-6 lg:px-10 relative overflow-hidden">
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="w-[600px] h-[300px] bg-accent/8 rounded-full blur-3xl" />
+        <div className="w-[700px] h-[400px] bg-accent/10 rounded-full blur-3xl animate-breathe" />
+        <div className="absolute w-[300px] h-[200px] bg-profit/5 rounded-full blur-3xl animate-breathe" style={{ animationDelay: "2s" }} />
       </div>
 
       <div className="relative z-10 max-w-2xl mx-auto text-center space-y-7">
@@ -412,14 +414,14 @@ function CtaBanner() {
         <div className="flex items-center justify-center gap-3 flex-wrap">
           <Link
             href="/auth/register"
-            className="h-11 px-7 rounded-xl text-sm font-semibold bg-accent hover:bg-accent-hover text-white transition-colors flex items-center gap-2"
+            className="h-11 px-7 rounded-xl text-sm font-semibold bg-accent hover:bg-accent-hover text-white shadow-glow-sm hover:shadow-glow-md transition-all flex items-center gap-2"
           >
             <Sparkles size={14} />
             Get started free
           </Link>
           <Link
             href="/pricing"
-            className="h-11 px-7 rounded-xl text-sm font-semibold border border-border bg-surface-1 text-text-primary hover:bg-surface-2 hover:border-border-hover transition-colors flex items-center gap-2"
+            className="h-11 px-7 rounded-xl text-sm font-semibold border border-border bg-surface-1 text-text-primary hover:bg-surface-2 hover:border-border-hover transition-all flex items-center gap-2"
           >
             View pricing <ChevronRight size={14} />
           </Link>

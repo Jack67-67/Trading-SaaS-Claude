@@ -18,7 +18,7 @@ function ExampleResultPreview() {
   const area = `0,60 ${pts} 855,60`;
 
   return (
-    <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden">
+    <div className="rounded-2xl border border-border bg-surface-1 overflow-hidden shadow-card">
       {/* Card header */}
       <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -312,11 +312,11 @@ export default async function HomePage() {
 
       {/* ── Greeting ──────────────────────────────────────────── */}
       <div>
-        <p className="text-sm text-text-muted mb-0.5">{greeting},</p>
+        <p className="text-xs text-text-muted mb-1 font-medium">{greeting},</p>
         <h1 className="text-3xl font-bold tracking-tight text-text-primary">
           {displayName}
         </h1>
-        <p className="text-2xs text-text-muted/50 mt-1.5 font-medium tracking-widest uppercase">
+        <p className="text-xs text-text-muted/50 mt-1.5 font-medium tracking-widest uppercase">
           No emotion. No guesswork. Just data.
         </p>
       </div>
@@ -365,10 +365,10 @@ export default async function HomePage() {
             <div className={cn(
               "group rounded-xl border border-accent/30 bg-gradient-to-b from-accent/[0.07] to-surface-1",
               "p-5 flex flex-col items-center text-center gap-3",
-              "hover:border-accent/60 hover:from-accent/[0.13] transition-all duration-150",
+              "hover:border-accent/60 hover:from-accent/[0.13] hover:shadow-glow-sm transition-all duration-150",
               "cursor-pointer h-full min-h-[140px] justify-center"
             )}>
-              <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center shadow-glow-sm">
                 <MessageSquare size={18} className="text-accent" />
               </div>
               <div>
@@ -422,7 +422,7 @@ export default async function HomePage() {
       {hasData && (
         <Link
           href="/dashboard/overview"
-          className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-1 px-5 py-4 hover:border-border-hover hover:bg-surface-2/40 transition-all duration-150 group"
+          className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-1 px-5 py-4 hover:border-border-hover hover:bg-surface-2/40 hover:shadow-card transition-all duration-150 group"
         >
           <div>
             <p className="text-sm font-semibold text-text-primary group-hover:text-accent transition-colors">

@@ -61,13 +61,72 @@
     @apply font-mono text-sm tabular-nums;
   }
 
-  /* Subtle grid background pattern */
+  /* Subtle dot-grid background pattern */
   .grid-bg {
     background-image: radial-gradient(
       circle at 1px 1px,
-      rgba(255, 255, 255, 0.03) 1px,
+      rgba(255, 255, 255, 0.035) 1px,
       transparent 0
     );
-    background-size: 24px 24px;
+    background-size: 28px 28px;
+  }
+
+  /* Accent text gradient */
+  .text-gradient-accent {
+    background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #93c5fd 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Profit text gradient */
+  .text-gradient-profit {
+    background: linear-gradient(135deg, #22c55e 0%, #4ade80 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Shimmer skeleton loader */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.04) 50%,
+      rgba(255, 255, 255, 0) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.8s linear infinite;
+  }
+
+  /* Card with hover lift */
+  .card-interactive {
+    @apply transition-all duration-200;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.2);
+  }
+  .card-interactive:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5), 0 8px 32px rgba(0,0,0,0.3);
+    transform: translateY(-1px);
+  }
+
+  /* Subtle scanline overlay for futuristic feel */
+  .scanlines::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.03) 2px,
+      rgba(0, 0, 0, 0.03) 4px
+    );
+    pointer-events: none;
+    border-radius: inherit;
+  }
+
+  /* Glow border on focus/hover for inputs */
+  .input-glow:focus {
+    box-shadow: 0 0 0 1px rgba(59,130,246,0.5), 0 0 12px -2px rgba(59,130,246,0.2);
   }
 }

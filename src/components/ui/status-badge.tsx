@@ -43,12 +43,12 @@ export function StatusBadge({ status }: { status: BacktestStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium",
+        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium tracking-wide",
         config.bg,
         config.text
       )}
     >
-      <span className={cn("w-1.5 h-1.5 rounded-full", config.dot)} />
+      <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", config.dot)} />
       {config.label}
     </span>
   );

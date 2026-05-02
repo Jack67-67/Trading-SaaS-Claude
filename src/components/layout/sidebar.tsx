@@ -76,14 +76,17 @@ export function Sidebar({ alertCount = 0 }: { alertCount?: number }) {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 h-9 rounded-lg text-sm font-medium transition-colors duration-150",
+                "relative flex items-center gap-3 h-9 rounded-xl text-sm font-medium transition-all duration-150",
                 collapsed ? "justify-center px-0" : "px-3",
                 isActive
-                  ? "bg-accent/10 text-accent"
+                  ? "bg-accent/10 text-accent shadow-glow-sm"
                   : "text-text-secondary hover:text-text-primary hover:bg-surface-2"
               )}
               title={collapsed ? item.label : undefined}
             >
+              {isActive && !collapsed && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 rounded-full bg-accent" />
+              )}
               <span className="relative shrink-0">
                 <Icon className="w-4.5 h-4.5" size={18} />
                 {/* Alert dot on Strategies when there are active warnings */}
@@ -95,7 +98,7 @@ export function Sidebar({ alertCount = 0 }: { alertCount?: number }) {
                 <>
                   <span className="flex-1">{item.label}</span>
                   {item.badge && (
-                    <span className="text-2xs font-semibold px-1 py-0.5 rounded bg-accent/20 text-accent leading-none">
+                    <span className="text-2xs font-semibold px-1.5 py-0.5 rounded-full bg-accent/15 text-accent leading-none tracking-wide">
                       {item.badge}
                     </span>
                   )}
@@ -117,7 +120,7 @@ export function Sidebar({ alertCount = 0 }: { alertCount?: number }) {
         <Link
           href="/dashboard/settings"
           className={cn(
-            "flex items-center gap-3 h-9 rounded-lg text-sm text-text-muted hover:text-text-secondary hover:bg-surface-2 transition-colors",
+            "flex items-center gap-3 h-9 rounded-xl text-sm text-text-muted hover:text-text-secondary hover:bg-surface-2 transition-colors",
             collapsed ? "justify-center px-0" : "px-3"
           )}
         >
@@ -128,7 +131,7 @@ export function Sidebar({ alertCount = 0 }: { alertCount?: number }) {
         <button
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
-            "flex items-center gap-3 h-9 rounded-lg text-sm text-text-muted hover:text-text-secondary hover:bg-surface-2 transition-colors w-full",
+            "flex items-center gap-3 h-9 rounded-xl text-sm text-text-muted hover:text-text-secondary hover:bg-surface-2 transition-colors w-full",
             collapsed ? "justify-center px-0" : "px-3"
           )}
         >

@@ -1,8 +1,11 @@
 import { cn } from "@/lib/utils";
 import type { HTMLAttributes } from "react";
 
+type CardVariant = "default" | "glass" | "elevated";
+
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   padding?: "none" | "sm" | "md" | "lg";
+  variant?: CardVariant;
 }
 
 const paddingStyles = {
@@ -12,16 +15,24 @@ const paddingStyles = {
   lg: "p-6",
 };
 
+const variantStyles: Record<CardVariant, string> = {
+  default:  "bg-surface-1 border border-border shadow-card",
+  glass:    "bg-surface-1/70 backdrop-blur-xl border border-border/60 shadow-card",
+  elevated: "bg-surface-2 border border-border shadow-elevated",
+};
+
 export function Card({
   className,
   padding = "md",
+  variant = "default",
   children,
   ...props
 }: CardProps) {
   return (
     <div
       className={cn(
-        "rounded-xl bg-surface-1 border border-border",
+        "rounded-2xl",
+        variantStyles[variant],
         paddingStyles[padding],
         className
       )}
