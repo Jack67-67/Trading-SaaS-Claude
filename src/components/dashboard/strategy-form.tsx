@@ -4,7 +4,7 @@ import { useState, useTransition, useCallback } from "react";
 import Link from "next/link";
 import {
   Save, Trash2, Play, ArrowLeft, RotateCcw,
-  Sparkles, ChevronRight, Code2, BookOpen, ChevronDown, MessageSquare,
+  Sparkles, ChevronRight, Code2, BookOpen, ChevronDown, MessageSquare, Settings2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,11 +14,187 @@ import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { STRATEGY_TEMPLATES, type StrategyTemplateKey } from "@/lib/strategy-templates";
 import { createStrategy, updateStrategy, deleteStrategy } from "@/app/actions/strategies";
+import { TIMEFRAMES } from "@/lib/constants";
+import type { StrategyConfig } from "@/types";
 
 interface StrategyFormProps {
   mode: "create" | "edit";
   strategyId?: string;
-  initialData?: { name: string; description: string | null; code: string };
+  initialData?: { name: string; description: string | null; code: string; config?: StrategyConfig | null };
+}
+
+// ── Default Settings panel ────────────────────────────────────────────────────
+
+function DefaultSettings({
+  config,
+  onChange,
+}: {
+  config: StrategyConfig;
+  onChange: (c: StrategyConfig) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const set = (key: keyof StrategyConfig, value: string | number | undefined) =>
+    onChange({ ...config, [key]: value });
+
+  const hasValues = !!(
+    config.symbol || config.execution_interval || config.analysis_interval ||
+    config.commission_pct != null || config.slippage_pct != null
+  );
+
+  const isMultiTf = !!(
+    config.analysis_interval &&
+    config.execution_interval &&
+    config.analysis_interval !== config.execution_interval
+  );
+
+  return (
+    <div className="rounded-xl border border-border bg-surface-1 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-surface-2/40 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Settings2 size={13} className={hasValues ? "text-accent/70" : "text-text-muted/60"} />
+          <span className="text-xs font-medium text-text-secondary">Default settings</span>
+          {hasValues && (
+            <span className="text-2xs text-text-muted/60">
+              {[
+                config.symbol,
+                config.execution_interval,
+                isMultiTf ? `+ ${config.analysis_interval} context` : null,
+              ].filter(Boolean).join(" · ")}
+            </span>
+          )}
+          {!hasValues && (
+            <span className="text-2xs text-text-muted/50">market, timeframe, costs — auto-fills backtests</span>
+          )}
+        </div>
+        <ChevronDown size={13} className={cn("text-text-muted transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="border-t border-border px-4 py-4 space-y-4 animate-fade-in">
+          <p className="text-xs text-text-muted leading-relaxed">
+            These defaults auto-fill every backtest and paper session for this strategy.
+            You can always override them per-run.
+          </p>
+
+          {/* Symbol + Intervals */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Symbol</label>
+              <input
+                name="config_symbol"
+                type="text"
+                value={config.symbol ?? ""}
+                onChange={(e) => set("symbol", e.target.value.toUpperCase() || undefined)}
+                placeholder="e.g. SPY"
+                className="w-full rounded-lg bg-surface-0 border border-border px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:ring-1 focus:border-accent focus:ring-accent/30 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                Execution interval
+                <span className="ml-1 text-text-muted/50 font-normal">(entries/exits)</span>
+              </label>
+              <select
+                name="config_execution_interval"
+                value={config.execution_interval ?? ""}
+                onChange={(e) => set("execution_interval", e.target.value || undefined)}
+                className="w-full rounded-lg bg-surface-0 border border-border px-3 py-2 text-xs text-text-primary focus:outline-none focus:ring-1 focus:border-accent focus:ring-accent/30 transition-colors"
+              >
+                <option value="">Not set</option>
+                {TIMEFRAMES.map((tf) => (
+                  <option key={tf.value} value={tf.value}>{tf.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                Analysis interval
+                <span className="ml-1 text-text-muted/50 font-normal">(context/levels)</span>
+              </label>
+              <select
+                name="config_analysis_interval"
+                value={config.analysis_interval ?? ""}
+                onChange={(e) => set("analysis_interval", e.target.value || undefined)}
+                className="w-full rounded-lg bg-surface-0 border border-border px-3 py-2 text-xs text-text-primary focus:outline-none focus:ring-1 focus:border-accent focus:ring-accent/30 transition-colors"
+              >
+                <option value="">None (single timeframe)</option>
+                {TIMEFRAMES.map((tf) => (
+                  <option key={tf.value} value={tf.value}>{tf.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* MTF explanation */}
+          {isMultiTf && (
+            <div className="rounded-lg bg-accent/[0.06] border border-accent/20 px-3 py-2.5 flex items-start gap-2">
+              <span className="text-accent text-xs shrink-0 mt-0.5">MTF</span>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Multi-timeframe strategy: entries/exits on{" "}
+                <span className="font-mono text-text-primary">{config.execution_interval}</span>, context from{" "}
+                <span className="font-mono text-text-primary">{config.analysis_interval}</span> bars.
+                The engine fetches both and makes the higher-TF data available in{" "}
+                <code className="font-mono text-accent">on_bar()</code>.
+              </p>
+            </div>
+          )}
+
+          {/* Costs */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Commission %</label>
+              <input
+                name="config_commission_pct"
+                type="number"
+                min="0"
+                step="0.01"
+                value={config.commission_pct ?? ""}
+                onChange={(e) => set("commission_pct", e.target.value !== "" ? parseFloat(e.target.value) : undefined)}
+                placeholder="0.1"
+                className="w-full rounded-lg bg-surface-0 border border-border px-3 py-2 text-xs text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:ring-1 focus:border-accent focus:ring-accent/30 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Slippage %</label>
+              <input
+                name="config_slippage_pct"
+                type="number"
+                min="0"
+                step="0.01"
+                value={config.slippage_pct ?? ""}
+                onChange={(e) => set("slippage_pct", e.target.value !== "" ? parseFloat(e.target.value) : undefined)}
+                placeholder="0.05"
+                className="w-full rounded-lg bg-surface-0 border border-border px-3 py-2 text-xs text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:ring-1 focus:border-accent focus:ring-accent/30 transition-colors"
+              />
+            </div>
+          </div>
+
+          {/* Hidden fields so the form always submits current values */}
+          <input type="hidden" name="config_symbol"             value={config.symbol ?? ""} />
+          <input type="hidden" name="config_execution_interval" value={config.execution_interval ?? ""} />
+          <input type="hidden" name="config_analysis_interval"  value={config.analysis_interval ?? ""} />
+          <input type="hidden" name="config_commission_pct"     value={config.commission_pct ?? ""} />
+          <input type="hidden" name="config_slippage_pct"       value={config.slippage_pct ?? ""} />
+        </div>
+      )}
+
+      {/* Always-present hidden fields when panel is closed */}
+      {!open && (
+        <>
+          <input type="hidden" name="config_symbol"             value={config.symbol ?? ""} />
+          <input type="hidden" name="config_execution_interval" value={config.execution_interval ?? ""} />
+          <input type="hidden" name="config_analysis_interval"  value={config.analysis_interval ?? ""} />
+          <input type="hidden" name="config_commission_pct"     value={config.commission_pct ?? ""} />
+          <input type="hidden" name="config_slippage_pct"       value={config.slippage_pct ?? ""} />
+        </>
+      )}
+    </div>
+  );
 }
 
 // ── Template card ─────────────────────────────────────────────────────────────
@@ -179,6 +355,7 @@ export function StrategyForm({ mode, strategyId, initialData }: StrategyFormProp
   const [name, setName] = useState(initialData?.name ?? "");
   const [description, setDescription] = useState(initialData?.description ?? "");
   const [code, setCode] = useState(initialData?.code ?? STRATEGY_TEMPLATES.blank.code);
+  const [config, setConfig] = useState<StrategyConfig>(initialData?.config ?? {});
   const [activeTemplate, setActiveTemplate] = useState<StrategyTemplateKey | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -198,6 +375,7 @@ export function StrategyForm({ mode, strategyId, initialData }: StrategyFormProp
     setName(initialData?.name ?? "");
     setDescription(initialData?.description ?? "");
     setCode(initialData?.code ?? STRATEGY_TEMPLATES.blank.code);
+    setConfig(initialData?.config ?? {});
     setHasChanges(false);
   };
 
@@ -207,6 +385,12 @@ export function StrategyForm({ mode, strategyId, initialData }: StrategyFormProp
       formData.set("name", name);
       formData.set("description", description);
       formData.set("code", code);
+      // Config fields
+      formData.set("config_symbol",             config.symbol             ?? "");
+      formData.set("config_execution_interval", config.execution_interval ?? "");
+      formData.set("config_analysis_interval",  config.analysis_interval  ?? "");
+      formData.set("config_commission_pct",     config.commission_pct     != null ? String(config.commission_pct) : "");
+      formData.set("config_slippage_pct",       config.slippage_pct       != null ? String(config.slippage_pct)   : "");
 
       if (mode === "create") {
         const result = await createStrategy(formData);
@@ -466,6 +650,12 @@ export function StrategyForm({ mode, strategyId, initialData }: StrategyFormProp
           rows={1}
         />
       </div>
+
+      {/* Default settings */}
+      <DefaultSettings
+        config={config}
+        onChange={(c) => { setConfig(c); markChanged(); }}
+      />
 
       {/* Code editor */}
       <div>

@@ -241,6 +241,7 @@ export default async function StrategyEditorPage({ params }: PageProps) {
             name: strategy.name,
             description: strategy.description,
             code: strategy.code,
+            config: (strategy as any).config ?? null,
           }}
         />
       </div>

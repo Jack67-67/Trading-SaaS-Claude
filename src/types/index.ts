@@ -9,12 +9,39 @@ export interface UserProfile {
 }
 
 // ─── Strategies ────────────────────────────────────────────
+
+/**
+ * Self-contained configuration stored with every strategy.
+ * These become the defaults for backtests, paper trading, and autotrading —
+ * no manual re-entry required.
+ */
+export interface StrategyConfig {
+  /** Primary market, e.g. "SPY", "BTC/USDT" */
+  symbol?: string;
+  /** Execution timeframe — bars used for entries/exits (e.g. "1m", "15m", "1d") */
+  execution_interval?: string;
+  /**
+   * Analysis / context timeframe — higher TF used for structure and levels.
+   * Null/undefined = single-timeframe strategy.
+   * Example: execution_interval "1m" + analysis_interval "15m"
+   */
+  analysis_interval?: string;
+  /** Commission per trade leg, as a percentage (e.g. 0.1 = 0.1%) */
+  commission_pct?: number;
+  /** One-way price slippage, as a percentage (e.g. 0.05 = 0.05%) */
+  slippage_pct?: number;
+  /** Starting capital for paper/auto sessions */
+  initial_capital?: number;
+}
+
 export interface Strategy {
   id: string;
   user_id: string;
   name: string;
   description: string | null;
   code: string;
+  /** Self-contained strategy configuration — auto-fills backtests and sessions */
+  config: StrategyConfig | null;
   created_at: string;
   updated_at: string;
 }
@@ -31,7 +58,13 @@ export interface BacktestConfig {
   strategy_id: string;
   name: string;
   symbol: string;
+  /** Execution timeframe — bars used for entries/exits */
   interval: string;
+  /**
+   * Analysis timeframe — higher TF for structure/levels.
+   * Only present for multi-timeframe strategies.
+   */
+  analysis_interval?: string;
   start: string | null;
   end: string | null;
   entry: Record<string, unknown>;
@@ -48,7 +81,13 @@ export interface BacktestConfig {
 export interface BacktestRunRequest {
   run_id: string;
   symbol: string;
+  /** Execution timeframe — used for entries/exits */
   interval: string;
+  /**
+   * Analysis timeframe — higher TF for structure/levels.
+   * Engine fetches this data separately and makes it available in on_bar().
+   */
+  analysis_interval?: string;
   start?: string | null;
   end?: string | null;
   entry: Record<string, unknown>;

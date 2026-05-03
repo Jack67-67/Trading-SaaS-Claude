@@ -4,10 +4,17 @@ import { useTransition, useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createPaperTradingSession } from "@/app/actions/paper-trading";
 import { TIMEFRAMES } from "@/lib/constants";
-import { Loader2, ChevronDown } from "lucide-react";
+import { Layers, Loader2, ChevronDown } from "lucide-react";
+import type { StrategyConfig } from "@/types";
+
+interface StrategyWithConfig {
+  id: string;
+  name: string;
+  config?: StrategyConfig | null;
+}
 
 interface Props {
-  strategies: { id: string; name: string }[];
+  strategies: StrategyWithConfig[];
 }
 
 // ── Symbol data ──────────────────────────────────────────────────────────────
@@ -17,22 +24,22 @@ const SYMBOL_GROUPS = [
     label: "US Stocks",
     symbols: ["SPY", "QQQ", "AAPL", "MSFT", "TSLA", "AMZN", "NVDA", "META", "GOOGL", "AMD", "NFLX"],
   },
-  {
-    label: "Crypto",
-    symbols: ["BTC/USDT", "ETH/USDT"],
-  },
-  {
-    label: "Forex",
-    symbols: ["EUR/USD", "GBP/USD", "USD/JPY"],
-  },
+  { label: "Crypto", symbols: ["BTC/USDT", "ETH/USDT"] },
+  { label: "Forex",  symbols: ["EUR/USD", "GBP/USD", "USD/JPY"] },
 ];
 
 const ALL_SYMBOLS = SYMBOL_GROUPS.flatMap((g) => g.symbols);
 
 // ── Symbol Picker ────────────────────────────────────────────────────────────
 
-function SymbolPicker({ disabled, fieldClass }: { disabled: boolean; fieldClass: string }) {
-  const [value, setValue] = useState("");
+function SymbolPicker({
+  disabled, fieldClass, value, onChange,
+}: {
+  disabled: boolean;
+  fieldClass: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -61,10 +68,7 @@ function SymbolPicker({ disabled, fieldClass }: { disabled: boolean; fieldClass:
         required
         autoComplete="off"
         value={value}
-        onChange={(e) => {
-          setValue(e.target.value.toUpperCase());
-          setOpen(true);
-        }}
+        onChange={(e) => { onChange(e.target.value.toUpperCase()); setOpen(true); }}
         onFocus={() => setOpen(true)}
         placeholder="SPY, AAPL, BTC/USDT…"
         className={fieldClass + " pr-8"}
@@ -95,8 +99,8 @@ function SymbolPicker({ disabled, fieldClass }: { disabled: boolean; fieldClass:
                       key={sym}
                       type="button"
                       onMouseDown={(e) => {
-                        e.preventDefault(); // keep input focused
-                        setValue(sym);
+                        e.preventDefault();
+                        onChange(sym);
                         setOpen(false);
                       }}
                       className="text-xs font-mono px-2 py-1 rounded-lg bg-surface-3 text-text-secondary hover:bg-accent/20 hover:text-accent transition-colors"
@@ -126,9 +130,40 @@ export function NewPaperSessionForm({ strategies }: Props) {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
+  // Controlled fields that can be auto-filled from strategy config
+  const [selectedStrategyId, setSelectedStrategyId] = useState("");
+  const [symbol, setSymbol] = useState("");
+  const [interval, setInterval] = useState("1d");
+  const [analysisInterval, setAnalysisInterval] = useState("");
+  const [commissionPct, setCommissionPct] = useState("0.1");
+  const [slippagePct, setSlippagePct] = useState("0.05");
+  const [initialCapital, setInitialCapital] = useState("100000");
+
   const defaultStart = new Date();
   defaultStart.setFullYear(defaultStart.getFullYear() - 1);
   const defaultStartStr = defaultStart.toISOString().slice(0, 10);
+
+  // Auto-fill from strategy config when strategy changes
+  useEffect(() => {
+    if (!selectedStrategyId) return;
+    const strategy = strategies.find((s) => s.id === selectedStrategyId);
+    const cfg = strategy?.config;
+    if (!cfg) return;
+
+    if (cfg.symbol)             setSymbol(cfg.symbol);
+    if (cfg.execution_interval) setInterval(cfg.execution_interval);
+    if (cfg.analysis_interval && cfg.analysis_interval !== cfg.execution_interval) {
+      setAnalysisInterval(cfg.analysis_interval);
+    } else {
+      setAnalysisInterval("");
+    }
+    if (cfg.commission_pct  != null) setCommissionPct(String(cfg.commission_pct));
+    if (cfg.slippage_pct    != null) setSlippagePct(String(cfg.slippage_pct));
+    if (cfg.initial_capital != null) setInitialCapital(String(cfg.initial_capital));
+  }, [selectedStrategyId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isMultiTf = !!(analysisInterval && analysisInterval !== interval);
+  const hasConfig = !!(strategies.find((s) => s.id === selectedStrategyId)?.config);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -137,16 +172,17 @@ export function NewPaperSessionForm({ strategies }: Props) {
     startTransition(async () => {
       try {
         const res = await createPaperTradingSession({
-          strategyId:     fd.get("strategyId") as string,
-          name:           fd.get("name") as string,
-          symbol:         fd.get("symbol") as string,
-          interval:       fd.get("interval") as string,
-          startDate:      fd.get("startDate") as string,
-          params:         {},
-          risk:           {},
-          commissionPct:  parseFloat(fd.get("commissionPct") as string) || 0,
-          slippagePct:    parseFloat(fd.get("slippagePct") as string) || 0,
-          initialCapital: parseFloat(fd.get("initialCapital") as string) || 100000,
+          strategyId:      fd.get("strategyId") as string,
+          name:            fd.get("name") as string,
+          symbol:          symbol || (fd.get("symbol") as string),
+          interval,
+          analysisInterval: analysisInterval || undefined,
+          startDate:       fd.get("startDate") as string,
+          params:          {},
+          risk:            {},
+          commissionPct:   parseFloat(commissionPct) || 0,
+          slippagePct:     parseFloat(slippagePct)   || 0,
+          initialCapital:  parseFloat(initialCapital) || 100000,
         });
         if ("error" in res) {
           setError(res.error);
@@ -182,28 +218,75 @@ export function NewPaperSessionForm({ strategies }: Props) {
       {/* Strategy */}
       <div>
         <label htmlFor="strategyId" className={labelClass}>Strategy</label>
-        <select id="strategyId" name="strategyId" required className={fieldClass} disabled={pending}>
+        <select
+          id="strategyId"
+          name="strategyId"
+          required
+          value={selectedStrategyId}
+          onChange={(e) => setSelectedStrategyId(e.target.value)}
+          className={fieldClass}
+          disabled={pending}
+        >
           <option value="">Select a strategy…</option>
           {strategies.map((s) => (
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
         </select>
+        {selectedStrategyId && hasConfig && (
+          <p className="text-2xs text-text-muted/70 mt-1.5">
+            Market and cost defaults loaded from strategy settings.
+          </p>
+        )}
       </div>
 
       {/* Symbol + Interval */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label htmlFor="symbol" className={labelClass}>Symbol</label>
-          <SymbolPicker disabled={pending} fieldClass={fieldClass} />
+          <label className={labelClass}>Symbol</label>
+          <SymbolPicker disabled={pending} fieldClass={fieldClass} value={symbol} onChange={setSymbol} />
         </div>
         <div>
-          <label htmlFor="interval" className={labelClass}>Interval</label>
-          <select id="interval" name="interval" className={fieldClass} disabled={pending} defaultValue="1d">
+          <label className={labelClass}>Execution interval</label>
+          <select
+            value={interval}
+            onChange={(e) => setInterval(e.target.value)}
+            className={fieldClass}
+            disabled={pending}
+          >
             {TIMEFRAMES.map((tf) => (
               <option key={tf.value} value={tf.value}>{tf.label}</option>
             ))}
           </select>
         </div>
+      </div>
+
+      {/* Analysis interval (MTF) */}
+      <div>
+        <label className={labelClass}>
+          Analysis interval{" "}
+          <span className="text-text-muted/50 font-normal">(optional — context/levels)</span>
+        </label>
+        <select
+          value={analysisInterval}
+          onChange={(e) => setAnalysisInterval(e.target.value)}
+          className={fieldClass}
+          disabled={pending}
+        >
+          <option value="">None (single timeframe)</option>
+          {TIMEFRAMES.map((tf) => (
+            <option key={tf.value} value={tf.value}>{tf.label}</option>
+          ))}
+        </select>
+        {isMultiTf && (
+          <div className="mt-2 flex items-start gap-2 rounded-lg bg-accent/[0.06] border border-accent/20 px-3 py-2">
+            <Layers size={12} className="text-accent shrink-0 mt-0.5" />
+            <p className="text-xs text-text-secondary">
+              <span className="font-semibold text-text-primary">Multi-timeframe:</span>{" "}
+              entries/exits on <span className="font-mono text-text-primary">{interval}</span>,
+              context from <span className="font-mono text-text-primary">{analysisInterval}</span>.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Start date */}
@@ -226,43 +309,40 @@ export function NewPaperSessionForm({ strategies }: Props) {
 
       {/* Capital + costs */}
       <div className="rounded-xl border border-border bg-surface-1 p-4 space-y-4">
-        <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Advanced</p>
+        <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Execution Settings</p>
         <div className="grid grid-cols-3 gap-4">
           <div>
-            <label htmlFor="initialCapital" className={labelClass}>Capital ($)</label>
+            <label className={labelClass}>Capital ($)</label>
             <input
-              id="initialCapital"
-              name="initialCapital"
               type="number"
               min="100"
               step="100"
-              defaultValue="100000"
+              value={initialCapital}
+              onChange={(e) => setInitialCapital(e.target.value)}
               className={fieldClass}
               disabled={pending}
             />
           </div>
           <div>
-            <label htmlFor="commissionPct" className={labelClass}>Commission %</label>
+            <label className={labelClass}>Commission %</label>
             <input
-              id="commissionPct"
-              name="commissionPct"
               type="number"
               min="0"
               step="0.01"
-              defaultValue="0.1"
+              value={commissionPct}
+              onChange={(e) => setCommissionPct(e.target.value)}
               className={fieldClass}
               disabled={pending}
             />
           </div>
           <div>
-            <label htmlFor="slippagePct" className={labelClass}>Slippage %</label>
+            <label className={labelClass}>Slippage %</label>
             <input
-              id="slippagePct"
-              name="slippagePct"
               type="number"
               min="0"
               step="0.01"
-              defaultValue="0.05"
+              value={slippagePct}
+              onChange={(e) => setSlippagePct(e.target.value)}
               className={fieldClass}
               disabled={pending}
             />
@@ -277,7 +357,7 @@ export function NewPaperSessionForm({ strategies }: Props) {
       <button
         type="submit"
         disabled={pending}
-        className="w-full flex items-center justify-center gap-2 rounded-xl bg-accent py-3 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+        className="w-full flex items-center justify-center gap-2 rounded-xl bg-accent py-3 text-sm font-semibold text-white hover:bg-accent-hover shadow-glow-sm hover:shadow-glow-md disabled:opacity-60 disabled:cursor-not-allowed transition-all"
       >
         {pending ? (
           <>

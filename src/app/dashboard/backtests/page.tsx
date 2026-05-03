@@ -21,9 +21,9 @@ export default async function BacktestsPage({
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { data: strategies } = await supabase
+  const { data: strategies } = await (supabase as any)
     .from("strategies")
-    .select("id, name, updated_at")
+    .select("id, name, updated_at, config")
     .eq("user_id", user!.id)
     .order("updated_at", { ascending: false });
 
@@ -176,6 +176,7 @@ export default async function BacktestsPage({
                   const config = run.config as Record<string, unknown>;
                   const symbol = (config?.symbol as string) ?? "—";
                   const interval = (config?.interval as string) ?? "";
+                  const analysisInterval = (config?.analysis_interval as string) ?? "";
                   const runName = (config?.name as string) || symbol;
                   const strategyRef = run.strategies as Record<string, unknown> | null;
                   const strategyName = (strategyRef?.name as string) || null;
@@ -232,6 +233,11 @@ export default async function BacktestsPage({
                           {interval && (
                             <span className="text-2xs font-mono text-text-muted bg-surface-3 px-1.5 py-0.5 rounded">
                               {interval}
+                            </span>
+                          )}
+                          {analysisInterval && analysisInterval !== interval && (
+                            <span className="text-2xs font-mono text-accent/70 bg-accent/10 px-1.5 py-0.5 rounded">
+                              +{analysisInterval}
                             </span>
                           )}
                           {strategyName && (

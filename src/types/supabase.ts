@@ -48,6 +48,7 @@ export interface Database {
           name: string;
           description: string | null;
           code: string;
+          config: Json | null;
           created_at: string;
           updated_at: string;
         };
@@ -57,6 +58,7 @@ export interface Database {
           name: string;
           description?: string | null;
           code: string;
+          config?: Json | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -64,6 +66,7 @@ export interface Database {
           name?: string;
           description?: string | null;
           code?: string;
+          config?: Json | null;
           updated_at?: string;
         };
         Relationships: [

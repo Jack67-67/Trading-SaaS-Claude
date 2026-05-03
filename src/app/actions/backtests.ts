@@ -14,6 +14,9 @@ export async function submitBacktestAction(formData: FormData) {
   const name = formData.get("name") as string;
   const symbol = formData.get("symbol") as string;
   const interval = formData.get("interval") as string;
+  const analysisIntervalRaw = (formData.get("analysis_interval") as string) || "";
+  const analysis_interval = analysisIntervalRaw && analysisIntervalRaw !== interval
+    ? analysisIntervalRaw : null;
   const start = (formData.get("start") as string) || null;
   const end = (formData.get("end") as string) || null;
   const entryRaw = formData.get("entry") as string;
@@ -58,7 +61,13 @@ export async function submitBacktestAction(formData: FormData) {
   if (strategyError || !strategy) return { error: "Strategy not found." };
 
   // ─── Build config (stored in Supabase for display) ────────
-  const config = { strategy_id: strategyId, name, symbol, interval, start, end, entry, risk, params, commission_pct: commissionPct, slippage_pct: slippagePct };
+  const config = {
+    strategy_id: strategyId, name, symbol,
+    interval,
+    ...(analysis_interval ? { analysis_interval } : {}),
+    start, end, entry, risk, params,
+    commission_pct: commissionPct, slippage_pct: slippagePct,
+  };
 
   // ─── Insert pending run in Supabase ───────────────────────
   const t0 = Date.now();
@@ -84,6 +93,7 @@ export async function submitBacktestAction(formData: FormData) {
     run_id: run.id,
     symbol,
     interval,
+    ...(analysis_interval ? { analysis_interval } : {}),
     start,
     end,
     entry,

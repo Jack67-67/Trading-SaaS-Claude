@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "New Paper Trading Session" };
 
 export default async function NewPaperSessionPage() {
   // ── Data fetch ───────────────────────────────────────────────────────────
-  let strategyList: { id: string; name: string }[] = [];
+  let strategyList: { id: string; name: string; config?: Record<string, unknown> | null }[] = [];
   let dbError: string | null = null;
 
   try {
@@ -21,9 +21,9 @@ export default async function NewPaperSessionPage() {
     if (authError) console.error("[paper/new] auth error:", authError.message);
     if (!user) redirect("/auth/login");
 
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("strategies")
-      .select("id, name")
+      .select("id, name, config")
       .eq("user_id", user!.id)
       .order("updated_at", { ascending: false });
 

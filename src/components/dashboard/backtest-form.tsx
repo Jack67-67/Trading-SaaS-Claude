@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { Play, ChevronDown, ChevronUp, RotateCcw, AlertCircle } from "lucide-react";
+import { Play, ChevronDown, ChevronUp, RotateCcw, AlertCircle, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -11,14 +11,23 @@ import { useToast } from "@/components/ui/toast";
 import { TIMEFRAMES, SUPPORTED_SYMBOLS } from "@/lib/constants";
 import { submitBacktestAction } from "@/app/actions/backtests";
 import { cn } from "@/lib/utils";
+import type { StrategyConfig } from "@/types";
+
+interface StrategyWithConfig {
+  id: string;
+  name: string;
+  updated_at: string;
+  config?: StrategyConfig | null;
+}
 
 interface BacktestFormProps {
-  strategies: { id: string; name: string; updated_at: string }[];
+  strategies: StrategyWithConfig[];
   /** When provided, pre-fills the form with the last run's settings. */
   initialConfig?: {
     strategy_id?: string;
     symbol?: string;
     interval?: string;
+    analysis_interval?: string;
     start?: string | null;
     end?: string | null;
     entry?: Record<string, unknown>;
@@ -35,7 +44,7 @@ const DEFAULT_PARAMS = "{}";
 
 function isValidJson(str: string) {
   const s = str.trim();
-  if (!s) return true; // empty = treated as {}
+  if (!s) return true;
   try { JSON.parse(s); return true; } catch { return false; }
 }
 
@@ -54,6 +63,7 @@ export function BacktestForm({ strategies, initialConfig }: BacktestFormProps) {
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState(initialConfig?.symbol || "SPY");
   const [interval, setInterval] = useState(initialConfig?.interval || "1d");
+  const [analysisInterval, setAnalysisInterval] = useState(initialConfig?.analysis_interval || "");
   const [start, setStart] = useState(initialConfig?.start || "");
   const [end, setEnd] = useState(initialConfig?.end || "");
   const [entryJson, setEntryJson] = useState(jsonOrDefault(initialConfig?.entry, DEFAULT_ENTRY));
@@ -67,11 +77,32 @@ export function BacktestForm({ strategies, initialConfig }: BacktestFormProps) {
   );
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // ── Auto-fill from strategy config when strategy changes ─────────────────
+  useEffect(() => {
+    if (!strategyId) return;
+    const strategy = strategies.find((s) => s.id === strategyId);
+    const cfg = strategy?.config;
+    if (!cfg) return;
+
+    if (cfg.symbol)             setSymbol(cfg.symbol);
+    if (cfg.execution_interval) setInterval(cfg.execution_interval);
+    if (cfg.analysis_interval && cfg.analysis_interval !== cfg.execution_interval) {
+      setAnalysisInterval(cfg.analysis_interval);
+    } else {
+      setAnalysisInterval("");
+    }
+    if (cfg.commission_pct != null) setCommissionPct(String(cfg.commission_pct));
+    if (cfg.slippage_pct   != null) setSlippagePct(String(cfg.slippage_pct));
+  }, [strategyId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isMultiTf = !!(analysisInterval && analysisInterval !== interval);
+
   const handleReset = () => {
     setStrategyId(preselectedStrategy);
     setName("");
     setSymbol(initialConfig?.symbol || "SPY");
     setInterval(initialConfig?.interval || "1d");
+    setAnalysisInterval(initialConfig?.analysis_interval || "");
     setStart(initialConfig?.start || "");
     setEnd(initialConfig?.end || "");
     setEntryJson(jsonOrDefault(initialConfig?.entry, DEFAULT_ENTRY));
@@ -89,6 +120,7 @@ export function BacktestForm({ strategies, initialConfig }: BacktestFormProps) {
       formData.set("name", name);
       formData.set("symbol", symbol);
       formData.set("interval", interval);
+      formData.set("analysis_interval", analysisInterval);
       formData.set("start", start);
       formData.set("end", end);
       formData.set("entry", entryJson);
@@ -105,11 +137,14 @@ export function BacktestForm({ strategies, initialConfig }: BacktestFormProps) {
   const strategyOptions = strategies.map((s) => ({ value: s.id, label: s.name }));
   const symbolOptions = SUPPORTED_SYMBOLS.map((s) => ({ value: s, label: s }));
   const intervalOptions = TIMEFRAMES.map((t) => ({ value: t.value, label: t.label }));
+  const analysisIntervalOptions = [
+    { value: "", label: "None (single timeframe)" },
+    ...TIMEFRAMES.map((t) => ({ value: t.value, label: t.label })),
+  ];
 
   const jsonValid = isValidJson(entryJson) && isValidJson(riskJson) && isValidJson(paramsJson);
   const canSubmit = !!strategyId && !!name.trim() && !!symbol && !!interval && jsonValid;
 
-  // Describe why the button is disabled
   const blockingReason = !strategyId
     ? "Select a strategy"
     : !name.trim()
@@ -157,6 +192,12 @@ export function BacktestForm({ strategies, initialConfig }: BacktestFormProps) {
               onChange={(e) => setStrategyId(e.target.value)}
               placeholder="Select a strategy…"
             />
+            {/* Config auto-fill hint */}
+            {strategyId && strategies.find((s) => s.id === strategyId)?.config && (
+              <p className="text-xs text-text-muted/70 -mt-2">
+                Market and cost defaults loaded from strategy settings.
+              </p>
+            )}
             <Input
               label="Run Name"
               placeholder="e.g. SMA Crossover — SPY daily 2020–2024"
@@ -171,9 +212,7 @@ export function BacktestForm({ strategies, initialConfig }: BacktestFormProps) {
 
           {/* ── Section 2: Market ──────────────────────────────── */}
           <div className="py-5 space-y-4">
-            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">
-              Market
-            </p>
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Market</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Select
                 label="Symbol"
@@ -181,13 +220,41 @@ export function BacktestForm({ strategies, initialConfig }: BacktestFormProps) {
                 value={symbol}
                 onChange={(e) => setSymbol(e.target.value)}
               />
-              <Select
-                label="Interval"
-                options={intervalOptions}
-                value={interval}
-                onChange={(e) => setInterval(e.target.value)}
-              />
+              <div className="space-y-1.5">
+                <Select
+                  label="Execution interval"
+                  options={intervalOptions}
+                  value={interval}
+                  onChange={(e) => setInterval(e.target.value)}
+                />
+              </div>
             </div>
+
+            {/* Analysis interval (multi-timeframe) */}
+            <div>
+              <Select
+                label="Analysis interval"
+                options={analysisIntervalOptions}
+                value={analysisInterval}
+                onChange={(e) => setAnalysisInterval(e.target.value)}
+              />
+              {isMultiTf ? (
+                <div className="mt-2 flex items-start gap-2 rounded-lg bg-accent/[0.06] border border-accent/20 px-3 py-2">
+                  <Layers size={12} className="text-accent shrink-0 mt-0.5" />
+                  <p className="text-xs text-text-secondary">
+                    <span className="font-semibold text-text-primary">Multi-timeframe:</span>{" "}
+                    entries/exits on <span className="font-mono text-text-primary">{interval}</span>,
+                    context from <span className="font-mono text-text-primary">{analysisInterval}</span> bars.
+                    The engine fetches both timeframes and makes analysis-TF data available to your strategy.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-text-muted mt-1.5">
+                  Optional. Set a higher timeframe for context (e.g. 15m entries + 1h analysis).
+                </p>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Input
                 label="Start Date"
@@ -215,7 +282,7 @@ export function BacktestForm({ strategies, initialConfig }: BacktestFormProps) {
                 Execution Costs
               </p>
               <p className="text-xs text-text-muted mt-1">
-                Applied per trade to simulate real-world fees. Results will show before and after fees.
+                Applied per trade to simulate real-world fees. Results show before and after costs.
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -242,9 +309,7 @@ export function BacktestForm({ strategies, initialConfig }: BacktestFormProps) {
 
           {/* ── Section 4: Parameters ──────────────────────────── */}
           <div className="pt-5 space-y-4">
-            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">
-              Parameters
-            </p>
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Parameters</p>
 
             <JsonField
               label="Entry Signals"

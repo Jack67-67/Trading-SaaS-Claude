@@ -41,6 +41,7 @@ export async function rerunBacktestAction(originalRunId: string): Promise<{ erro
     run_id: run.id,
     symbol: config.symbol,
     interval: config.interval,
+    ...(config.analysis_interval ? { analysis_interval: config.analysis_interval } : {}),
     start: config.start,
     end: config.end,
     entry: config.entry ?? {},

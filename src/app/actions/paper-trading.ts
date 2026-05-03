@@ -11,6 +11,8 @@ export interface CreateSessionInput {
   name: string;
   symbol: string;
   interval: string;
+  /** Higher-TF analysis interval for multi-timeframe strategies */
+  analysisInterval?: string;
   startDate: string; // ISO date "YYYY-MM-DD"
   params: Record<string, unknown>;
   risk: Record<string, unknown>;
@@ -40,20 +42,21 @@ export async function createPaperTradingSession(
 
   console.log("[paper-trading] inserting session for user:", user.id);
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("paper_trade_sessions")
     .insert({
-      user_id:         user.id,
-      strategy_id:     input.strategyId,
-      name:            input.name,
-      symbol:          input.symbol.toUpperCase(),
-      interval:        input.interval,
-      start_date:      input.startDate,
-      params:          input.params,
-      risk:            input.risk,
-      commission_pct:  input.commissionPct,
-      slippage_pct:    input.slippagePct,
-      initial_capital: input.initialCapital,
+      user_id:          user.id,
+      strategy_id:      input.strategyId,
+      name:             input.name,
+      symbol:           input.symbol.toUpperCase(),
+      interval:         input.interval,
+      ...(input.analysisInterval ? { analysis_interval: input.analysisInterval } : {}),
+      start_date:       input.startDate,
+      params:           input.params,
+      risk:             input.risk,
+      commission_pct:   input.commissionPct,
+      slippage_pct:     input.slippagePct,
+      initial_capital:  input.initialCapital,
     })
     .select("id")
     .single();
@@ -75,16 +78,17 @@ export async function createPaperTradingSession(
         Authorization:  `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({
-        session_id:      data.id,
-        strategy_id:     input.strategyId,
-        symbol:          input.symbol.toUpperCase(),
-        interval:        input.interval,
-        start:           input.startDate,
-        params:          input.params,
-        risk:            input.risk,
-        commission_pct:  input.commissionPct,
-        slippage_pct:    input.slippagePct,
-        initial_capital: input.initialCapital,
+        session_id:       data.id,
+        strategy_id:      input.strategyId,
+        symbol:           input.symbol.toUpperCase(),
+        interval:         input.interval,
+        ...(input.analysisInterval ? { analysis_interval: input.analysisInterval } : {}),
+        start:            input.startDate,
+        params:           input.params,
+        risk:             input.risk,
+        commission_pct:   input.commissionPct,
+        slippage_pct:     input.slippagePct,
+        initial_capital:  input.initialCapital,
       }),
     });
   } catch (fetchErr) {
