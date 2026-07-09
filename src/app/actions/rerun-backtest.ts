@@ -19,7 +19,11 @@ export async function rerunBacktestAction(originalRunId: string): Promise<{ erro
 
   if (fetchError || !original) return { error: "Run not found." };
 
-  const config = original.config as unknown as BacktestConfig;
+  const config = (original.config ?? {}) as unknown as BacktestConfig;
+
+  if (!config.symbol || !config.interval) {
+    return { error: "Run config is missing required fields (symbol/interval). Cannot re-run." };
+  }
 
   const { data: run, error: insertError } = await supabase
     .from("backtest_runs")
@@ -47,9 +51,9 @@ export async function rerunBacktestAction(originalRunId: string): Promise<{ erro
     entry: config.entry ?? {},
     risk: config.risk ?? {},
     params: config.params ?? {},
-    name: config.name,
-    commission_pct: config.commission_pct,
-    slippage_pct: config.slippage_pct,
+    name: config.name ?? `${config.symbol} re-run`,
+    commission_pct: config.commission_pct ?? 0.1,
+    slippage_pct: config.slippage_pct ?? 0.05,
   };
 
   try {

@@ -38,7 +38,12 @@ const statusConfig: Record<
 };
 
 export function StatusBadge({ status }: { status: BacktestStatus }) {
-  const config = statusConfig[status];
+  const config = statusConfig[status] ?? {
+    label: status ?? "Unknown",
+    dot: "bg-text-muted",
+    bg: "bg-text-muted/10",
+    text: "text-text-muted",
+  };
 
   return (
     <span

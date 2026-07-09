@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { User, Key, AlertTriangle, LogOut, Shield, Calendar, Mail, Hash, Link2 } from "lucide-react";
+import { redirect } from "next/navigation";
+import { User, Key, AlertTriangle, LogOut, Shield, Calendar, Mail, Hash, Link2, type LucideIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { signOutAction } from "@/app/actions/auth";
 import { cn } from "@/lib/utils";
@@ -13,11 +14,12 @@ export const metadata: Metadata = {
 export default async function SettingsPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/auth/login");
 
   const { data: profile } = await supabase
     .from("profiles")
     .select("*")
-    .eq("id", user!.id)
+    .eq("id", user.id)
     .single();
 
   const displayName =
@@ -39,8 +41,7 @@ export default async function SettingsPage() {
     : null;
 
   const tier = profile?.subscription_tier || "free";
-  const apiUrl =
-    (process.env.NEXT_PUBLIC_BACKTEST_API_URL || "http://localhost:8000") + "/api/v1";
+  const apiUrl = process.env.NEXT_PUBLIC_BACKTEST_API_URL || "http://localhost:8000";
 
   // Fetch broker connections (exclude credentials — server-side only)
   let brokerConnections: BrokerConnectionRow[] = [];
@@ -48,7 +49,7 @@ export default async function SettingsPage() {
     const { data: conns } = await supabase
       .from("broker_connections")
       .select("id, broker, status, display_name, account_number, error_message, last_verified_at, created_at")
-      .eq("user_id", user!.id)
+      .eq("user_id", user.id)
       .order("created_at", { ascending: true });
     brokerConnections = (conns as BrokerConnectionRow[]) ?? [];
   } catch {
@@ -212,7 +213,7 @@ function Section({
   title,
   children,
 }: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
   title: string;
   children: React.ReactNode;
 }) {
@@ -235,7 +236,7 @@ function MetaItem({
   value,
   mono = false,
 }: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
   label: string;
   value: string;
   mono?: boolean;

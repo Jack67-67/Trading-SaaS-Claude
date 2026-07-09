@@ -17,21 +17,35 @@ We bypass supabase-py entirely because supabase-py 2.x rejects the new
 The user's Supabase JWT (Authorization header) is forwarded so RLS works
 without needing a service-role key.
 
-Fallback: if POLYGON_API_KEY is missing or symbol is unsupported, the engine
-falls back to _stub_results() so the frontend never hard-errors.
+If POLYGON_API_KEY is missing, the symbol is invalid, or the date range has no
+data, the engine marks the run as "failed" with a clear error message so the
+frontend can display the real reason instead of spinning forever.
 """
 
 import asyncio
+import base64
+import json
+import logging
 import os
-import random
+import re
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+log = logging.getLogger("backtest")
+
 import httpx
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
 
 from data_provider import fetch_ohlc
 from backtest_engine import run_backtest
@@ -51,9 +65,37 @@ if not SUPABASE_URL or not SUPABASE_ANON_KEY:
 
 POSTGREST_URL = f"{SUPABASE_URL}/rest/v1"
 
+# ── Rate limiter ──────────────────────────────────────────────────────────────
+
+
+def _rate_limit_key(request: Request) -> str:
+    """Use JWT sub as rate-limit key; fall back to IP if token is missing/unparseable."""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth[7:]
+        try:
+            payload_b64 = token.split(".")[1]
+            padding = 4 - len(payload_b64) % 4
+            if padding != 4:
+                payload_b64 += "=" * padding
+            payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+            if sub := payload.get("sub"):
+                return f"user:{sub}"
+        except Exception:
+            pass
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    ip = forwarded.split(",")[0].strip() if forwarded else (
+        request.client.host if request.client else "unknown"
+    )
+    return f"ip:{ip}"
+
+
+limiter = Limiter(key_func=_rate_limit_key)
+
 # ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Backtest Engine", version="0.2.0")
+app.state.limiter = limiter
 
 _frontend_url     = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 _allowed_origins  = [o.strip() for o in _frontend_url.split(",") if o.strip()]
@@ -61,11 +103,28 @@ _allowed_origins  = [o.strip() for o in _frontend_url.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
+
+@app.exception_handler(RateLimitExceeded)
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
+    return Response(
+        content='{"detail": "Too many requests. Please wait and try again."}',
+        status_code=429,
+        media_type="application/json",
+        headers={"Retry-After": "60"},
+    )
+
 # ── Schema ────────────────────────────────────────────────────────────────────
+
+
+_VALID_INTERVALS = frozenset(
+    {"1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"}
+)
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_SYMBOL_RE = re.compile(r"^[A-Z0-9.\-]{1,10}$")
 
 
 class BacktestRunRequest(BaseModel):
@@ -78,8 +137,44 @@ class BacktestRunRequest(BaseModel):
     risk:           Dict[str, Any] = {}
     params:         Dict[str, Any] = {}
     name:           str
-    commission_pct: float = 0.0   # e.g. 0.1 means 0.1% per trade leg
-    slippage_pct:   float = 0.0   # e.g. 0.05 means 0.05% one-way slippage
+    commission_pct: float = 0.0
+    slippage_pct:   float = 0.0
+
+    @field_validator("symbol")
+    @classmethod
+    def validate_symbol(cls, v: str) -> str:
+        v = v.upper().strip()
+        if not _SYMBOL_RE.match(v):
+            raise ValueError("symbol must be 1–10 uppercase alphanumeric characters")
+        return v
+
+    @field_validator("interval")
+    @classmethod
+    def validate_interval(cls, v: str) -> str:
+        if v not in _VALID_INTERVALS:
+            raise ValueError(f"interval must be one of {sorted(_VALID_INTERVALS)}")
+        return v
+
+    @field_validator("start", "end")
+    @classmethod
+    def validate_date(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not _DATE_RE.match(v):
+            raise ValueError("dates must be YYYY-MM-DD format")
+        return v
+
+    @field_validator("commission_pct", "slippage_pct")
+    @classmethod
+    def validate_fee(cls, v: float) -> float:
+        if not (0.0 <= v <= 5.0):
+            raise ValueError("fee percentages must be between 0 and 5")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if len(v) > 200:
+            raise ValueError("name must be 200 characters or fewer")
+        return v
 
 
 # ── Supabase PostgREST helpers ────────────────────────────────────────────────
@@ -149,55 +244,10 @@ def _fetch_strategy_code(run_id: str, token: str) -> str:
     return code
 
 
-# ── Stub fallback ─────────────────────────────────────────────────────────────
-
-
-def _stub_results(symbol: str) -> Dict[str, Any]:
-    """
-    Deterministic dummy results used as a fallback when real data is unavailable.
-    Replace this only if you want to remove stub support entirely.
-    """
-    rng = random.Random(symbol)
-
-    total_return = round(rng.uniform(-15, 45), 2)
-    n_trades     = rng.randint(20, 120)
-    win_rate     = round(rng.uniform(40, 70), 1)
-    max_dd       = round(rng.uniform(3, 25), 2)
-
-    equity       = 100_000.0
-    equity_curve = []
-    for i in range(52):
-        equity *= 1 + rng.uniform(-0.03, 0.035)
-        equity_curve.append(
-            {
-                "timestamp":    f"2024-{(i // 4) + 1:02d}-{((i % 4) * 7) + 1:02d}",
-                "equity":       round(equity, 2),
-                "drawdown_pct": round(rng.uniform(0, max_dd), 2),
-            }
-        )
-
-    return {
-        "metrics": {
-            "total_return_pct":       total_return,
-            "annualized_return_pct":  round(total_return * 0.52, 2),
-            "sharpe_ratio":           round(rng.uniform(0.4, 2.2), 2),
-            "sortino_ratio":          round(rng.uniform(0.6, 2.8), 2),
-            "max_drawdown_pct":       max_dd,
-            "win_rate_pct":           win_rate,
-            "profit_factor":          round(rng.uniform(0.9, 2.5), 2),
-            "total_trades":           n_trades,
-            "avg_trade_return_pct":   round(total_return / n_trades, 3),
-            "max_consecutive_wins":   rng.randint(3, 12),
-            "max_consecutive_losses": rng.randint(2, 8),
-            "calmar_ratio":           round(total_return / max_dd, 2),
-            "volatility_pct":         round(rng.uniform(8, 28), 1),
-        },
-        "equity_curve": equity_curve,
-        "trades": [],
-    }
-
-
 # ── Background task ───────────────────────────────────────────────────────────
+
+
+BACKTEST_TIMEOUT_SECONDS = 300  # 5 minutes hard limit
 
 
 async def _execute_backtest(payload: BacktestRunRequest, token: str) -> None:
@@ -209,65 +259,108 @@ async def _execute_backtest(payload: BacktestRunRequest, token: str) -> None:
       4. Execute strategy via the backtest engine
       5. Write real results to Supabase → mark "completed"
 
-    Falls back to stub results if Polygon data is unavailable.
+    Hard-kills with a "failed" status after BACKTEST_TIMEOUT_SECONDS.
+    All errors (data fetch, simulation, timeout) are written back to Supabase
+    so the frontend can display the real reason instead of spinning forever.
     """
     run_id = payload.run_id
 
     try:
-        # ── 1. Mark running ───────────────────────────────────────────────────
-        _patch_run(run_id, token, {"status": "running", "started_at": _now()})
-
-        # ── 2. Fetch strategy code ────────────────────────────────────────────
-        strategy_code = _fetch_strategy_code(run_id, token)
-
-        # ── 3. Fetch OHLC data from Polygon ───────────────────────────────────
-        bars = await asyncio.to_thread(
-            fetch_ohlc,
-            payload.symbol,
-            payload.interval,
-            payload.start,
-            payload.end,
-            POLYGON_API_KEY,
+        await asyncio.wait_for(
+            _run_pipeline(payload, token),
+            timeout=BACKTEST_TIMEOUT_SECONDS,
         )
-
-        # ── 4. Run backtest engine ────────────────────────────────────────────
-        results = await asyncio.to_thread(
-            run_backtest,
-            strategy_code,
-            bars,
-            payload.params,
-            payload.risk,
-            100_000.0,
-            payload.commission_pct,
-            payload.slippage_pct,
-        )
-
-        # ── 5. Write results ──────────────────────────────────────────────────
-        _patch_run(
-            run_id,
-            token,
-            {
-                "status":       "completed",
-                "completed_at": _now(),
-                "results":      results,
-            },
-        )
-
-    except Exception as exc:
-        # Best-effort: write the error back so the frontend can display it
-        error_msg = str(exc)
+    except asyncio.TimeoutError:
         try:
             _patch_run(
                 run_id,
                 token,
                 {
                     "status":        "failed",
-                    "error_message": error_msg,
+                    "error_message": (
+                        f"Backtest timed out after {BACKTEST_TIMEOUT_SECONDS // 60} minutes. "
+                        "Try a shorter date range, a less frequent interval (e.g. 1d instead of 1m), "
+                        "or simplify your strategy logic."
+                    ),
                     "completed_at":  _now(),
                 },
             )
         except Exception:
             pass
+    except Exception as exc:
+        try:
+            _patch_run(
+                run_id,
+                token,
+                {
+                    "status":        "failed",
+                    "error_message": str(exc),
+                    "completed_at":  _now(),
+                },
+            )
+        except Exception:
+            pass
+
+
+async def _run_pipeline(payload: BacktestRunRequest, token: str) -> None:
+    """Inner pipeline — wrapped by _execute_backtest with a timeout."""
+    run_id = payload.run_id
+
+    pipeline_start = time.monotonic()
+    log.info("[%s] pipeline start  symbol=%s interval=%s start=%s end=%s",
+             run_id, payload.symbol, payload.interval, payload.start, payload.end)
+
+    # ── 1. Mark running ───────────────────────────────────────────────────
+    _patch_run(run_id, token, {"status": "running", "started_at": _now()})
+
+    # ── 2. Fetch strategy code ────────────────────────────────────────────
+    t0 = time.monotonic()
+    strategy_code = _fetch_strategy_code(run_id, token)
+    log.info("[%s] strategy fetch  %.2fs  code_len=%d",
+             run_id, time.monotonic() - t0, len(strategy_code))
+
+    # ── 3. Fetch OHLC data from Polygon ───────────────────────────────────
+    t0 = time.monotonic()
+    bars = await asyncio.to_thread(
+        fetch_ohlc,
+        payload.symbol,
+        payload.interval,
+        payload.start,
+        payload.end,
+        POLYGON_API_KEY,
+    )
+    log.info("[%s] data fetch      %.2fs  bars=%d",
+             run_id, time.monotonic() - t0, len(bars))
+
+    # ── 4. Run backtest engine ────────────────────────────────────────────
+    t0 = time.monotonic()
+    results = await asyncio.to_thread(
+        run_backtest,
+        strategy_code,
+        bars,
+        payload.params,
+        payload.risk,
+        100_000.0,
+        payload.commission_pct,
+        payload.slippage_pct,
+    )
+    log.info("[%s] simulation      %.2fs  trades=%s",
+             run_id, time.monotonic() - t0,
+             results.get("total_trades", "?") if isinstance(results, dict) else "?")
+
+    # ── 5. Write results ──────────────────────────────────────────────────
+    t0 = time.monotonic()
+    _patch_run(
+        run_id,
+        token,
+        {
+            "status":       "completed",
+            "completed_at": _now(),
+            "results":      results,
+        },
+    )
+    log.info("[%s] db write        %.2fs", run_id, time.monotonic() - t0)
+    log.info("[%s] pipeline done   total=%.2fs", run_id, time.monotonic() - pipeline_start)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -288,16 +381,52 @@ def health() -> Dict[str, str]:
 
 
 class PaperTradeRunRequest(BaseModel):
-    session_id:     str
-    strategy_id:    str
-    symbol:         str
-    interval:       str
-    start:          str          # ISO date, e.g. "2024-01-01"
-    params:         Dict[str, Any] = {}
-    risk:           Dict[str, Any] = {}
-    commission_pct: float = 0.0
-    slippage_pct:   float = 0.0
+    session_id:      str
+    strategy_id:     str
+    symbol:          str
+    interval:        str
+    start:           str
+    params:          Dict[str, Any] = {}
+    risk:            Dict[str, Any] = {}
+    commission_pct:  float = 0.0
+    slippage_pct:    float = 0.0
     initial_capital: float = 100_000.0
+
+    @field_validator("symbol")
+    @classmethod
+    def validate_symbol(cls, v: str) -> str:
+        v = v.upper().strip()
+        if not _SYMBOL_RE.match(v):
+            raise ValueError("symbol must be 1–10 uppercase alphanumeric characters")
+        return v
+
+    @field_validator("interval")
+    @classmethod
+    def validate_interval(cls, v: str) -> str:
+        if v not in _VALID_INTERVALS:
+            raise ValueError(f"interval must be one of {sorted(_VALID_INTERVALS)}")
+        return v
+
+    @field_validator("start")
+    @classmethod
+    def validate_date(cls, v: str) -> str:
+        if not _DATE_RE.match(v):
+            raise ValueError("start must be YYYY-MM-DD format")
+        return v
+
+    @field_validator("commission_pct", "slippage_pct")
+    @classmethod
+    def validate_fee(cls, v: float) -> float:
+        if not (0.0 <= v <= 5.0):
+            raise ValueError("fee percentages must be between 0 and 5")
+        return v
+
+    @field_validator("initial_capital")
+    @classmethod
+    def validate_capital(cls, v: float) -> float:
+        if not (100.0 <= v <= 100_000_000.0):
+            raise ValueError("initial_capital must be between 100 and 100,000,000")
+        return v
 
 
 def _patch_session(session_id: str, token: str, data: Dict[str, Any]) -> None:
@@ -358,7 +487,9 @@ def _execute_paper_trade_sync(payload: PaperTradeRunRequest, token: str) -> Dict
 
 
 @app.post("/paper-trade/run")
+@limiter.limit("10/minute")
 async def run_paper_trade_endpoint(
+    request: Request,
     payload: PaperTradeRunRequest,
     authorization: str = Header(...),
 ) -> Dict[str, Any]:
@@ -394,7 +525,9 @@ async def run_paper_trade_endpoint(
 
 
 @app.post("/backtests/run", status_code=202)
+@limiter.limit("5/minute")
 async def run_backtest_endpoint(
+    request: Request,
     payload: BacktestRunRequest,
     background_tasks: BackgroundTasks,
     authorization: str = Header(...),

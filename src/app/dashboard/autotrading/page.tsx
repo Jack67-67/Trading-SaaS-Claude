@@ -1026,12 +1026,11 @@ export default async function AutotradingPage() {
 
     // Fetch broker connections (cached data — no credentials, pre-migration safe)
     try {
-      const db = supabase as any;
-      const { data: bData } = await db
+      const { data: bData } = await supabase
         .from("broker_connections")
         .select("id, broker, status, display_name, cached_buying_power, cached_equity, cached_account_status, cached_positions_count, last_verified_at")
-        .eq("user_id", user!.id) as { data: BrokerConnRow[] | null };
-      brokers = bData ?? [];
+        .eq("user_id", user!.id);
+      brokers = (bData ?? []) as BrokerConnRow[];
     } catch { /* broker_connections table may not exist yet */ }
 
   } catch (e) {

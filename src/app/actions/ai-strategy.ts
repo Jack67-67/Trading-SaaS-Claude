@@ -111,6 +111,8 @@ export async function generateAndTestStrategyAction(formData: FormData) {
     entry: generated.entry,
     risk: generated.risk,
     params: generated.params,
+    commission_pct: 0.1,
+    slippage_pct: 0.05,
     // AI metadata — read back on the results page
     ai_risk: risk,
     ai_timeframe: timeframe,
@@ -148,6 +150,8 @@ export async function generateAndTestStrategyAction(formData: FormData) {
     risk: generated.risk,
     params: generated.params,
     name: runName,
+    commission_pct: 0.1,
+    slippage_pct: 0.05,
   };
 
   try {

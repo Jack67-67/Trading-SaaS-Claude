@@ -4,12 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "npx supabase gen types typescript --project-id gqrklmfiaqyzxktajkmk --schema public > /tmp/supabase-types-new.ts && mv /tmp/supabase-types-new.ts src/types/supabase.ts || echo 'WARNING: Supabase type generation failed — using cached src/types/supabase.ts'",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.5.2",
+    "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.47.12",
     "build": "^0.1.4",
     "clsx": "^2.1.1",

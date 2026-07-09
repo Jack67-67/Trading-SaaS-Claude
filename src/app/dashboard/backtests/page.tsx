@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { FlaskConical, TrendingUp, TrendingDown, Code2, Sparkles, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -20,11 +21,12 @@ export default async function BacktestsPage({
 }) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/auth/login");
 
-  const { data: strategies } = await (supabase as any)
+  const { data: strategies } = await supabase
     .from("strategies")
     .select("id, name, updated_at, config")
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .order("updated_at", { ascending: false });
 
   // If arriving from a strategy page, fetch the last run's config to pre-fill the form
@@ -34,7 +36,7 @@ export default async function BacktestsPage({
     const { data: lastRun } = await supabase
       .from("backtest_runs")
       .select("config")
-      .eq("user_id", user!.id)
+      .eq("user_id", user.id)
       .eq("strategy_id", preselectedStrategyId)
       .eq("status", "completed")
       .order("completed_at", { ascending: false })
@@ -48,12 +50,12 @@ export default async function BacktestsPage({
   const { data: runs } = await supabase
     .from("backtest_runs")
     .select("id, status, config, results, created_at, started_at, completed_at, error_message, strategy_id, strategies(name)")
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(50);
 
   const runList = runs ?? [];
-  const strategyList = strategies ?? [];
+  const strategyList = (strategies ?? []) as unknown as Parameters<typeof BacktestForm>[0]["strategies"];
 
   // Summary stats for header
   const completedRuns = runList.filter((r) => r.status === "completed");
@@ -192,18 +194,15 @@ export default async function BacktestsPage({
                         )}s`
                       : null;
 
+                  const isClickable = ["completed", "running", "pending", "failed", "cancelled"].includes(run.status);
                   const href = run.status === "completed"
                     ? `/dashboard/results/${run.id}`
                     : `/dashboard/backtests/${run.id}`;
 
-                  const isClickable = ["completed", "running", "pending", "failed", "cancelled"].includes(run.status);
-                  const Wrapper = isClickable ? Link : "div";
-                  const wrapperProps = isClickable ? { href } : {};
-
                   return (
-                    <Wrapper
+                    <Link
                       key={run.id}
-                      {...(wrapperProps as Record<string, string>)}
+                      href={href}
                       className={cn(
                         "flex items-center gap-3 px-5 py-3.5 transition-colors group",
                         isClickable && "hover:bg-surface-1 cursor-pointer"
@@ -276,7 +275,7 @@ export default async function BacktestsPage({
                           {run.error_message}
                         </p>
                       )}
-                    </Wrapper>
+                    </Link>
                   );
                 })}
               </div>

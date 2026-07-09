@@ -122,24 +122,25 @@ export default async function PortfolioPage() {
   // ── Portfolio snapshot & violations ─────────────────────────────────────
   const snap = computePortfolioSnapshot(sessionSnapshots);
 
-  const controls: PortfolioControls = portfolio && !("error" in portfolio) ? {
-    maxPortfolioRiskPct:    Number((portfolio as any).max_portfolio_risk_pct   ?? 5),
-    maxRiskPerStrategyPct:  Number((portfolio as any).max_risk_per_strategy_pct ?? 2),
-    maxSimultaneousTrades:  Number((portfolio as any).max_simultaneous_trades   ?? 5),
-    maxWeeklyLossPct:       Number((portfolio as any).max_weekly_loss_pct        ?? 10),
-    maxMonthlyLossPct:      Number((portfolio as any).max_monthly_loss_pct       ?? 20),
-    pauseOnEvents:          Boolean((portfolio as any).pause_on_events ?? true),
+  const portfolioRow = portfolio && !("error" in portfolio) ? portfolio : null;
+
+  const controls: PortfolioControls = portfolioRow ? {
+    maxPortfolioRiskPct:    portfolioRow.max_portfolio_risk_pct,
+    maxRiskPerStrategyPct:  portfolioRow.max_risk_per_strategy_pct,
+    maxSimultaneousTrades:  portfolioRow.max_simultaneous_trades,
+    maxWeeklyLossPct:       portfolioRow.max_weekly_loss_pct,
+    maxMonthlyLossPct:      portfolioRow.max_monthly_loss_pct,
+    pauseOnEvents:          portfolioRow.pause_on_events,
   } : {
     maxPortfolioRiskPct: 5, maxRiskPerStrategyPct: 2,
     maxSimultaneousTrades: 5, maxWeeklyLossPct: 10,
     maxMonthlyLossPct: 20, pauseOnEvents: true,
   };
 
-  const violations = portfolio ? checkPortfolioLimits(snap, controls) : [];
-  const capacity   = portfolio ? portfolioCapacityUsed(snap, controls) : 0;
+  const violations = portfolioRow ? checkPortfolioLimits(snap, controls) : [];
+  const capacity   = portfolioRow ? portfolioCapacityUsed(snap, controls) : 0;
 
-  const portfolioRow = portfolio && !("error" in portfolio) ? portfolio as any : null;
-  const portStatus   = portfolioRow?.status ?? "active";
+  const portStatus = portfolioRow?.status ?? "active";
 
   return (
     <div className="space-y-6 animate-fade-in max-w-4xl">

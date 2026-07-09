@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { BacktestRunRequest } from "@/types";
+import type { Json } from "@/types/supabase";
 
 const EXAMPLE_NAME = "SMA Crossover (Example)";
 
@@ -54,7 +55,7 @@ export async function tryExampleAction(): Promise<{ error: string } | never> {
     .maybeSingle();
 
   if (existing?.id) {
-    strategyId = existing.id as string;
+    strategyId = existing.id;
   } else {
     const { data: created, error: createErr } = await supabase
       .from("strategies")
@@ -69,7 +70,7 @@ export async function tryExampleAction(): Promise<{ error: string } | never> {
       .single();
 
     if (createErr || !created) return { error: "Failed to create example strategy." };
-    strategyId = created.id as string;
+    strategyId = created.id;
   }
 
   // ── 2. Insert pending run ────────────────────────────────────────────────
@@ -92,8 +93,8 @@ export async function tryExampleAction(): Promise<{ error: string } | never> {
       user_id: user.id,
       strategy_id: strategyId,
       status: "pending",
-      config: config as unknown as Record<string, unknown>,
-    } as any)
+      config: config as unknown as Json,
+    })
     .select("id")
     .single();
 
@@ -104,7 +105,7 @@ export async function tryExampleAction(): Promise<{ error: string } | never> {
   const { data: { session } } = await supabase.auth.getSession();
 
   const payload: BacktestRunRequest = {
-    run_id: run.id as string,
+    run_id: run.id,
     symbol: "SPY",
     interval: "1d",
     start: null,
@@ -145,5 +146,5 @@ export async function tryExampleAction(): Promise<{ error: string } | never> {
   // ── 4. Redirect to live status page ─────────────────────────────────────
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/backtests");
-  redirect(`/dashboard/backtests/${run.id as string}`);
+  redirect(`/dashboard/backtests/${run.id}`);
 }

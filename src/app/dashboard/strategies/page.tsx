@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Plus, Code2, Clock, Sparkles, ChevronRight, FlaskConical, BarChart3, ShieldCheck, TrendingUp, TrendingDown, AlertTriangle, MessageSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
@@ -22,11 +23,12 @@ export const metadata: Metadata = {
 export default async function StrategiesPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/auth/login");
 
   const { data: strategies } = await supabase
     .from("strategies")
     .select("*, backtest_runs(id, status, results, completed_at, config)")
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .order("updated_at", { ascending: false });
 
   const items = strategies ?? [];

@@ -45,19 +45,18 @@ export default async function DashboardLayout({
   let liveInfo: LiveInfo | null = null;
   if (user) {
     try {
-      const db = supabase as any;
-      const { data: liveSessions } = await db
+      const { data: liveSessions } = await supabase
         .from("paper_trade_sessions")
         .select("id, name, symbol, trading_mode, status, last_results, initial_capital")
         .eq("user_id", user.id)
         .eq("trading_mode", "live")
         .eq("status", "active")
         .order("last_action_at", { ascending: false })
-        .limit(5) as { data: Record<string, unknown>[] | null };
+        .limit(5);
 
       if (liveSessions && liveSessions.length > 0) {
         const first = liveSessions[0];
-        const equityCurve = ((first.last_results as any)?.equity_curve ?? []) as { equity: number }[];
+        const equityCurve = ((first.last_results as Record<string, unknown> | null)?.equity_curve as { equity: number }[] | undefined) ?? [];
         const initCap     = Number(first.initial_capital ?? 100_000);
         const lastEquity  = equityCurve.length > 0 ? equityCurve[equityCurve.length - 1].equity : null;
         const pnl         = lastEquity !== null ? lastEquity - initCap : null;
@@ -65,7 +64,7 @@ export default async function DashboardLayout({
 
         liveInfo = {
           count:   liveSessions.length,
-          id:      String(first.id ?? ""),
+          id:      first.id,
           name:    String(first.name ?? ""),
           symbol:  String(first.symbol ?? ""),
           pnl,

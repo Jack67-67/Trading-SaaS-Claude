@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import type { Tables } from "@/types/supabase";
 import {
   computeOrderPnL,
   initialOrderStatus,
@@ -10,40 +11,42 @@ import {
   type CloseReason,
 } from "@/lib/execution-engine";
 
-function rowToOrder(row: Record<string, unknown>): ExecutionOrder {
+type ExecOrderRow = Tables<"execution_orders">;
+
+function rowToOrder(row: ExecOrderRow): ExecutionOrder {
   return {
-    id:            String(row.id),
-    sessionId:     String(row.session_id),
-    portfolioId:   row.portfolio_id ? String(row.portfolio_id) : null,
-    symbol:        String(row.symbol),
+    id:            row.id,
+    sessionId:     row.session_id,
+    portfolioId:   row.portfolio_id,
+    symbol:        row.symbol,
     direction:     row.direction as "long" | "short",
-    orderType:     String(row.order_type),
-    qty:           Number(row.qty),
-    entryPrice:    row.entry_price   != null ? Number(row.entry_price)   : null,
-    limitPrice:    row.limit_price   != null ? Number(row.limit_price)   : null,
-    stopLoss:      row.stop_loss     != null ? Number(row.stop_loss)     : null,
-    takeProfit:    row.take_profit   != null ? Number(row.take_profit)   : null,
-    riskAmount:    row.risk_amount   != null ? Number(row.risk_amount)   : null,
-    riskPct:       row.risk_pct      != null ? Number(row.risk_pct)      : null,
-    strategyName:  row.strategy_name ? String(row.strategy_name) : null,
-    signalReason:  row.signal_reason ? String(row.signal_reason) : null,
+    orderType:     row.order_type,
+    qty:           row.qty,
+    entryPrice:    row.entry_price,
+    limitPrice:    row.limit_price,
+    stopLoss:      row.stop_loss,
+    takeProfit:    row.take_profit,
+    riskAmount:    row.risk_amount,
+    riskPct:       row.risk_pct,
+    strategyName:  row.strategy_name,
+    signalReason:  row.signal_reason,
     confidence:    row.confidence as "low" | "medium" | "high" | null,
     tradingMode:   row.trading_mode as ExecutionOrder["tradingMode"],
     status:        row.status as ExecutionOrder["status"],
-    brokerOrderId: row.broker_order_id ? String(row.broker_order_id) : null,
-    filledPrice:   row.filled_price  != null ? Number(row.filled_price)  : null,
-    filledQty:     row.filled_qty    != null ? Number(row.filled_qty)    : null,
-    commission:    Number(row.commission ?? 0),
-    failureReason: row.failure_reason ? String(row.failure_reason) : null,
-    closePrice:    row.close_price   != null ? Number(row.close_price)   : null,
-    closeReason:   (row.close_reason ?? null) as CloseReason | null,
-    pnl:           row.pnl     != null ? Number(row.pnl)     : null,
-    pnlPct:        row.pnl_pct != null ? Number(row.pnl_pct) : null,
-    signalAt:      String(row.signal_at),
-    submittedAt:   row.submitted_at ? String(row.submitted_at) : null,
-    filledAt:      row.filled_at    ? String(row.filled_at)    : null,
-    closedAt:      row.closed_at    ? String(row.closed_at)    : null,
-    createdAt:     String(row.created_at),
+    brokerOrderId: row.broker_order_id,
+    filledPrice:   row.filled_price,
+    filledQty:     row.filled_qty,
+    commission:    row.commission,
+    failureReason: row.failure_reason,
+    closePrice:    row.close_price,
+    closeReason:   row.close_reason as CloseReason | null,
+    pnl:           row.pnl,
+    pnlPct:        row.pnl_pct,
+    signalAt:      row.signal_at,
+    submittedAt:   row.submitted_at,
+    filledAt:      row.filled_at,
+    closedAt:      row.closed_at,
+    createdAt:     row.created_at,
   };
 }
 
@@ -55,11 +58,10 @@ export async function createOrder(
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return { error: "Not authenticated" };
 
-  const db    = supabase as any;
-  const now   = new Date().toISOString();
+  const now    = new Date().toISOString();
   const status = initialOrderStatus(req.tradingMode);
 
-  const { data, error } = await db
+  const { data, error } = await supabase
     .from("execution_orders")
     .insert({
       user_id:       user.id,
@@ -89,7 +91,7 @@ export async function createOrder(
       } : {}),
     })
     .select("id")
-    .single() as { data: { id: string } | null; error: { message: string } | null };
+    .single();
 
   if (error || !data) return { error: error?.message ?? "Failed to create order" };
   revalidatePath(`/dashboard/autotrading/${req.sessionId}`);
@@ -108,25 +110,23 @@ export async function closeOrder(
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return { error: "Not authenticated" };
 
-  const db = supabase as any;
-
-  const { data: order } = await db
+  const { data: order } = await supabase
     .from("execution_orders")
     .select("entry_price, filled_price, qty, direction")
     .eq("id", orderId)
     .eq("user_id", user.id)
-    .single() as {
-      data: { entry_price: number; filled_price: number | null; qty: number; direction: string } | null
-    };
+    .single();
 
   if (!order) return { error: "Order not found" };
 
   const entryPx = order.filled_price ?? order.entry_price;
+  if (entryPx === null) return { error: "Order has no entry price" };
+
   const { pnl, pnlPct } = computeOrderPnL(
     entryPx, closePrice, order.qty, order.direction as "long" | "short",
   );
 
-  const { error } = await db
+  const { error } = await supabase
     .from("execution_orders")
     .update({
       close_price:  closePrice,
@@ -138,7 +138,7 @@ export async function closeOrder(
       updated_at:   new Date().toISOString(),
     })
     .eq("id", orderId)
-    .eq("user_id", user.id) as { error: { message: string } | null };
+    .eq("user_id", user.id);
 
   if (error) return { error: error.message };
   revalidatePath(`/dashboard/autotrading/${sessionId}`);
@@ -154,17 +154,13 @@ export async function getSessionOrders(
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return { error: "Not authenticated" };
 
-  const db = supabase as any;
-  const { data, error } = await db
+  const { data, error } = await supabase
     .from("execution_orders")
     .select("*")
     .eq("session_id", sessionId)
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
-    .limit(limit) as {
-      data: Record<string, unknown>[] | null;
-      error: { message: string } | null;
-    };
+    .limit(limit);
 
   if (error) return { error: error.message };
   return (data ?? []).map(rowToOrder);
@@ -179,17 +175,13 @@ export async function getPortfolioOrders(
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return { error: "Not authenticated" };
 
-  const db = supabase as any;
-  const { data, error } = await db
+  const { data, error } = await supabase
     .from("execution_orders")
     .select("*")
     .eq("portfolio_id", portfolioId)
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
-    .limit(limit) as {
-      data: Record<string, unknown>[] | null;
-      error: { message: string } | null;
-    };
+    .limit(limit);
 
   if (error) return { error: error.message };
   return (data ?? []).map(rowToOrder);
@@ -203,16 +195,12 @@ export async function getAllUserOrders(
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return { error: "Not authenticated" };
 
-  const db = supabase as any;
-  const { data, error } = await db
+  const { data, error } = await supabase
     .from("execution_orders")
     .select("*")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
-    .limit(limit) as {
-      data: Record<string, unknown>[] | null;
-      error: { message: string } | null;
-    };
+    .limit(limit);
 
   if (error) return { error: error.message };
   return (data ?? []).map(rowToOrder);

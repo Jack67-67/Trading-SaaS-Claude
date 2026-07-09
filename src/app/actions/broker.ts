@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { fetchBrokerData, type BrokerType, type BrokerConnectionData } from "@/lib/broker";
+import { encryptCredential, decryptCredential } from "@/lib/broker-crypto";
 
 // ── Public display type (never includes api_key / api_secret) ────────────────
 
@@ -16,14 +17,6 @@ export interface BrokerConnectionRow {
   last_verified_at: string | null;
   created_at:       string;
 }
-
-type CredRow = {
-  broker:     string;
-  api_key:    string;
-  api_secret: string;
-};
-
-type IdRow = { id: string };
 
 // ── Save a new connection (test credentials first) ───────────────────────────
 
@@ -46,29 +39,28 @@ export async function saveBrokerConnection(
 
   const displayName = broker === "alpaca_paper" ? "Alpaca Paper" : "Alpaca Live";
 
-  const db = supabase as any;
-  const { data, error } = await db
+  const { data, error } = await supabase
     .from("broker_connections")
     .upsert(
       {
-        user_id:          user.id,
+        user_id:                user.id,
         broker,
-        api_key:          apiKey.trim(),
-        api_secret:       apiSecret.trim(),
-        status:                   "connected",
-        display_name:             displayName,
-        account_number:           result.account.account_number,
-        cached_account_status:    result.account.status,
-        cached_equity:            result.account.equity,
-        cached_buying_power:      result.account.buying_power,
-        cached_positions_count:   result.positions.length,
-        error_message:            null,
-        last_verified_at:         new Date().toISOString(),
+        api_key:                encryptCredential(apiKey.trim()),
+        api_secret:             encryptCredential(apiSecret.trim()),
+        status:                 "connected" as const,
+        display_name:           displayName,
+        account_number:         result.account.account_number,
+        cached_account_status:  result.account.status,
+        cached_equity:          result.account.equity,
+        cached_buying_power:    result.account.buying_power,
+        cached_positions_count: result.positions.length,
+        error_message:          null,
+        last_verified_at:       new Date().toISOString(),
       },
       { onConflict: "user_id,broker" },
     )
     .select("id")
-    .single() as { data: IdRow | null; error: { message: string } | null };
+    .single();
 
   if (error) return { error: error.message };
   if (!data) return { error: "No row returned" };
@@ -85,12 +77,11 @@ export async function removeBrokerConnection(
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return { error: "Not authenticated" };
 
-  const db = supabase as any;
-  const { error } = await db
+  const { error } = await supabase
     .from("broker_connections")
     .delete()
     .eq("id", connectionId)
-    .eq("user_id", user.id) as { error: { message: string } | null };
+    .eq("user_id", user.id);
 
   if (error) return { error: error.message };
   revalidatePath("/dashboard/settings");
@@ -106,25 +97,35 @@ export async function getBrokerLiveData(
   if (authErr || !user) return { error: "Not authenticated" };
 
   // Read credentials server-side — never sent to client
-  const db = supabase as any;
-  const { data: conn, error: connErr } = await db
+  const { data: conn, error: connErr } = await supabase
     .from("broker_connections")
     .select("broker, api_key, api_secret")
     .eq("id", connectionId)
     .eq("user_id", user.id)
-    .single() as { data: CredRow | null; error: unknown };
+    .single();
 
   if (connErr || !conn) return { error: "Connection not found" };
 
+  let apiKey: string;
+  let apiSecret: string;
+  try {
+    apiKey = decryptCredential(conn.api_key);
+    apiSecret = decryptCredential(conn.api_secret);
+  } catch (decryptErr) {
+    const msg = decryptErr instanceof Error ? decryptErr.message : String(decryptErr);
+    console.error("[broker] credential decryption failed:", msg);
+    return { error: "Failed to decrypt broker credentials. Re-enter your API keys in Settings." };
+  }
+
   const result = await fetchBrokerData(
     conn.broker as BrokerType,
-    conn.api_key,
-    conn.api_secret,
+    apiKey,
+    apiSecret,
   );
 
   // Update verified status + cache key account fields for readiness checks
   const newStatus = "error" in result ? "error" : "connected";
-  await db
+  await supabase
     .from("broker_connections")
     .update({
       status:                   newStatus,

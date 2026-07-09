@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { StrategyConfig } from "@/types";
+import type { Json } from "@/types/supabase";
 
 function parseConfig(formData: FormData): StrategyConfig {
   const symbol           = (formData.get("config_symbol") as string)?.trim().toUpperCase() || undefined;
@@ -45,14 +46,14 @@ export async function createStrategy(formData: FormData) {
 
   const config = parseConfig(formData);
 
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from("strategies")
     .insert({
       user_id: user.id,
       name: name.trim(),
       description: description?.trim() || null,
       code,
-      config: Object.keys(config).length > 0 ? config : null,
+      config: Object.keys(config).length > 0 ? (config as unknown as Json) : null,
     })
     .select("id")
     .single();
@@ -77,13 +78,13 @@ export async function updateStrategy(strategyId: string, formData: FormData) {
 
   const config = parseConfig(formData);
 
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from("strategies")
     .update({
       name: name.trim(),
       description: description?.trim() || null,
       code,
-      config: Object.keys(config).length > 0 ? config : null,
+      config: Object.keys(config).length > 0 ? (config as unknown as Json) : null,
     })
     .eq("id", strategyId)
     .eq("user_id", user.id);

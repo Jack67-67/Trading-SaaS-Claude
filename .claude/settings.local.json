@@ -32,7 +32,19 @@
       "Bash(find /Users/idatedsjo/Downloads/trading-backtest-saas/src -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
       "Bash(ls:*)",
       "Bash(find /Users/idatedsjo/Downloads/trading-backtest-saas -type f -name *broker*)",
-      "Bash(cat src/app/share/[id]/page.tsx)"
+      "Bash(cat src/app/share/[id]/page.tsx)",
+      "Bash(find /Users/idatedsjo/Downloads/trading-backtest-saas -name zlugo* -o -name 'zlugo logo*')",
+      "Bash(git rm:*)",
+      "Bash(node *)",
+      "Bash(npm info *)",
+      "Bash(npm install *)",
+      "Bash(pip install *)",
+      "Bash(pip3 install *)",
+      "Bash(python3 -m pip install slowapi==0.1.9 --dry-run)",
+      "Bash(pip3 show *)",
+      "Bash(pip3 index *)",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(npx supabase *)"
     ]
   }
 }

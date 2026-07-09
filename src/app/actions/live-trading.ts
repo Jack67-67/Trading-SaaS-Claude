@@ -20,18 +20,12 @@ export async function setTradingMode(
 
   // Server-side transition guards
   if (mode === "live_prep" || mode === "live") {
-    type SessCheck = {
-      trading_mode: string | null;
-      broker_connection_id: string | null;
-      cached_account_status: string | null;
-    };
-    const db = supabase as any;
-    const { data: current } = await db
+    const { data: current } = await supabase
       .from("paper_trade_sessions")
       .select("trading_mode, broker_connection_id")
       .eq("id", sessionId)
       .eq("user_id", user.id)
-      .single() as { data: SessCheck | null };
+      .single();
 
     if (!current) return { error: "Session not found" };
 
@@ -47,12 +41,12 @@ export async function setTradingMode(
 
     // For live activation, verify broker account is ACTIVE
     if (mode === "live") {
-      const { data: broker } = await db
+      const { data: broker } = await supabase
         .from("broker_connections")
         .select("cached_account_status, status")
         .eq("id", current.broker_connection_id)
         .eq("user_id", user.id)
-        .single() as { data: { cached_account_status: string | null; status: string } | null };
+        .single();
 
       if (!broker || broker.status !== "connected") {
         return { error: "Broker connection is not verified. Refresh it in Settings first." };
@@ -96,8 +90,7 @@ export async function linkBrokerToSession(
 
   // Verify the broker belongs to this user (if not null)
   if (brokerConnectionId) {
-    const db = supabase as any;
-    const { data: conn } = await db
+    const { data: conn } = await supabase
       .from("broker_connections")
       .select("id")
       .eq("id", brokerConnectionId)

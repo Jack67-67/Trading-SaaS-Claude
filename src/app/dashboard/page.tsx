@@ -218,24 +218,23 @@ export default async function HomePage() {
   // Active autotrading sessions (shadow / live_prep / live)
   let activeSessions: ActiveSession[] = [];
   try {
-    const db = supabase as any;
-    const { data: sessList } = await db
+    const { data: sessList } = await supabase
       .from("paper_trade_sessions")
       .select("id, name, symbol, interval, trading_mode, status, last_results, initial_capital")
       .eq("user_id", user.id)
       .eq("status", "active")
       .in("trading_mode", ["live", "live_prep", "shadow"])
       .order("last_action_at", { ascending: false })
-      .limit(5) as { data: Record<string, unknown>[] | null };
+      .limit(5);
 
     activeSessions = (sessList ?? []).map(s => {
-      const ec = ((s.last_results as any)?.equity_curve ?? []) as { equity: number }[];
+      const ec = ((s.last_results as Record<string, unknown> | null)?.equity_curve as { equity: number }[] | undefined) ?? [];
       const initCap   = Number(s.initial_capital ?? 100_000);
       const lastEquity = ec.length > 0 ? ec[ec.length - 1].equity : null;
       const pnl    = lastEquity !== null ? lastEquity - initCap : null;
       const pnlPct = pnl !== null && initCap > 0 ? (pnl / initCap) * 100 : null;
       return {
-        id:          String(s.id ?? ""),
+        id:          s.id,
         name:        String(s.name ?? ""),
         symbol:      String(s.symbol ?? ""),
         interval:    String(s.interval ?? ""),

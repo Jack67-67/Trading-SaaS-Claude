@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKTEST_API_URL ?? "http://localhost:8000";
 
 export interface CreateSessionInput {
   strategyId: string;
@@ -42,7 +42,7 @@ export async function createPaperTradingSession(
 
   console.log("[paper-trading] inserting session for user:", user.id);
 
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from("paper_trade_sessions")
     .insert({
       user_id:          user.id,
@@ -57,7 +57,7 @@ export async function createPaperTradingSession(
       commission_pct:   input.commissionPct,
       slippage_pct:     input.slippagePct,
       initial_capital:  input.initialCapital,
-    })
+    } as any)
     .select("id")
     .single();
 

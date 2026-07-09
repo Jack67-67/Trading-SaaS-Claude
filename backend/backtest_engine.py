@@ -35,6 +35,63 @@ import math
 import statistics
 from typing import Any
 
+# ── Strategy code sandbox ──────────────────────────────────────────────────────
+#
+# Strategy code is user-supplied Python.  We execute it with exec() but restrict
+# the available builtins to a safe subset so that strategies cannot import
+# dangerous modules (os, subprocess, socket, requests, …) or access the file
+# system.  Allowed imports are limited to pure-math / stdlib utility modules.
+
+_ALLOWED_IMPORTS: frozenset[str] = frozenset(
+    {"math", "statistics", "collections", "functools", "itertools", "operator", "decimal"}
+)
+
+
+def _safe_import(
+    name: str,
+    globals: Any = None,
+    locals: Any = None,
+    fromlist: tuple[str, ...] = (),
+    level: int = 0,
+) -> Any:
+    if name not in _ALLOWED_IMPORTS:
+        raise ImportError(
+            f"Import of '{name}' is not allowed in strategy code. "
+            f"Allowed modules: {', '.join(sorted(_ALLOWED_IMPORTS))}"
+        )
+    return __import__(name, globals, locals, fromlist, level)
+
+
+_SAFE_BUILTINS: dict[str, Any] = {
+    # Python class / object machinery (required for `class Strategy:` to work)
+    "__build_class__": __build_class__,  # type: ignore[name-defined]
+    "__name__": "__main__",
+    "super": super,
+    "object": object,
+    "property": property,
+    "staticmethod": staticmethod,
+    "classmethod": classmethod,
+    # Numeric
+    "abs": abs, "round": round, "min": min, "max": max, "sum": sum,
+    "pow": pow, "divmod": divmod, "int": int, "float": float,
+    "bool": bool, "str": str, "list": list, "dict": dict, "tuple": tuple,
+    "set": set, "frozenset": frozenset, "len": len, "range": range,
+    # Iteration
+    "enumerate": enumerate, "zip": zip, "map": map, "filter": filter,
+    "sorted": sorted, "reversed": reversed, "iter": iter, "next": next,
+    # Type checking
+    "isinstance": isinstance, "issubclass": issubclass,
+    # Output (debug prints during development)
+    "print": print,
+    # Common exceptions strategies may raise / catch
+    "Exception": Exception, "ValueError": ValueError, "TypeError": TypeError,
+    "KeyError": KeyError, "IndexError": IndexError, "ZeroDivisionError": ZeroDivisionError,
+    # Constants (Python 3 doesn't need these in builtins, but explicit is safer)
+    "None": None, "True": True, "False": False,
+    # Controlled import hook
+    "__import__": _safe_import,
+}
+
 
 # ── Portfolio ──────────────────────────────────────────────────────────────────
 
@@ -310,11 +367,13 @@ def run_backtest(
     merged_params = {**params, **risk}
 
     # ── Load strategy class from user code ───────────────────────────────────
-    namespace: dict[str, Any] = {}
+    namespace: dict[str, Any] = {"__builtins__": _SAFE_BUILTINS}
     try:
         exec(strategy_code, namespace)  # noqa: S102
     except SyntaxError as exc:
         raise ValueError(f"Strategy code has a syntax error: {exc}") from exc
+    except ImportError as exc:
+        raise ValueError(f"Strategy code tried a disallowed import: {exc}") from exc
 
     StrategyClass = namespace.get("Strategy")
     if StrategyClass is None:

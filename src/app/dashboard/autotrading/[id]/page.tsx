@@ -289,6 +289,7 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
     cached_buying_power: number | null;
     cached_equity: number | null;
     last_verified_at: string | null;
+    error_message: string | null;
   };
   type BrokerListRow = { id: string; display_name: string | null; broker: string; status: string };
 
@@ -299,21 +300,20 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
     const supabaseInner = (await import("@/lib/supabase/server")).createClient();
     const { data: { user: u } } = await supabaseInner.auth.getUser();
     if (u) {
-      const db = supabaseInner as any;
       if (brokerConnectionId) {
-        const { data } = await db
+        const { data } = await supabaseInner
           .from("broker_connections")
-          .select("id, broker, status, display_name, account_number, cached_account_status, cached_buying_power, cached_equity, last_verified_at")
+          .select("id, broker, status, display_name, account_number, cached_account_status, cached_buying_power, cached_equity, last_verified_at, error_message")
           .eq("id", brokerConnectionId)
           .eq("user_id", u.id)
-          .single() as { data: BrokerRow | null };
-        linkedBroker = data;
+          .single();
+        linkedBroker = data as BrokerRow | null;
       }
-      const { data: bList } = await db
+      const { data: bList } = await supabaseInner
         .from("broker_connections")
         .select("id, display_name, broker, status")
-        .eq("user_id", u.id) as { data: BrokerListRow[] | null };
-      userBrokers = bList ?? [];
+        .eq("user_id", u.id);
+      userBrokers = (bList ?? []) as BrokerListRow[];
     }
   } catch { /* pre-migration: broker_connections table may not exist */ }
 
@@ -1016,24 +1016,24 @@ export default async function AutotradingDetailPage({ params }: { params: { id: 
       {tradingMode === "live" && (() => {
         const liveOrders = executionOrders.filter(o => o.tradingMode === "live");
         const closedLive = liveOrders.filter(o => o.status === "filled" || o.status === "cancelled");
-        const openLive   = liveOrders.filter(o => o.status === "open" || o.status === "pending");
+        const openLive   = liveOrders.filter(o => o.status === "pending" || o.status === "submitted" || o.status === "partial");
 
         // Compute real P&L from filled orders
         const realizedPnl = closedLive.reduce((sum, o) => {
-          if (o.status !== "filled" || o.filledAvgPrice === null || o.filledQty === null) return sum;
+          if (o.status !== "filled" || o.filledPrice === null || o.filledQty === null) return sum;
           const entryValue = (o.entryPrice ?? 0) * o.filledQty;
-          const exitValue  = o.filledAvgPrice * o.filledQty;
-          return sum + (o.side === "buy" ? exitValue - entryValue : entryValue - exitValue);
+          const exitValue  = o.filledPrice * o.filledQty;
+          return sum + (o.direction === "long" ? exitValue - entryValue : entryValue - exitValue);
         }, 0);
 
         const todayIso  = new Date().toISOString().slice(0, 10);
         const todayPnl  = closedLive
           .filter(o => o.filledAt?.startsWith(todayIso))
           .reduce((sum, o) => {
-            if (o.filledAvgPrice === null || o.filledQty === null) return sum;
+            if (o.filledPrice === null || o.filledQty === null) return sum;
             const entry = (o.entryPrice ?? 0) * o.filledQty;
-            const exit  = o.filledAvgPrice * o.filledQty;
-            return sum + (o.side === "buy" ? exit - entry : entry - exit);
+            const exit  = o.filledPrice * o.filledQty;
+            return sum + (o.direction === "long" ? exit - entry : entry - exit);
           }, 0);
 
         const liveStartCap = allocatedCap;

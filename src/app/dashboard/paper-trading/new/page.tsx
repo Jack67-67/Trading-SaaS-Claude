@@ -21,7 +21,7 @@ export default async function NewPaperSessionPage() {
     if (authError) console.error("[paper/new] auth error:", authError.message);
     if (!user) redirect("/auth/login");
 
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from("strategies")
       .select("id, name, config")
       .eq("user_id", user!.id)

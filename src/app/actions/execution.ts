@@ -15,48 +15,42 @@ import {
   type BrokerType,
 } from "@/lib/broker";
 import { getTodayGuard }                     from "@/lib/economic-calendar";
+import { decryptCredential }                 from "@/lib/broker-crypto";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type CredRow = {
-  broker:                string;
-  api_key:               string;
-  api_secret:            string;
-  status:                string;
-  cached_account_status: string | null;
-  cached_buying_power:   number | null;
-};
-
-type ConnIdRow = { broker_connection_id: string | null };
 type BrokerConnRow = { broker: string; api_key: string; api_secret: string };
 
-// ── Helper: fetch broker credentials for a session ───────────────────────────
+// ── Helper: fetch + decrypt broker credentials for a session ──────────────────
 
 async function getBrokerCredentials(
   db: ReturnType<typeof createClient>,
   sessionId: string,
   userId: string,
 ): Promise<BrokerConnRow | { error: string }> {
-  const anyDb = db as any;
-
-  const { data: sess } = await anyDb
+  const { data: sess } = await db
     .from("paper_trade_sessions")
     .select("broker_connection_id")
     .eq("id", sessionId)
     .eq("user_id", userId)
-    .single() as { data: ConnIdRow | null };
+    .single();
 
   if (!sess?.broker_connection_id) return { error: "No broker linked to session" };
 
-  const { data: conn } = await anyDb
+  const { data: conn } = await db
     .from("broker_connections")
     .select("broker, api_key, api_secret")
     .eq("id", sess.broker_connection_id)
     .eq("user_id", userId)
-    .single() as { data: BrokerConnRow | null };
+    .single();
 
   if (!conn) return { error: "Broker connection not found" };
-  return conn;
+
+  return {
+    broker:     conn.broker,
+    api_key:    decryptCredential(conn.api_key    ?? ""),
+    api_secret: decryptCredential(conn.api_secret ?? ""),
+  };
 }
 
 // ── Execute a live signal ─────────────────────────────────────────────────────
@@ -69,26 +63,25 @@ export async function executeSessionSignal(
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return { error: "Not authenticated" };
 
-  const db = supabase as any;
-
   // ── 1. Load session ───────────────────────────────────────────────────────
-  const { data: sess } = await db
+  const { data: sess } = await supabase
     .from("paper_trade_sessions")
     .select("*")
     .eq("id", sessionId)
     .eq("user_id", user.id)
-    .single() as { data: Record<string, unknown> | null };
+    .single();
 
   if (!sess)                          return { error: "Session not found" };
   if (sess.trading_mode !== "live")   return { error: "Session is not in Live mode" };
   if (sess.status === "stopped")      return { error: "Session is stopped" };
   if (sess.status === "paused")       return { error: "Session is paused" };
 
+  const sessAny        = sess as Record<string, unknown>;
   const symbol         = String(sess.symbol ?? "");
   const interval       = String(sess.interval ?? "");
   const initCap        = Number(sess.initial_capital ?? 100_000);
-  const maxCapPct      = Number(sess.max_capital_pct ?? 100);
-  const maxDailyTrades = Number(sess.max_daily_trades ?? 10);
+  const maxCapPct      = Number(sessAny.max_capital_pct ?? 100);
+  const maxDailyTrades = Number(sessAny.max_daily_trades ?? 10);
   const pauseOnEvents  = Boolean(sess.pause_on_events ?? true);
   const strategyName   = String(sess.name ?? "");
   const brokerConnId   = (sess.broker_connection_id as string | null) ?? null;
@@ -107,21 +100,21 @@ export async function executeSessionSignal(
 
   // ── 3. Daily trade count check ────────────────────────────────────────────
   const todayStr = new Date().toISOString().slice(0, 10);
-  const { data: todayOrders } = await db
+  const { data: todayOrders } = await supabase
     .from("execution_orders")
     .select("id")
     .eq("session_id", sessionId)
     .eq("user_id", user.id)
     .eq("trading_mode", "live")
     .gte("signal_at", todayStr)
-    .limit(maxDailyTrades + 1) as { data: { id: string }[] | null };
+    .limit(maxDailyTrades + 1);
 
   if ((todayOrders?.length ?? 0) >= maxDailyTrades) {
     return { error: `Daily trade limit reached (${maxDailyTrades} trades today)` };
   }
 
   // ── 4. No duplicate open position ─────────────────────────────────────────
-  const { data: openOrders } = await db
+  const { data: openOrders } = await supabase
     .from("execution_orders")
     .select("id")
     .eq("session_id", sessionId)
@@ -129,16 +122,16 @@ export async function executeSessionSignal(
     .eq("trading_mode", "live")
     .eq("symbol", symbol)
     .in("status", ["pending", "submitted", "partial"])
-    .limit(1) as { data: { id: string }[] | null };
+    .limit(1);
 
   if ((openOrders?.length ?? 0) > 0) {
     return { error: `Open position already exists for ${symbol}. Close it before placing a new order.` };
   }
 
   // ── 5. Compute signal ─────────────────────────────────────────────────────
-  const metrics       = (results?.metrics as AutotradingMetrics) ?? null;
-  const openPos       = (results?.open_positions ?? []) as { current_price: number }[];
-  const trades        = (results?.trades ?? []) as { exit_price: number }[];
+  const metrics = (results?.metrics as AutotradingMetrics) ?? null;
+  const openPos = (results?.open_positions ?? []) as { current_price: number }[];
+  const trades  = (results?.trades ?? []) as { exit_price: number }[];
 
   if (!metrics) return { error: "No backtest results — run a backtest first" };
 
@@ -160,17 +153,20 @@ export async function executeSessionSignal(
 
   if (!signal) return { error: "No signal at this time — strategy conditions not met" };
 
-  // ── 6. Load broker credentials (server-side only) ─────────────────────────
-  const { data: brokerConn } = await db
+  // ── 6. Load + decrypt broker credentials (server-side only) ──────────────
+  const { data: brokerConn } = await supabase
     .from("broker_connections")
     .select("broker, api_key, api_secret, status, cached_account_status, cached_buying_power")
     .eq("id", brokerConnId)
     .eq("user_id", user.id)
-    .single() as { data: CredRow | null };
+    .single();
 
-  if (!brokerConn)                                    return { error: "Broker connection not found" };
-  if (brokerConn.status !== "connected")              return { error: "Broker is not connected. Re-verify in Settings." };
-  if (brokerConn.cached_account_status !== "ACTIVE")  return { error: "Broker account is not ACTIVE" };
+  if (!brokerConn)                                     return { error: "Broker connection not found" };
+  if (brokerConn.status !== "connected")               return { error: "Broker is not connected. Re-verify in Settings." };
+  if (brokerConn.cached_account_status !== "ACTIVE")   return { error: "Broker account is not ACTIVE" };
+
+  const apiKey    = decryptCredential(brokerConn.api_key    ?? "");
+  const apiSecret = decryptCredential(brokerConn.api_secret ?? "");
 
   // ── 7. Buying power check ─────────────────────────────────────────────────
   const estimatedCost = signal.entryApprox * signal.positionSize;
@@ -186,8 +182,8 @@ export async function executeSessionSignal(
 
   const orderResult = await placeBracketOrder(
     brokerConn.broker as BrokerType,
-    brokerConn.api_key,
-    brokerConn.api_secret,
+    apiKey,
+    apiSecret,
     {
       symbol,
       qty:           signal.positionSize,
@@ -209,7 +205,7 @@ export async function executeSessionSignal(
   );
   const now = new Date().toISOString();
 
-  const { data: inserted, error: insertErr } = await db
+  const { data: inserted, error: insertErr } = await supabase
     .from("execution_orders")
     .insert({
       user_id:         user.id,
@@ -235,7 +231,7 @@ export async function executeSessionSignal(
       submitted_at:    now,
     })
     .select("id")
-    .single() as { data: { id: string } | null; error: { message: string } | null };
+    .single();
 
   if (insertErr || !inserted) {
     // Order is live at broker — log it prominently but don't hide the broker ID
@@ -249,7 +245,7 @@ export async function executeSessionSignal(
   }
 
   // ── 10. Update session last_action ────────────────────────────────────────
-  await db
+  await supabase
     .from("paper_trade_sessions")
     .update({ last_action: "live_order_placed", last_action_at: now })
     .eq("id", sessionId)
@@ -289,14 +285,12 @@ export async function syncOrderStatus(
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return { error: "Not authenticated" };
 
-  const db = supabase as any;
-
-  const { data: order } = await db
+  const { data: order } = await supabase
     .from("execution_orders")
     .select("id, broker_order_id, status")
     .eq("id", orderId)
     .eq("user_id", user.id)
-    .single() as { data: { id: string; broker_order_id: string | null; status: string } | null };
+    .single();
 
   if (!order)                 return { error: "Order not found" };
   if (!order.broker_order_id) return { error: "No broker order ID — cannot sync" };
@@ -316,7 +310,15 @@ export async function syncOrderStatus(
   if ("error" in result) return { error: result.error };
 
   const newStatus = ALPACA_STATUS_MAP[result.status] ?? "submitted";
-  const updates: Record<string, unknown> = {
+
+  const updates: {
+    status:          string;
+    updated_at:      string;
+    filled_price?:   number | null;
+    filled_qty?:     number | null;
+    filled_at?:      string;
+    failure_reason?: string;
+  } = {
     status:     newStatus,
     updated_at: new Date().toISOString(),
   };
@@ -331,9 +333,9 @@ export async function syncOrderStatus(
     updates.failure_reason = `Broker status: ${result.status}`;
   }
 
-  await db
+  await supabase
     .from("execution_orders")
-    .update(updates)
+    .update(updates as Record<string, unknown>)
     .eq("id", orderId)
     .eq("user_id", user.id);
 
@@ -351,14 +353,12 @@ export async function cancelLiveOrder(
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return { error: "Not authenticated" };
 
-  const db = supabase as any;
-
-  const { data: order } = await db
+  const { data: order } = await supabase
     .from("execution_orders")
     .select("id, broker_order_id, status")
     .eq("id", orderId)
     .eq("user_id", user.id)
-    .single() as { data: { id: string; broker_order_id: string | null; status: string } | null };
+    .single();
 
   if (!order) return { error: "Order not found" };
   if (!["pending", "submitted", "partial"].includes(order.status)) {
@@ -382,14 +382,14 @@ export async function cancelLiveOrder(
   }
 
   const now = new Date().toISOString();
-  await db
+  await supabase
     .from("execution_orders")
     .update({
       status:       "cancelled",
       close_reason: "manual",
       closed_at:    now,
       updated_at:   now,
-    })
+    } as Record<string, unknown>)
     .eq("id", orderId)
     .eq("user_id", user.id);
 
@@ -406,18 +406,13 @@ export async function triggerKillSwitch(
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return { error: "Not authenticated" };
 
-  const db = supabase as any;
-
-  // Get open live orders
-  const { data: openOrders } = await db
+  const { data: openOrders } = await supabase
     .from("execution_orders")
     .select("id, broker_order_id")
     .eq("session_id", sessionId)
     .eq("user_id", user.id)
     .eq("trading_mode", "live")
-    .in("status", ["pending", "submitted", "partial"]) as {
-      data: { id: string; broker_order_id: string | null }[] | null
-    };
+    .in("status", ["pending", "submitted", "partial"]);
 
   const now = new Date().toISOString();
   let cancelled = 0;
@@ -434,14 +429,14 @@ export async function triggerKillSwitch(
           ord.broker_order_id,
         );
       }
-      await db
+      await supabase
         .from("execution_orders")
         .update({
           status:       "cancelled",
           close_reason: "kill_switch",
           closed_at:    now,
           updated_at:   now,
-        })
+        } as Record<string, unknown>)
         .eq("id", ord.id)
         .eq("user_id", user.id);
       cancelled++;
@@ -449,14 +444,14 @@ export async function triggerKillSwitch(
   }
 
   // Pause session regardless of whether any orders were open
-  await db
+  await supabase
     .from("paper_trade_sessions")
     .update({
       status:         "paused",
       pause_reason:   "kill_switch",
       last_action:    "kill_switch",
       last_action_at: now,
-    })
+    } as Record<string, unknown>)
     .eq("id", sessionId)
     .eq("user_id", user.id);
 

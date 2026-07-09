@@ -21,8 +21,8 @@ interface BacktestDetailViewProps {
 
 export function BacktestDetailView({ initialRun, strategyName }: BacktestDetailViewProps) {
   const router = useRouter();
-  const { run, isLive, error, refresh } = useBacktestRealtime({ initialRun });
-  const config = run.config as unknown as BacktestConfig;
+  const { run, isLive, isRealtime, error, timedOut, refresh } = useBacktestRealtime({ initialRun });
+  const config = ((run.config ?? {}) as unknown) as BacktestConfig;
 
   // Track whether this run was live when the page first loaded (for auto-redirect)
   const wasInProgress = useRef(
@@ -110,8 +110,8 @@ export function BacktestDetailView({ initialRun, strategyName }: BacktestDetailV
         <div className="flex items-center gap-2">
           {isLive && (
             <span className="flex items-center gap-1.5 text-2xs text-text-muted">
-              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-              Live
+              <span className={`w-1.5 h-1.5 rounded-full ${isRealtime ? "bg-accent animate-pulse" : "bg-text-muted"}`} />
+              {isRealtime ? "Live" : "Polling"}
             </span>
           )}
           <Button variant="ghost" size="sm" onClick={refresh}>
@@ -132,11 +132,19 @@ export function BacktestDetailView({ initialRun, strategyName }: BacktestDetailV
         </div>
       </div>
 
-      {/* ── Realtime error ─────────────────────────────────────── */}
+      {/* ── DB fetch error (not a realtime failure) ─────────────── */}
       {error && (
         <div className="p-3 rounded-lg bg-loss/10 border border-loss/20 text-sm text-loss flex items-start gap-2">
           <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-          {error}
+          Could not reach the database — {error}
+        </div>
+      )}
+
+      {/* ── Timeout notice ──────────────────────────────────────── */}
+      {timedOut && !error && (
+        <div className="p-3 rounded-lg bg-surface-2 border border-border text-sm text-text-muted flex items-start gap-2">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0 text-text-muted" />
+          This run has been queued for over 6 minutes. The backtest engine may be unavailable.
         </div>
       )}
 

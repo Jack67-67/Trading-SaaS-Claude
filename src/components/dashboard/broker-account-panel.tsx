@@ -24,6 +24,7 @@ interface LinkedBroker {
   cached_buying_power:   number | null;
   cached_equity:         number | null;
   last_verified_at:      string | null;
+  error_message:         string | null;
 }
 
 interface AvailableBroker {

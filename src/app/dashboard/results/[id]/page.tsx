@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Sparkles, CheckCircle2, Info, AlertTriangle, XCircle, ListChecks, Database, TriangleAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
@@ -30,19 +30,29 @@ interface PageProps {
   params: { id: string };
 }
 
-export async function generateMetadata() {
-  return { title: "Backtest Results" };
+export async function generateMetadata({ params }: PageProps) {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("backtest_runs")
+    .select("config")
+    .eq("id", params.id)
+    .single();
+  const config = data?.config as Record<string, unknown> | null;
+  const symbol = (config?.symbol as string) || "Backtest";
+  const name = (config?.name as string) || "";
+  return { title: name ? `${symbol} — ${name}` : `${symbol} — Results` };
 }
 
 export default async function ResultDetailPage({ params }: PageProps) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/auth/login");
 
   const { data: run, error } = await supabase
     .from("backtest_runs")
     .select("*, strategies(name, id)")
     .eq("id", params.id)
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .single();
 
   if (error || !run) notFound();
@@ -63,7 +73,7 @@ export default async function ResultDetailPage({ params }: PageProps) {
     if (prev) prevRun = prev as { id: string; results: unknown };
   }
 
-  const config = run.config as Record<string, unknown>;
+  const config = (run.config ?? {}) as Record<string, unknown>;
   const strategyRef = run.strategies as Record<string, unknown> | null;
   const strategyName = (strategyRef?.name as string) || "—";
 

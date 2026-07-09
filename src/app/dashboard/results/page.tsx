@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { BarChart3, TrendingUp, TrendingDown } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { formatDateTime, formatPercent, pnlColor } from "@/lib/utils";
@@ -17,11 +18,12 @@ export const metadata: Metadata = {
 export default async function ResultsPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/auth/login");
 
   const { data: runs } = await supabase
     .from("backtest_runs")
     .select("*, strategies(name)")
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .eq("status", "completed")
     .order("completed_at", { ascending: false })
     .limit(50);

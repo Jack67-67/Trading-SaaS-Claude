@@ -1,6 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { BacktestDetailView } from "@/components/dashboard/backtest-detail-view";
+import { BacktestErrorBoundary } from "@/components/dashboard/backtest-error-boundary";
 import type { BacktestRun, BacktestConfig } from "@/types";
 
 interface PageProps {
@@ -23,12 +24,13 @@ export async function generateMetadata({ params }: PageProps) {
 export default async function BacktestDetailPage({ params }: PageProps) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/auth/login");
 
   const { data: run, error } = await supabase
     .from("backtest_runs")
     .select("*")
     .eq("id", params.id)
-    .eq("user_id", user!.id)
+    .eq("user_id", user.id)
     .single();
 
   if (error || !run) {
@@ -39,6 +41,7 @@ export default async function BacktestDetailPage({ params }: PageProps) {
     .from("strategies")
     .select("name")
     .eq("id", run.strategy_id)
+    .eq("user_id", user.id)
     .single();
 
   const typedRun: BacktestRun = {
@@ -55,9 +58,11 @@ export default async function BacktestDetailPage({ params }: PageProps) {
   };
 
   return (
-    <BacktestDetailView
-      initialRun={typedRun}
-      strategyName={strategy?.name ?? null}
-    />
+    <BacktestErrorBoundary>
+      <BacktestDetailView
+        initialRun={typedRun}
+        strategyName={strategy?.name ?? null}
+      />
+    </BacktestErrorBoundary>
   );
 }

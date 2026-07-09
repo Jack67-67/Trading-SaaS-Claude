@@ -171,6 +171,7 @@ function CapacityBar({
   label, usedPct, formatValue, value, isLoss,
 }: {
   label: string; usedPct: number; formatValue: (v: number) => string; value: number; isLoss?: boolean;
+  max?: number; suffix?: string;
 }) {
   const isCritical = usedPct >= 90;
   const isNear     = usedPct >= 70;

@@ -42,6 +42,35 @@ const DEFAULT_ENTRY = "{}";
 const DEFAULT_RISK = "{}";
 const DEFAULT_PARAMS = "{}";
 
+// ── Bar-count estimation ──────────────────────────────────────────────────────
+
+const BARS_PER_TRADING_DAY: Record<string, number> = {
+  "1m": 390, "5m": 78, "15m": 26, "30m": 13,
+  "1h": 7,   "4h": 2,  "1d": 1,   "1w": 0.2,
+};
+
+const LIGHTER_INTERVAL: Record<string, string> = {
+  "1m": "5m", "5m": "15m", "15m": "1h",
+  "30m": "1h", "1h": "4h",
+};
+
+// Rough trading-day fraction of calendar days (accounts for weekends, ~252/365)
+const TRADING_DAY_RATIO = 0.69;
+
+function estimateBarCount(interval: string, startStr: string, endStr: string): number {
+  const start = startStr
+    ? new Date(startStr)
+    : new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000);
+  const end = endStr ? new Date(endStr) : new Date();
+  const calendarDays = Math.max(0, (end.getTime() - start.getTime()) / 86_400_000);
+  const tradingDays = calendarDays * TRADING_DAY_RATIO;
+  return Math.round(tradingDays * (BARS_PER_TRADING_DAY[interval] ?? 1));
+}
+
+function formatBarCount(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
+}
+
 function isValidJson(str: string) {
   const s = str.trim();
   if (!s) return true;
@@ -96,6 +125,12 @@ export function BacktestForm({ strategies, initialConfig }: BacktestFormProps) {
   }, [strategyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isMultiTf = !!(analysisInterval && analysisInterval !== interval);
+
+  // ── Bar count estimate ──────────────────────────────────────────────────────
+  const estimatedBars = estimateBarCount(interval, start, end);
+  const isHeavy     = estimatedBars > 30_000;
+  const isVeryHeavy = estimatedBars > 150_000;
+  const suggestion  = LIGHTER_INTERVAL[interval];
 
   const handleReset = () => {
     setStrategyId(preselectedStrategy);
@@ -244,8 +279,9 @@ export function BacktestForm({ strategies, initialConfig }: BacktestFormProps) {
                   <p className="text-xs text-text-secondary">
                     <span className="font-semibold text-text-primary">Multi-timeframe:</span>{" "}
                     entries/exits on <span className="font-mono text-text-primary">{interval}</span>,
-                    context from <span className="font-mono text-text-primary">{analysisInterval}</span> bars.
-                    The engine fetches both timeframes and makes analysis-TF data available to your strategy.
+                    analysis context <span className="font-mono text-text-primary">{analysisInterval}</span>.
+                    The analysis interval is stored with your run for reference. Your strategy code receives{" "}
+                    <span className="font-mono text-text-primary">{interval}</span> bars.
                   </p>
                 </div>
               ) : (
@@ -347,6 +383,37 @@ export function BacktestForm({ strategies, initialConfig }: BacktestFormProps) {
               </div>
             )}
           </div>
+
+          {/* ── Bar count warning ──────────────────────────────── */}
+          {isHeavy && (
+            <div className={cn(
+              "mt-2 flex items-start gap-2.5 rounded-lg border px-3.5 py-3",
+              isVeryHeavy
+                ? "border-loss/30 bg-loss/[0.04]"
+                : "border-yellow-400/30 bg-yellow-400/[0.04]"
+            )}>
+              <AlertCircle size={13} className={cn("mt-0.5 shrink-0", isVeryHeavy ? "text-loss" : "text-yellow-400")} />
+              <div className="min-w-0">
+                <p className={cn("text-xs font-medium", isVeryHeavy ? "text-loss" : "text-yellow-400")}>
+                  ~{formatBarCount(estimatedBars)} bars estimated
+                  {isVeryHeavy ? " — very heavy run" : " — large run"}
+                </p>
+                <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
+                  {isVeryHeavy
+                    ? "This may take several minutes or hit the 5-minute timeout."
+                    : "This may take 1–2 minutes depending on the backtest engine load."
+                  }
+                  {suggestion && (
+                    <> Switch to <button
+                        type="button"
+                        onClick={() => setInterval(suggestion)}
+                        className="font-mono text-accent underline underline-offset-2 hover:text-accent-hover transition-colors"
+                      >{suggestion}</button> for faster results with the same date range.</>
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* ── Submit ─────────────────────────────────────────── */}
           <div className="pt-5 flex items-center gap-3">
